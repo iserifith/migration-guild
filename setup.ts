@@ -2,6 +2,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as readline from "readline";
+import { execSync } from "child_process";
 
 const PKG_DIR = path.join(__dirname, "..", "package");
 const CWD = process.cwd();
@@ -72,6 +73,9 @@ async function main() {
   }
 
   console.log(`\n✓ Target framework: ${framework}\n`);
+
+  // ── Legacy repo ───────────────────────────────────────────────────────────
+  const repoUrl = (await ask(rl, "Legacy repo URL (leave blank to skip): ")).trim();
   rl.close();
 
   // ── Copy .github/ artifacts ───────────────────────────────────────────────
@@ -111,13 +115,35 @@ async function main() {
     total++;
   }
 
+  // ── Clone legacy repo ────────────────────────────────────────────────────
+  const legacyDir = path.join(CWD, "legacy");
+  if (repoUrl) {
+    console.log(`\nCloning legacy repo into legacy/...`);
+    try {
+      // Clone into a temp dir then move contents so legacy/ stays the root
+      const tmpDir = path.join(CWD, ".legmod-clone-tmp");
+      if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true });
+      execSync(`git clone --depth 1 ${repoUrl} "${tmpDir}"`, { stdio: "inherit" });
+      // Move everything except .git into legacy/
+      for (const entry of fs.readdirSync(tmpDir)) {
+        if (entry === ".git") continue;
+        fs.renameSync(path.join(tmpDir, entry), path.join(legacyDir, entry));
+      }
+      fs.rmSync(tmpDir, { recursive: true });
+      console.log(`✓ Legacy source cloned into legacy/`);
+    } catch (err) {
+      console.error(`✗ Clone failed: ${(err as Error).message}`);
+      console.error(`  You can clone manually: git clone ${repoUrl} legacy/`);
+    }
+  }
+
   console.log(`\nDone. ${total} file(s) installed.`);
   console.log("\nNext steps:");
-  console.log("  1. Copy your legacy Java source into legacy/");
-  console.log("  2. Build the registry CLI: cd migration && npm install && npm run build && cd ..");
-  console.log("  3. Run Copilot and say: \"Run inventory\"");
-  console.log("  4. Then: \"Run planning\"");
-  console.log("  5. Then open sessions and say: \"Migrate next task\"\n");
+  if (!repoUrl) console.log("  1. Copy your legacy Java source into legacy/");
+  console.log(`  ${repoUrl ? "1" : "2"}. Build the registry CLI: cd migration && npm install && npm run build && cd ..`);
+  console.log(`  ${repoUrl ? "2" : "3"}. Run Copilot and say: "Run inventory"`);
+  console.log(`  ${repoUrl ? "3" : "4"}. Then: "Run planning"`);
+  console.log(`  ${repoUrl ? "4" : "5"}. Then open sessions and say: "Migrate next task"\n`);
 }
 
 main().catch((err) => {
