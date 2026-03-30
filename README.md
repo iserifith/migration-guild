@@ -70,6 +70,7 @@ copilot --agent context-agent --model gpt-4.1 --yolo
 ```
 
 Then say:
+
 ```
 Run inventory on all Java files in legacy/
 ```
@@ -77,6 +78,7 @@ Run inventory on all Java files in legacy/
 **What happens:** The agent reads each `.java` file, identifies its role (service, utility, interface, etc.), detects legacy framework patterns, and runs `register-artifact` for each file. All files start with status `pending`.
 
 **Check progress:**
+
 ```bash
 node migration/registry/dist/cli.js list-artifacts
 ```
@@ -92,11 +94,13 @@ copilot --agent planner-agent --model claude-sonnet-4.6 --yolo
 ```
 
 Then say:
+
 ```
 Run planning
 ```
 
 Or use the built-in prompt:
+
 ```
 #analyze-and-plan
 ```
@@ -104,6 +108,7 @@ Or use the built-in prompt:
 **What happens:** The planner reads all `pending` artifacts, detects which files depend on which, assigns dependencies, and groups files into waves. Wave 1 has no dependencies and can be migrated immediately. Wave 2 depends on Wave 1 being done, and so on.
 
 **Check the wave plan:**
+
 ```bash
 node migration/registry/dist/cli.js wave-plan
 ```
@@ -115,15 +120,17 @@ node migration/registry/dist/cli.js wave-plan
 This is the main phase. Each session claims one task atomically — you can run many sessions in parallel.
 
 ```bash
-copilot --agent migration-agent --model gpt-5.2-codex --yolo
+copilot --agent migration-agent --model claude-sonnet-4.6 --yolo
 ```
 
 Then say:
+
 ```
 Migrate next task
 ```
 
 **What happens:**
+
 1. The agent claims the next available `planned` artifact (lowest wave first)
 2. Reads the legacy file
 3. Finds the target framework equivalent using the reference agent
@@ -132,20 +139,22 @@ Migrate next task
 6. Updates the registry to `migrated`
 
 **To migrate a specific file:**
+
 ```
 #migrate-file file=legacy/jolt-core/src/main/java/com/bazaarvoice/jolt/Chainr.java
 ```
 
 **Run multiple parallel sessions** by opening additional terminals:
+
 ```bash
 # Terminal 1
-copilot --agent migration-agent --model gpt-5.2-codex --yolo -p "Migrate next task"
+copilot --agent migration-agent --model claude-sonnet-4.6 --yolo -p "Migrate next task"
 
 # Terminal 2
-copilot --agent migration-agent --model gpt-5.2-codex --yolo -p "Migrate next task"
+copilot --agent migration-agent --model claude-sonnet-4.6 --yolo -p "Migrate next task"
 
 # Terminal 3
-copilot --agent migration-agent --model gpt-5.2-codex --yolo -p "Migrate next task"
+copilot --agent migration-agent --model claude-sonnet-4.6 --yolo -p "Migrate next task"
 ```
 
 Each session will claim a different task — the registry prevents conflicts.
@@ -161,11 +170,13 @@ copilot --agent review-agent --model claude-sonnet-4.6 --yolo
 ```
 
 Then say:
+
 ```
 Review migration for modern/src/main/java/com/example/Chainr.java
 ```
 
 Or use the built-in prompt:
+
 ```
 #review-migration file=modern/src/main/java/com/example/Chainr.java
 ```
@@ -173,6 +184,7 @@ Or use the built-in prompt:
 **What happens:** The reviewer compares the migrated file against the original, checks for behavior drift, missing tests, legacy imports, and framework misuse. It writes a verdict (`reviewed` or `needs-rework`) to the registry.
 
 If a file needs rework, run migration again for that file:
+
 ```
 #migrate-file file=legacy/...
 ```
@@ -182,23 +194,27 @@ If a file needs rework, run migration again for that file:
 ## Inspect progress
 
 **Terminal dashboard:**
+
 ```bash
 node migration/registry/dist/cli.js show-status
 ```
 
 **Visual UI:**
+
 ```bash
 node migration/registry/dist/cli.js serve
 # Opens http://localhost:3322
 ```
 
 The UI shows:
+
 - All artifacts with status, wave, role, and path
 - Filter by status, module, or kind
 - Click any row to see the full event log
 - Wave Plan tab: progress bars per wave
 
 **Useful registry commands:**
+
 ```bash
 # What can be claimed right now?
 node migration/registry/dist/cli.js list-ready
@@ -228,26 +244,26 @@ cd migration && npm install && npm run build && cd ..
 
 ## Recommended models
 
-| Phase | Agent | Model |
-|---|---|---|
-| Inventory | `context-agent` | `gpt-4.1` |
-| Planning | `planner-agent` | `claude-sonnet-4.6` |
-| Migration | `migration-agent` | `gpt-5.2-codex` |
-| Review | `review-agent` | `claude-sonnet-4.6` |
+| Phase     | Agent             | Model               |
+| --------- | ----------------- | ------------------- |
+| Inventory | `context-agent`   | `gpt-4.1`           |
+| Planning  | `planner-agent`   | `claude-sonnet-4.6` |
+| Migration | `migration-agent` | `claude-sonnet-4.6`, `gpt-5.2`, `gpt-5-mini` — ⚠️ never Codex variants |
+| Review    | `review-agent`    | `claude-sonnet-4.6` |
 
 ---
 
 ## Status reference
 
-| Status | Meaning |
-|---|---|
-| `pending` | Registered, not yet planned |
-| `planned` | Wave assigned, ready to be claimed |
-| `in-progress` | Claimed by an active session |
+| Status          | Meaning                                    |
+| --------------- | ------------------------------------------ |
+| `pending`       | Registered, not yet planned                |
+| `planned`       | Wave assigned, ready to be claimed         |
+| `in-progress`   | Claimed by an active session               |
 | `tests-written` | Target tests written, production code next |
-| `migrated` | Migration complete, awaiting review |
-| `reviewed` | Approved |
-| `needs-rework` | Review flagged issues, re-migrate |
+| `migrated`      | Migration complete, awaiting review        |
+| `reviewed`      | Approved                                   |
+| `needs-rework`  | Review flagged issues, re-migrate          |
 
 ---
 
@@ -261,6 +277,3 @@ All planned artifacts are either in-progress or waiting on dependencies. Check `
 
 **Agent doesn't run shell commands**
 Ensure you pass `--yolo` (or `--allow-all-tools`) when starting Copilot. Without it, the agent can't run `node migration/registry/dist/cli.js`.
-
-**Stale working directory after reset**
-If you see `uv_cwd` errors, run `cd <workspace>` to refresh the shell's directory reference.
