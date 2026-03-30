@@ -11,13 +11,13 @@ const GITHUB_MAPPINGS: Record<string, string> = {
   agents:       path.join(GITHUB_DIR, "agents"),
   skills:       path.join(GITHUB_DIR, "skills"),
   prompts:      path.join(GITHUB_DIR, "prompts"),
-  tools:        path.join(GITHUB_DIR, "tools"),
   instructions: path.join(GITHUB_DIR, "instructions"),
 };
 
 const ROOT_MAPPINGS: Record<string, string> = {
-  legacy: path.join(CWD, "legacy"),
-  modern: path.join(CWD, "modern"),
+  legacy:    path.join(CWD, "legacy"),
+  modern:    path.join(CWD, "modern"),
+  tools:     path.join(CWD, "migration"),  // package/tools/ → migration/
 };
 
 const FRAMEWORKS = [
@@ -86,12 +86,13 @@ async function main() {
     }
   }
 
-  // ── Copy root folders (legacy/, modern/) ─────────────────────────────────
+  // ── Copy root folders (legacy/, modern/, migration/) ────────────────────
+  const ROOT_LABELS: Record<string, string> = { legacy: "legacy", modern: "modern", tools: "migration" };
   for (const [folder, dest] of Object.entries(ROOT_MAPPINGS)) {
     const src = path.join(PKG_DIR, folder);
     const files = copyDir(src, dest);
     if (files.length) {
-      console.log(`  ${folder}/`);
+      console.log(`  ${ROOT_LABELS[folder] ?? folder}/`);
       files.forEach((f) => console.log(`    + ${f}`));
       total += files.length;
     }
@@ -113,9 +114,10 @@ async function main() {
   console.log(`\nDone. ${total} file(s) installed.`);
   console.log("\nNext steps:");
   console.log("  1. Copy your legacy Java source into legacy/");
-  console.log("  2. Run Copilot and say: \"Run inventory\"");
-  console.log("  3. Then: \"Run planning\"");
-  console.log("  4. Then open sessions and say: \"Migrate next task\"\n");
+  console.log("  2. Build the registry CLI: cd migration && npm install && npm run build && cd ..");
+  console.log("  3. Run Copilot and say: \"Run inventory\"");
+  console.log("  4. Then: \"Run planning\"");
+  console.log("  5. Then open sessions and say: \"Migrate next task\"\n");
 }
 
 main().catch((err) => {
