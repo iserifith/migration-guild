@@ -18,6 +18,8 @@ import {
   listDependents,
 } from "./commands/dependencies";
 import { appendEvent } from "./commands/events";
+import { startServer } from "./commands/serve";
+
 import { getContextPath, writeContext } from "./commands/context";
 import { appendChangelog, getChangelogPath } from "./commands/changelog";
 import { addCompleted, setFocus, setNext } from "./commands/operator";
@@ -428,5 +430,11 @@ program
   .description("List all planned artifacts whose dependencies are satisfied (ready to claim)")
   .option("--wave <n>", "Filter to a specific wave", parseInt)
   .action((opts) => run(() => listReadyToMigrate(db(), opts.wave)));
+
+program
+  .command("serve")
+  .description("Start the registry inspector UI (http://localhost:3322)")
+  .option("--port <n>", "Port to listen on", parseInt)
+  .action((opts) => startServer(db(), opts.port ?? 3322));
 
 program.parse();
