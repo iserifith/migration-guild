@@ -15,7 +15,10 @@ export type Role =
   | "utility"
   | "model"
   | "test"
-  | "module";
+  | "module"
+  | "entry-point"
+  | "transformer"
+  | "interface";
 
 export type Status =
   | "pending"
