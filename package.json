@@ -1,0 +1,17 @@
+{
+  "name": "@legmod/kit",
+  "version": "0.1.0",
+  "description": "Copilot CLI customization kit for Java legacy-to-Spring Boot migration",
+  "bin": {
+    "legmod-setup": "dist/setup.js"
+  },
+  "scripts": {
+    "build": "tsup setup.ts --format cjs --out-dir dist",
+    "dev": "tsx setup.ts"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.2",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}

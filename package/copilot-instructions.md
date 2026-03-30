@@ -1,0 +1,46 @@
+# Copilot Instructions
+
+This project is undergoing a Java migration using the **legmod** kit.
+
+## Project Configuration
+
+- **Legacy source root**: `legacy/`
+- **Migration target root**: `modern/`
+- **Target framework**: {{TARGET_FRAMEWORK}}
+- **Registry database**: `migration/registry.db`
+
+## Migration Workflow
+
+Phases run in order. Phases 3–5 are parallelizable across multiple Copilot sessions.
+
+```
+1. Inventory   — scan legacy/, register all artifacts (status: pending)
+2. Planning    — analyze dependencies, assign waves, set status: planned
+3. Test Prep   — claim task, write target-side tests first
+4. Execute     — migrate production code to modern/
+5. Review      — verify correctness, write verdict
+```
+
+## Registry CLI
+
+The registry CLI tracks all migration state. Run from the project root:
+
+```bash
+node migration/registry/dist/cli.js <command>
+```
+
+Key commands:
+- `claim --agent <name>` — atomically claim the next available task
+- `claim --agent <name> --wave <n>` — claim from a specific wave
+- `list-ready` — preview claimable tasks without claiming
+- `wave-plan` — show migration waves and their status
+- `set-artifact-status --id <id> --status <status>` — update artifact state
+- `show-status` — operator dashboard
+
+## Agent Rules
+
+- `legacy/` is **read-only** — never modify files here
+- `modern/` is the **only** write target for migrated code
+- Always write tests before production code
+- Check registry before starting work — use `claim` to avoid duplicate work
+- Update registry status after each meaningful step
