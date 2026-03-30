@@ -1,7 +1,6 @@
 ---
 name: migration-orchestrator
 description: "Coordinates the full Java legacy migration workflow across all phases: inventory, planning, execution, and review. This is the primary agent users interact with."
-tools: [read, edit, search, bash]
 agents: [context-agent, planner-agent, migration-agent, review-agent, reference-agent]
 ---
 
