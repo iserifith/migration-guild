@@ -44,3 +44,17 @@ Key commands:
 - Always write tests before production code
 - Check registry before starting work — use `claim` to avoid duplicate work
 - Update registry status after each meaningful step
+
+## Recommended Models per Phase
+
+Run each phase with the most cost-effective model for the task:
+
+| Phase | Agent | Recommended model | Reason |
+|---|---|---|---|
+| Inventory | `context-agent` | `gpt-4.1` | High volume, pattern matching |
+| Planning | `planner-agent` | `claude-sonnet-4.6` | Dependency graph reasoning |
+| Migration | `migration-agent` | `gpt-5.2-codex` | Code-optimized transformations |
+| Review | `review-agent` | `claude-sonnet-4.6` | Code review judgment |
+| Reference | `reference-agent` | `gpt-4.1` | Simple pattern retrieval |
+
+Usage: `copilot --agent <agent-name> --model <model-id> -p "..."`
