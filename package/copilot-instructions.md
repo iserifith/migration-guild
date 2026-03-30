@@ -53,7 +53,7 @@ Run each phase with the most cost-effective model for the task:
 |---|---|---|---|
 | Inventory | `context-agent` | `gpt-4.1` | High volume, pattern matching |
 | Planning | `planner-agent` | `claude-sonnet-4.6` | Dependency graph reasoning |
-| Migration | `migration-agent` | `claude-sonnet-4.6`, `gpt-5.2`, or `gpt-5-mini` | ⚠️ Never use Codex variants — they refuse file writes |
+| Migration | `migration-agent` | `gpt-5.2-codex`, `claude-sonnet-4.6`, or `gpt-5-mini` | Code-optimized transformations |
 | Review | `review-agent` | `claude-sonnet-4.6` | Code review judgment |
 | Reference | `reference-agent` | `gpt-4.1` | Simple pattern retrieval |
 

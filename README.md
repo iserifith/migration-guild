@@ -248,7 +248,7 @@ cd migration && npm install && npm run build && cd ..
 | --------- | ----------------- | ------------------- |
 | Inventory | `context-agent`   | `gpt-4.1`           |
 | Planning  | `planner-agent`   | `claude-sonnet-4.6` |
-| Migration | `migration-agent` | `claude-sonnet-4.6`, `gpt-5.2`, `gpt-5-mini` — ⚠️ never Codex variants |
+| Migration | `migration-agent` | `gpt-5.2-codex`, `claude-sonnet-4.6`, `gpt-5-mini` |
 | Review    | `review-agent`    | `claude-sonnet-4.6` |
 
 ---
