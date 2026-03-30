@@ -16,32 +16,33 @@ const GITHUB_MAPPINGS: Record<string, string> = {
 };
 
 const ROOT_MAPPINGS: Record<string, string> = {
-  legacy:    path.join(CWD, "legacy"),
-  modern:    path.join(CWD, "modern"),
-  tools:     path.join(CWD, "migration"),  // package/tools/ → migration/
+  legacy: path.join(CWD, "legacy"),
+  modern: path.join(CWD, "modern"),
+  tools:  path.join(CWD, "migration"),
 };
 
 const FRAMEWORKS = [
-  { label: "Spring Boot 3.x",  value: "Spring Boot 3.x"  },
-  { label: "Quarkus",          value: "Quarkus"          },
-  { label: "Micronaut",        value: "Micronaut"        },
-  { label: "Jakarta EE 10",    value: "Jakarta EE 10"    },
-  { label: "Plain Java 21",    value: "Plain Java 21"    },
+  { label: "Spring Boot 3.x", value: "Spring Boot 3.x" },
+  { label: "Quarkus",         value: "Quarkus"         },
+  { label: "Micronaut",       value: "Micronaut"       },
+  { label: "Jakarta EE 10",   value: "Jakarta EE 10"   },
+  { label: "Plain Java 21",   value: "Plain Java 21"   },
 ];
 
 function ask(rl: readline.Interface, question: string): Promise<string> {
   return new Promise((resolve) => rl.question(question, resolve));
 }
 
-function copyDir(src: string, dest: string): string[] {
+function copyDir(src: string, dest: string, skip: string[] = []): string[] {
   if (!fs.existsSync(src)) return [];
   fs.mkdirSync(dest, { recursive: true });
   const copied: string[] = [];
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    if (skip.includes(entry.name)) continue;
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
     if (entry.isDirectory()) {
-      copied.push(...copyDir(srcPath, destPath));
+      copied.push(...copyDir(srcPath, destPath, []));
     } else {
       fs.copyFileSync(srcPath, destPath);
       copied.push(path.relative(CWD, destPath));
@@ -50,14 +51,50 @@ function copyDir(src: string, dest: string): string[] {
   return copied;
 }
 
-async function main() {
+// ── Update mode: sync kit files only, leave registry/legacy/modern alone ──────
+async function runUpdate() {
+  console.log("\n╔══════════════════════════════════════╗");
+  console.log("║   legmod — Update Kit Files          ║");
+  console.log("╚══════════════════════════════════════╝\n");
+  console.log("Updating agents, skills, prompts, instructions, and migration CLI.");
+  console.log("legacy/, modern/, and migration/registry.db are untouched.\n");
+
+  let total = 0;
+
+  for (const [folder, dest] of Object.entries(GITHUB_MAPPINGS)) {
+    const src = path.join(PKG_DIR, folder);
+    const files = copyDir(src, dest);
+    if (files.length) {
+      console.log(`  .github/${folder}/`);
+      files.forEach((f) => console.log(`    ↺ ${f}`));
+      total += files.length;
+    }
+  }
+
+  // migration/ — skip registry.db and node_modules
+  const toolsSrc  = path.join(PKG_DIR, "tools");
+  const toolsDest = ROOT_MAPPINGS.tools;
+  const toolFiles = copyDir(toolsSrc, toolsDest, [
+    "node_modules", "registry.db", "registry.db-wal", "registry.db-shm",
+  ]);
+  if (toolFiles.length) {
+    console.log(`  migration/`);
+    toolFiles.forEach((f) => console.log(`    ↺ ${f}`));
+    total += toolFiles.length;
+  }
+
+  console.log(`\nDone. ${total} file(s) updated.`);
+  console.log("\nNext step: cd migration && npm install && npm run build && cd ..\n");
+}
+
+// ── Install mode: full fresh setup ────────────────────────────────────────────
+async function runInstall() {
   console.log("\n╔══════════════════════════════════════╗");
   console.log("║   legmod — Java Migration Kit Setup  ║");
   console.log("╚══════════════════════════════════════╝\n");
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  // ── Framework selection ───────────────────────────────────────────────────
   console.log("Which framework are you migrating to?\n");
   FRAMEWORKS.forEach((f, i) => console.log(`  ${i + 1}. ${f.label}`));
   console.log();
@@ -68,18 +105,16 @@ async function main() {
   if (choice >= 1 && choice <= FRAMEWORKS.length) {
     framework = FRAMEWORKS[choice - 1].value;
   } else if (answer) {
-    // Allow free-form entry
     framework = answer;
   }
 
   console.log(`\n✓ Target framework: ${framework}\n`);
 
-  // ── Legacy repo ───────────────────────────────────────────────────────────
   const repoUrl = (await ask(rl, "Legacy repo URL (leave blank to skip): ")).trim();
   rl.close();
 
-  // ── Copy .github/ artifacts ───────────────────────────────────────────────
   let total = 0;
+
   for (const [folder, dest] of Object.entries(GITHUB_MAPPINGS)) {
     const src = path.join(PKG_DIR, folder);
     const files = copyDir(src, dest);
@@ -90,7 +125,6 @@ async function main() {
     }
   }
 
-  // ── Copy root folders (legacy/, modern/, migration/) ────────────────────
   const ROOT_LABELS: Record<string, string> = { legacy: "legacy", modern: "modern", tools: "migration" };
   for (const [folder, dest] of Object.entries(ROOT_MAPPINGS)) {
     const src = path.join(PKG_DIR, folder);
@@ -102,8 +136,7 @@ async function main() {
     }
   }
 
-  // ── Write copilot-instructions.md ─────────────────────────────────────────
-  const instructionsSrc = path.join(PKG_DIR, "copilot-instructions.md");
+  const instructionsSrc  = path.join(PKG_DIR, "copilot-instructions.md");
   const instructionsDest = path.join(GITHUB_DIR, "copilot-instructions.md");
   if (fs.existsSync(instructionsSrc)) {
     fs.mkdirSync(GITHUB_DIR, { recursive: true });
@@ -115,16 +148,13 @@ async function main() {
     total++;
   }
 
-  // ── Clone legacy repo ────────────────────────────────────────────────────
-  const legacyDir = path.join(CWD, "legacy");
   if (repoUrl) {
     console.log(`\nCloning legacy repo into legacy/...`);
     try {
-      // Clone into a temp dir then move contents so legacy/ stays the root
       const tmpDir = path.join(CWD, ".legmod-clone-tmp");
       if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true });
       execSync(`git clone --depth 1 ${repoUrl} "${tmpDir}"`, { stdio: "inherit" });
-      // Move everything except .git into legacy/
+      const legacyDir = path.join(CWD, "legacy");
       for (const entry of fs.readdirSync(tmpDir)) {
         if (entry === ".git") continue;
         fs.renameSync(path.join(tmpDir, entry), path.join(legacyDir, entry));
@@ -140,10 +170,19 @@ async function main() {
   console.log(`\nDone. ${total} file(s) installed.`);
   console.log("\nNext steps:");
   if (!repoUrl) console.log("  1. Copy your legacy Java source into legacy/");
-  console.log(`  ${repoUrl ? "1" : "2"}. Build the registry CLI: cd migration && npm install && npm run build && cd ..`);
-  console.log(`  ${repoUrl ? "2" : "3"}. Run Copilot and say: "Run inventory"`);
-  console.log(`  ${repoUrl ? "3" : "4"}. Then: "Run planning"`);
-  console.log(`  ${repoUrl ? "4" : "5"}. Then open sessions and say: "Migrate next task"\n`);
+  const n = repoUrl ? 1 : 2;
+  console.log(`  ${n}. Build the registry CLI: cd migration && npm install && npm run build && cd ..`);
+  console.log(`  ${n+1}. Run Copilot and say: "Run inventory"`);
+  console.log(`  ${n+2}. Then: "Run planning"`);
+  console.log(`  ${n+3}. Then open sessions and say: "Migrate next task"\n`);
+}
+
+async function main() {
+  if (process.argv.includes("--update")) {
+    await runUpdate();
+  } else {
+    await runInstall();
+  }
 }
 
 main().catch((err) => {
