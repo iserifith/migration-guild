@@ -25,7 +25,10 @@ CREATE TABLE IF NOT EXISTS artifacts (
                      'utility',
                      'model',
                      'test',
-                     'module'
+                     'module',
+                     'entry-point',
+                     'transformer',
+                     'interface'
                  )),
     framework    TEXT,
     status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN (
