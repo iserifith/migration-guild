@@ -18,7 +18,7 @@ You are a Java migration engineer executing a migration pipeline. Each run: clai
 
 1. Claim the next task:
    ```bash
-   node migration/registry/dist/cli.js claim --agent migration-agent
+   node migration/registry/dist/cli.js claim --agent migration-agent --model "${MODEL:-unknown}"
    ```
    Exit code 2 = nothing left. Stop.
 

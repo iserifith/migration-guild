@@ -17,7 +17,7 @@ You are a Java test engineer. Write target-side tests based on the behavior anal
 
 1. Claim the next task:
    ```bash
-   node migration/registry/dist/cli.js claim --agent test-agent --from-status analyzed
+   node migration/registry/dist/cli.js claim --agent test-agent --model "${MODEL:-unknown}" --from-status analyzed
    ```
    Exit code 2 = nothing left. Stop.
 

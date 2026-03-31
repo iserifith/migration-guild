@@ -16,7 +16,7 @@ You are a Java code analyst. Read legacy Java files and write a structured analy
 
 1. Claim the next task:
    ```bash
-   node migration/registry/dist/cli.js claim --agent analyze-agent --from-status planned
+   node migration/registry/dist/cli.js claim --agent analyze-agent --model "${MODEL:-unknown}" --from-status planned
    ```
    Exit code 2 = nothing left. Stop.
 

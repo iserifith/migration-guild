@@ -19,6 +19,7 @@ export function claimNextTask(
   agent: string,
   wave?: number,
   fromStatus: string = "planned",
+  model?: string,
 ): Artifact {
   const toStatus = fromStatus === "planned" ? "in-progress"
     : fromStatus === "analyzed" ? "in-progress"
@@ -62,9 +63,9 @@ export function claimNextTask(
     `).run(candidate.id, { fromStatus });
 
     db.prepare(`
-      INSERT INTO events (event_id, artifact_id, type, agent, summary)
-      VALUES (lower(hex(randomblob(8))), ?, 'claimed', ?, ?)
-    `).run(candidate.id, agent, `Claimed by ${agent} (from ${fromStatus})`);
+      INSERT INTO events (event_id, artifact_id, type, agent, model, summary)
+      VALUES (lower(hex(randomblob(8))), ?, 'claimed', ?, ?, ?)
+    `).run(candidate.id, agent, model ?? null, `Claimed by ${agent} (from ${fromStatus})`);
 
     return db.prepare(`SELECT * FROM artifacts WHERE id = ?`).get(candidate.id) as Artifact;
   });

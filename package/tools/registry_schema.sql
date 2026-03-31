@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS events (
                      'status-changed'
                  )),
     agent        TEXT NOT NULL,
+    model        TEXT,
     summary      TEXT NOT NULL,
     event_data   TEXT
 );

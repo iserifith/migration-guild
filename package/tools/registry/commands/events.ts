@@ -24,6 +24,7 @@ export interface AppendEventOptions {
   id: string;
   type: EventType;
   agent: string;
+  model?: string;
   summary: string;
   data?: string;
 }
@@ -49,14 +50,13 @@ export function appendEvent(
   }
 
   db.prepare(
-    `
-    INSERT INTO events (artifact_id, type, agent, summary, event_data)
-    VALUES (@artifact_id, @type, @agent, @summary, @event_data)
-  `,
+    `INSERT INTO events (artifact_id, type, agent, model, summary, event_data)
+     VALUES (@artifact_id, @type, @agent, @model, @summary, @event_data)`,
   ).run({
     artifact_id: opts.id,
     type: opts.type,
     agent: opts.agent,
+    model: opts.model ?? null,
     summary: opts.summary,
     event_data: opts.data ?? null,
   });
