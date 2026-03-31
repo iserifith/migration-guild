@@ -194,6 +194,7 @@ program
   .requiredOption("--id <id>")
   .requiredOption("--type <type>")
   .requiredOption("--agent <agent>")
+  .option("--model <model>", "Model that ran this agent")
   .requiredOption("--summary <summary>")
   .option("--data <json>")
   .action((opts) =>
@@ -202,6 +203,7 @@ program
         id: opts.id,
         type: opts.type as EventType,
         agent: opts.agent,
+        model: opts.model,
         summary: opts.summary,
         data: opts.data,
       });
@@ -410,7 +412,8 @@ program
   .requiredOption("--agent <agent>", "Name of the agent claiming the task")
   .option("--wave <n>", "Only claim from this wave number", parseInt)
   .option("--from-status <status>", "Claim artifacts with this status (default: planned)", "planned")
-  .action((opts) => run(() => claimNextTask(db(), opts.agent, opts.wave, opts.fromStatus)));
+  .option("--model <model>", "Model running this agent (logged to events)")
+  .action((opts) => run(() => claimNextTask(db(), opts.agent, opts.wave, opts.fromStatus, opts.model)));
 
 // ─── Wave Planning ───────────────────────────────────────────────────────────
 

@@ -118,6 +118,7 @@ export interface Event {
   artifact_id: string;
   type: EventType;
   agent: string;
+  model: string | null;
   summary: string;
   event_data: string | null;
 }
