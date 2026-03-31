@@ -409,7 +409,8 @@ program
   )
   .requiredOption("--agent <agent>", "Name of the agent claiming the task")
   .option("--wave <n>", "Only claim from this wave number", parseInt)
-  .action((opts) => run(() => claimNextTask(db(), opts.agent, opts.wave)));
+  .option("--from-status <status>", "Claim artifacts with this status (default: planned)", "planned")
+  .action((opts) => run(() => claimNextTask(db(), opts.agent, opts.wave, opts.fromStatus)));
 
 // ─── Wave Planning ───────────────────────────────────────────────────────────
 
