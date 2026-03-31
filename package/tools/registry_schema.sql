@@ -138,3 +138,20 @@ CREATE TABLE IF NOT EXISTS operator_state (
     value        TEXT NOT NULL,
     updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- ─── Agent Runs ──────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS runs (
+    run_id       TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+    agent        TEXT NOT NULL,
+    model        TEXT,
+    prompt       TEXT,
+    log_file     TEXT,
+    started_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at  TEXT,
+    exit_code    INTEGER,
+    status       TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'completed', 'failed'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_runs_agent  ON runs(agent);
+CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);

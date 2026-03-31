@@ -19,6 +19,7 @@ import {
 } from "./commands/dependencies";
 import { appendEvent } from "./commands/events";
 import { startServer } from "./commands/serve";
+import { startRun, finishRun, listRuns } from "./commands/runs";
 
 import { getContextPath, writeContext } from "./commands/context";
 import { appendChangelog, getChangelogPath } from "./commands/changelog";
@@ -440,5 +441,38 @@ program
   .description("Start the registry inspector UI (http://localhost:3322)")
   .option("--port <n>", "Port to listen on", parseInt)
   .action((opts) => startServer(db(), opts.port ?? 3322));
+
+// ─── Runs ─────────────────────────────────────────────────────────────────────
+
+program
+  .command("start-run")
+  .description("Record the start of an agent run (called by run-agent.sh)")
+  .requiredOption("--agent <agent>", "Agent name")
+  .option("--model <model>", "Model used")
+  .option("--prompt <prompt>", "Prompt sent to the agent")
+  .option("--log-file <path>", "Path to the tee log file")
+  .action((opts) => run(() => startRun(db(), {
+    agent: opts.agent,
+    model: opts.model,
+    prompt: opts.prompt,
+    logFile: opts.logFile,
+  })));
+
+program
+  .command("finish-run")
+  .description("Record the end of an agent run (called by run-agent.sh)")
+  .requiredOption("--run-id <id>", "Run ID returned by start-run")
+  .requiredOption("--exit-code <n>", "Exit code of the copilot process", parseInt)
+  .action((opts) => run(() => finishRun(db(), {
+    runId: opts.runId,
+    exitCode: opts.exitCode,
+  })));
+
+program
+  .command("list-runs")
+  .description("List recent agent runs")
+  .option("--agent <agent>", "Filter by agent name")
+  .option("--limit <n>", "Max results (default 20)", parseInt)
+  .action((opts) => run(() => listRuns(db(), opts.agent, opts.limit ?? 20)));
 
 program.parse();
