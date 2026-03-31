@@ -66,7 +66,7 @@ Open Copilot in your workspace and run the inventory phase. This scans every Jav
 
 ```bash
 cd my-migration
-copilot --agent context-agent --model gpt-4.1 --yolo
+copilot --agent context-agent --model gpt-5-mini --yolo
 ```
 
 Then say:
@@ -120,7 +120,7 @@ node migration/registry/dist/cli.js wave-plan
 This is the main phase. Each session claims one task atomically — you can run many sessions in parallel.
 
 ```bash
-copilot --agent migration-agent --model claude-sonnet-4.6 --yolo
+copilot --agent migration-agent --model gpt-5-mini --yolo
 ```
 
 Then say:
@@ -148,13 +148,13 @@ Migrate next task
 
 ```bash
 # Terminal 1
-copilot --agent migration-agent --model claude-sonnet-4.6 --yolo -p "Migrate next task"
+copilot --agent migration-agent --model gpt-5-mini --yolo -p "Migrate next task"
 
 # Terminal 2
-copilot --agent migration-agent --model claude-sonnet-4.6 --yolo -p "Migrate next task"
+copilot --agent migration-agent --model gpt-5-mini --yolo -p "Migrate next task"
 
 # Terminal 3
-copilot --agent migration-agent --model claude-sonnet-4.6 --yolo -p "Migrate next task"
+copilot --agent migration-agent --model gpt-5-mini --yolo -p "Migrate next task"
 ```
 
 Each session will claim a different task — the registry prevents conflicts.
@@ -246,9 +246,9 @@ cd migration && npm install && npm run build && cd ..
 
 | Phase     | Agent             | Model               |
 | --------- | ----------------- | ------------------- |
-| Inventory | `context-agent`   | `gpt-4.1`           |
+| Inventory | `context-agent`   | `gpt-5-mini`        |
 | Planning  | `planner-agent`   | `claude-sonnet-4.6` |
-| Migration | `migration-agent` | `gpt-5.2-codex`, `claude-sonnet-4.6`, `gpt-5-mini` |
+| Migration | `migration-agent` | `gpt-5-mini`        |
 | Review    | `review-agent`    | `claude-sonnet-4.6` |
 
 ---
