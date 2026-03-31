@@ -51,10 +51,10 @@ Run each phase with the most cost-effective model for the task:
 
 | Phase | Agent | Recommended model | Reason |
 |---|---|---|---|
-| Inventory | `context-agent` | `gpt-4.1` | High volume, pattern matching |
-| Planning | `planner-agent` | `claude-sonnet-4.6` | Dependency graph reasoning |
-| Migration | `migration-agent` | `gpt-5.2-codex`, `claude-sonnet-4.6`, or `gpt-5-mini` | Code-optimized transformations |
-| Review | `review-agent` | `claude-sonnet-4.6` | Code review judgment |
-| Reference | `reference-agent` | `gpt-4.1` | Simple pattern retrieval |
+| Inventory | `context-agent` | `gpt-5-mini` | High volume, pattern matching |
+| Planning  | `planner-agent` | `claude-sonnet-4.6` | Dependency graph reasoning |
+| Migration | `migration-agent` | `gpt-5-mini` | High volume, mechanical transformations |
+| Review    | `review-agent` | `claude-sonnet-4.6` | Code review judgment |
+| Reference | `reference-agent` | `gpt-5-mini` | Simple pattern retrieval |
 
 Usage: `copilot --agent <agent-name> --model <model-id> -p "..."`
