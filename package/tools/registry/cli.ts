@@ -3,7 +3,7 @@ import { Command } from "commander";
 import { getDb } from "./db/connection";
 import { applySchema } from "./db/schema";
 import { RegistryError } from "./types";
-import type { Agent, EventType, Kind, Relation, Role, Status } from "./types";
+import type { Agent, ArtifactTier, EventType, Kind, MappingStrategy, Relation, Role, Status } from "./types";
 import {
   addTag,
   registerArtifact,
@@ -21,6 +21,12 @@ import {
 import { appendEvent } from "./commands/events";
 import { startServer } from "./commands/serve";
 import { startRun, finishRun, listRuns } from "./commands/runs";
+import {
+  confirmMapping,
+  createMapping,
+  getMappingsSummary,
+  listMappings,
+} from "./commands/mappings";
 
 import { getContextPath, writeContext } from "./commands/context";
 import { appendChangelog, getChangelogPath } from "./commands/changelog";
@@ -117,6 +123,7 @@ program
   .option("--module <module>")
   .option("--role <role>")
   .option("--framework <framework>")
+  .option("--tier <tier>", "first-class or second-class (auto-derived from kind if omitted)")
   .action((opts) =>
     run(() => {
       registerArtifact(db(), {
@@ -126,6 +133,7 @@ program
         module: opts.module,
         role: opts.role as Role | undefined,
         framework: opts.framework,
+        tier: opts.tier as ArtifactTier | undefined,
       });
     }),
   );
@@ -342,7 +350,14 @@ program
   .option("--status <status>")
   .option("--tag <tag>")
   .option("--module <module>")
-  .action((opts) => run(() => listArtifacts(db(), opts)));
+  .option("--tier <tier>", "Filter by tier: first-class or second-class")
+  .action((opts) => run(() => listArtifacts(db(), {
+    kind: opts.kind as Kind | undefined,
+    status: opts.status as Status | undefined,
+    tag: opts.tag,
+    module: opts.module,
+    tier: opts.tier as ArtifactTier | undefined,
+  })));
 
 program
   .command("get-events")
@@ -494,5 +509,46 @@ program
   .command("show-in-progress")
   .description("List all currently claimed (in-progress) artifacts with ownership and age")
   .action(() => run(() => showInProgress(db())));
+
+// ─── Stack Mappings ──────────────────────────────────────────────────────────
+
+program
+  .command("create-mapping")
+  .description("Record a legacy→target framework mapping (created by stack-advisor)")
+  .requiredOption("--legacy <framework>", "Legacy framework name")
+  .requiredOption("--target <framework>", "Target framework name")
+  .option("--strategy <strategy>", "direct | adapter | rewrite")
+  .option("--notes <text>", "Optional notes")
+  .action((opts) =>
+    run(() =>
+      createMapping(db(), {
+        legacy_framework: opts.legacy,
+        target_framework: opts.target,
+        strategy: opts.strategy as MappingStrategy | undefined,
+        notes: opts.notes,
+      }),
+    ),
+  );
+
+program
+  .command("confirm-mapping")
+  .description("Human confirms a framework mapping before planning begins")
+  .requiredOption("--id <id>", "Mapping ID")
+  .requiredOption("--confirmed-by <name>", "Operator or agent confirming")
+  .option("--notes <text>", "Optional override notes")
+  .action((opts) =>
+    run(() => confirmMapping(db(), opts.id, opts.confirmedBy, opts.notes)),
+  );
+
+program
+  .command("list-mappings")
+  .description("List all stack mappings")
+  .option("--confirmed-only", "Only show confirmed mappings")
+  .action((opts) => run(() => listMappings(db(), opts.confirmedOnly as boolean | undefined)));
+
+program
+  .command("show-mapping-summary")
+  .description("Show stack mapping confirmation status (used before planning)")
+  .action(() => run(() => getMappingsSummary(db())));
 
 program.parse();

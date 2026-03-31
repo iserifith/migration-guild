@@ -1,5 +1,5 @@
 ---
-description: "Analyze the legacy Java application and produce a wave-based migration plan. Registers all artifacts and assigns dependencies and wave numbers."
+description: "Analyze the legacy Java application and produce a wave-based migration plan. Registers all artifacts, recommends the migration stack for human confirmation, then assigns dependencies and wave numbers."
 ---
 
 Analyze the legacy Java application in `legacy/` and produce a complete migration plan.
@@ -9,25 +9,46 @@ Analyze the legacy Java application in `legacy/` and produce a complete migratio
    node migration/registry/dist/cli.js init
    ```
 
-2. Run `context-agent` on each Java source file in `legacy/` to classify and register all artifacts.
+2. Run `context-agent` on each source file in `legacy/` to classify and register all artifacts — both Java source files (first-class) and supporting config/descriptor/SQL files (second-class).
 
-3. Run `planner-agent` to:
-   - Identify dependencies between files
-   - Assign wave numbers (topological ordering)
+3. Run `stack-advisor` to:
+   - Detect all frameworks and libraries in use across the registered artifacts
+   - Propose a legacy → target mapping table
+   - Record mappings in the registry
+
+   **Pause here** and present the mapping table to the human. Wait for confirmation of all mappings before proceeding.
+
+   To confirm mappings:
+   ```bash
+   node migration/registry/dist/cli.js list-mappings
+   # Then for each mapping:
+   node migration/registry/dist/cli.js confirm-mapping --id "<id>" --confirmed-by "<your-name>"
+   ```
+
+4. Run `planner-agent` to:
+   - Verify all mappings are confirmed
+   - Identify dependencies between files (first-class and second-class)
+   - Assign wave numbers (topological ordering, first-class only)
    - Set all artifacts to status `planned`
 
-4. Report the wave plan:
+5. Report the wave plan:
    ```bash
    node migration/registry/dist/cli.js wave-plan
    ```
 
-5. Output:
+6. Output:
 
 ### Project Summary
 - **Legacy source root**: `legacy/`
 - **Target root**: `modern/`
-- **Target framework**: (from `.github/copilot-instructions.md`)
-- **Total files**: N
+- **Project type**: (from `.github/copilot-instructions.md`)
+- **Total first-class files**: N
+- **Total second-class files**: N
+
+### Stack Mapping
+| Legacy | Target | Strategy |
+|--------|--------|----------|
+| ...    | ...    | ...      |
 
 ### Wave Plan
 | Wave | Files | Notes |
