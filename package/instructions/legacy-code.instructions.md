@@ -3,13 +3,13 @@ description: "Context for working with legacy Java source files in the legacy/ d
 applyTo: "legacy/**/*.java"
 ---
 
-This file belongs to the **legacy** codebase. It is scheduled for migration to the target framework. Treat it as **read-only** reference material.
+This file belongs to the **legacy** codebase and is scheduled for migration. Read it to understand the behavior to replicate — then write the migrated version to `modern/`.
 
-## Rules when working here
+## Rules for this file
 
-- Do **not** add new features or modify legacy classes
-- Do **not** fix bugs in legacy unless explicitly asked — migrate the file instead
-- Never copy legacy framework imports into the target codebase
+- Read-only: do not modify or add features to this file
+- Do not fix bugs here — migrate the file to `modern/` instead
+- Never copy legacy framework imports into the migrated code
 - When reading for migration purposes, note every:
   - Framework-specific annotation (e.g. `@Path`, `@Stateless`, `@Action`, `@RemoteInterface`)
   - XML config dependency (`web.xml`, `ejb-jar.xml`, `applicationContext.xml`, `struts.xml`)
