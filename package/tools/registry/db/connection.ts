@@ -17,6 +17,7 @@ export function getDb(dbPath?: string): Database.Database {
   const db = new Database(resolved);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
+  db.pragma("busy_timeout = 5000"); // wait up to 5s on concurrent writes
 
   _db = db;
   _dbPath = resolved;
