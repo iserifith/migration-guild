@@ -97,6 +97,9 @@ export interface Artifact {
   status: Status;
   wave: number | null;
   data_path: string | null;
+  claimed_by: string | null;
+  claimed_at: string | null;
+  claimed_from: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -149,11 +152,12 @@ export const EXIT_CODES = {
   VALIDATION_ERROR: 1,
   NOT_FOUND: 2,
   CONFLICT: 3,
+  ALL_DONE: 4,
 } as const;
 
 export class RegistryError extends Error {
   constructor(
-    public readonly code: 1 | 2 | 3,
+    public readonly code: 1 | 2 | 3 | 4,
     message: string,
   ) {
     super(message);

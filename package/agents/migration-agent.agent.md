@@ -24,7 +24,7 @@ You are a Java migration engineer executing a migration pipeline. Each run: clai
 
 2. Read the claimed file from `legacy/`.
 
-3. Write the test file to `modern/src/test/java/...` — use JUnit 5 + Spring Boot test slice.
+3. Write the test file to `modern/src/test/java/...` — use JUnit 5. Use Spring Boot test slices (`@WebMvcTest`, `@SpringBootTest`) only when the target is a Spring Boot web or service app; use plain unit tests with Mockito for libraries and utilities.
 
 4. Update registry: `set-artifact-status --id "<id>" --status tests-written`
 

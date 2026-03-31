@@ -7,6 +7,7 @@ import type { Agent, EventType, Kind, Relation, Role, Status } from "./types";
 import {
   addTag,
   registerArtifact,
+  releaseTask,
   removeTag,
   setArtifactStatus,
   setArtifactWave,
@@ -33,6 +34,7 @@ import {
   showBlockers,
   showCompleted,
   showFileStatus,
+  showInProgress,
   showIssues,
   showNext,
   showStatus,
@@ -474,5 +476,23 @@ program
   .option("--agent <agent>", "Filter by agent name")
   .option("--limit <n>", "Max results (default 20)", parseInt)
   .action((opts) => run(() => listRuns(db(), opts.agent, opts.limit ?? 20)));
+
+program
+  .command("release")
+  .description(
+    "Release a stuck in-progress artifact back to its pre-claim status. " +
+    "Use when an agent crashed or looped without completing its task."
+  )
+  .requiredOption("--id <id>", "Artifact ID to release")
+  .requiredOption("--agent <agent>", "Agent or operator performing the release")
+  .option("--reason <reason>", "Optional reason for releasing")
+  .action((opts) =>
+    run(() => releaseTask(db(), opts.id, opts.agent, opts.reason)),
+  );
+
+program
+  .command("show-in-progress")
+  .description("List all currently claimed (in-progress) artifacts with ownership and age")
+  .action(() => run(() => showInProgress(db())));
 
 program.parse();

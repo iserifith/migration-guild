@@ -46,6 +46,9 @@ CREATE TABLE IF NOT EXISTS artifacts (
                  )),
     wave         INTEGER,          -- assigned during planning; lower waves execute first
     data_path    TEXT,
+    claimed_by   TEXT,             -- agent name that currently holds this task
+    claimed_at   TEXT,             -- when it was claimed
+    claimed_from TEXT,             -- status before claiming (for release rollback)
     created_at   TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -155,3 +158,9 @@ CREATE TABLE IF NOT EXISTS runs (
 
 CREATE INDEX IF NOT EXISTS idx_runs_agent  ON runs(agent);
 CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
+
+-- ─── Migrations for existing databases ───────────────────────────────────────
+
+ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS claimed_by   TEXT;
+ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS claimed_at   TEXT;
+ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS claimed_from TEXT;

@@ -1,6 +1,10 @@
 # Copilot Instructions
 
-This repository authors a **Copilot CLI customization kit** for Java legacy-to-Spring Boot 3.x migration projects.
+This repository authors a **Copilot CLI customization kit** for Java legacy-to-modern migration projects. The target framework is determined by the legacy project type — not assumed upfront:
+
+- **Web apps** (JAX-RS, servlets) → Spring Boot 3.x with `spring-boot-starter-web`
+- **Services / batch / CLI** → Spring Boot 3.x with `spring-boot-starter` (no embedded server)
+- **Libraries / utilities** → Plain Java 17+ with JUnit 5, no Spring Boot
 
 ## Purpose
 
