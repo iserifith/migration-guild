@@ -24,7 +24,19 @@ You are a Java migration engineer executing a migration pipeline. Each run: clai
 
 2. Read the claimed file from `legacy/`.
 
-3. Write the test file to `modern/src/test/java/...` — use JUnit 5. Use Spring Boot test slices (`@WebMvcTest`, `@SpringBootTest`) only when the target is a Spring Boot web or service app; use plain unit tests with Mockito for libraries and utilities.
+3. **Resolve second-class dependencies inline.** Before writing any code, check for linked config/descriptor/SQL artifacts:
+   ```bash
+   node migration/registry/dist/cli.js list-dependencies --id "<claimed-id>"
+   ```
+   For each dependency with `tier = second-class` and `status = planned`:
+   - Mark it in-progress: `set-artifact-status --id "<dep-id>" --status in-progress`
+   - Migrate it to the appropriate location in `modern/`:
+     - `descriptor` → convert to `@Configuration` class or `application.yml` entries
+     - `properties` → merge into `modern/src/main/resources/application.yml`
+     - `sql-schema` → copy or adapt to `modern/src/main/resources/db/migration/`
+   - Mark it migrated: `set-artifact-status --id "<dep-id>" --status migrated`
+
+4. Write the test file to `modern/src/test/java/...` — use JUnit 5. Use Spring Boot test slices (`@WebMvcTest`, `@SpringBootTest`) only when the target is a Spring Boot web or service app; use plain unit tests with Mockito for libraries and utilities.
 
 4. Update registry: `set-artifact-status --id "<id>" --status tests-written`
 

@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import { RegistryError, validateId } from "../types";
-import type { Artifact, EventType, Kind, Status, Tag } from "../types";
+import type { Artifact, ArtifactTier, EventType, Kind, Status, Tag } from "../types";
 
 export function getArtifactById(db: Database.Database, id: string): Artifact {
   validateId(id);
@@ -28,6 +28,7 @@ export interface ListArtifactsOptions {
   status?: Status;
   tag?: Tag;
   module?: string;
+  tier?: ArtifactTier;
 }
 
 export function listArtifacts(
@@ -49,6 +50,10 @@ export function listArtifacts(
     conditions.push("a.module = @module");
     params["module"] = opts.module;
   }
+  if (opts.tier) {
+    conditions.push("a.tier = @tier");
+    params["tier"] = opts.tier;
+  }
 
   let sql = "SELECT DISTINCT a.* FROM artifacts a";
   if (opts.tag) {
@@ -56,7 +61,7 @@ export function listArtifacts(
     params["tag"] = opts.tag;
   }
   if (conditions.length) sql += " WHERE " + conditions.join(" AND ");
-  sql += " ORDER BY a.created_at";
+  sql += " ORDER BY a.tier ASC, a.created_at";
 
   return db.prepare(sql).all(params) as Artifact[];
 }
@@ -304,7 +309,7 @@ export function showInProgress(db: Database.Database): {
   `).all() as ReturnType<typeof showInProgress>;
 }
 
-/** Returns all planned artifacts whose dependencies are all done — ready to claim now. */
+/** Returns all planned first-class artifacts whose dependencies are all done — ready to claim now. */
 export function listReadyToMigrate(
   db: Database.Database,
   wave?: number,
@@ -319,7 +324,8 @@ export function listReadyToMigrate(
   return db.prepare(`
     SELECT a.*
     FROM artifacts a
-    WHERE a.status = 'planned'
+    WHERE a.tier = 'first-class'
+      AND a.status = 'planned'
       ${waveClause}
       AND NOT EXISTS (
         SELECT 1
@@ -332,7 +338,7 @@ export function listReadyToMigrate(
   `).all(params) as Artifact[];
 }
 
-/** Returns a summary of all waves: wave number, total files, and counts per status. */
+/** Returns a wave summary for first-class artifacts only. */
 export function wavePlan(db: Database.Database): {
   wave: number;
   total: number;
@@ -342,6 +348,7 @@ export function wavePlan(db: Database.Database): {
     SELECT wave, status, COUNT(*) AS count
     FROM artifacts
     WHERE wave IS NOT NULL
+      AND tier = 'first-class'
     GROUP BY wave, status
     ORDER BY wave ASC
   `).all() as { wave: number; status: string; count: number }[];

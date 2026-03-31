@@ -4,7 +4,15 @@ export type Kind =
   | "test"
   | "module"
   | "config"
+  | "descriptor"
+  | "sql-schema"
+  | "properties"
   | "shared-constants";
+
+/** Kinds that follow the full first-class migration pipeline. */
+export const FIRST_CLASS_KINDS: Kind[] = ["legacy-source"];
+
+export type ArtifactTier = "first-class" | "second-class";
 
 export type Role =
   | "rest-endpoint"
@@ -63,6 +71,7 @@ export type Agent =
   | "test-agent"
   | "codegen-agent"
   | "planner-agent"
+  | "stack-advisor"
   | "migration-agent"
   | "review-agent"
   | "orchestrator";
@@ -90,6 +99,7 @@ export interface Artifact {
   id: string;
   slug: string;
   kind: Kind;
+  tier: ArtifactTier;
   path: string;
   module: string | null;
   role: Role | null;
@@ -153,16 +163,31 @@ export const EXIT_CODES = {
   NOT_FOUND: 2,
   CONFLICT: 3,
   ALL_DONE: 4,
+  NEEDS_CONFIRMATION: 5,
 } as const;
 
 export class RegistryError extends Error {
   constructor(
-    public readonly code: 1 | 2 | 3 | 4,
+    public readonly code: 1 | 2 | 3 | 4 | 5,
     message: string,
   ) {
     super(message);
     this.name = "RegistryError";
   }
+}
+
+export type MappingStrategy = "direct" | "adapter" | "rewrite";
+
+export interface StackMapping {
+  id: string;
+  legacy_framework: string;
+  target_framework: string;
+  strategy: MappingStrategy | null;
+  notes: string | null;
+  confirmed: number; // 0 | 1 (SQLite boolean)
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  created_at: string;
 }
 
 /** `legacy:pcsl:BadRequestExceptionHandler` → `legacy--pcsl--badrequestexceptionhandler` */

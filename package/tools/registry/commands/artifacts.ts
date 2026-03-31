@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
-import { idToSlug, RegistryError, TAG_VOCABULARY, validateId } from "../types";
-import type { Artifact, Kind, Role, Status } from "../types";
+import { FIRST_CLASS_KINDS, idToSlug, RegistryError, TAG_VOCABULARY, validateId } from "../types";
+import type { Artifact, ArtifactTier, Kind, Role, Status } from "../types";
 
 export interface RegisterArtifactOptions {
   id: string;
@@ -9,6 +9,7 @@ export interface RegisterArtifactOptions {
   module?: string;
   role?: Role;
   framework?: string;
+  tier?: ArtifactTier;
 }
 
 export function registerArtifact(
@@ -23,15 +24,19 @@ export function registerArtifact(
     throw new RegistryError(3, `Artifact already registered: "${opts.id}"`);
 
   const slug = idToSlug(opts.id);
+  const tier: ArtifactTier =
+    opts.tier ?? (FIRST_CLASS_KINDS.includes(opts.kind) ? "first-class" : "second-class");
+
   db.prepare(
     `
-    INSERT INTO artifacts (id, slug, kind, path, module, role, framework, status, data_path)
-    VALUES (@id, @slug, @kind, @path, @module, @role, @framework, 'pending', @data_path)
+    INSERT INTO artifacts (id, slug, kind, tier, path, module, role, framework, status, data_path)
+    VALUES (@id, @slug, @kind, @tier, @path, @module, @role, @framework, 'pending', @data_path)
   `,
   ).run({
     id: opts.id,
     slug,
     kind: opts.kind,
+    tier,
     path: opts.path,
     module: opts.module ?? null,
     role: opts.role ?? null,

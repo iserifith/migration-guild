@@ -12,8 +12,12 @@ CREATE TABLE IF NOT EXISTS artifacts (
                      'test',
                      'module',
                      'config',
+                     'descriptor',
+                     'sql-schema',
+                     'properties',
                      'shared-constants'
                  )),
+    tier         TEXT NOT NULL DEFAULT 'second-class' CHECK (tier IN ('first-class', 'second-class')),
     path         TEXT NOT NULL,
     module       TEXT,
     role         TEXT CHECK (role IS NULL OR role IN (
@@ -55,6 +59,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
 
 CREATE INDEX IF NOT EXISTS idx_artifacts_status ON artifacts(status);
 CREATE INDEX IF NOT EXISTS idx_artifacts_wave   ON artifacts(wave);
+CREATE INDEX IF NOT EXISTS idx_artifacts_tier   ON artifacts(tier);
 
 -- ─── Outcome Tags ────────────────────────────────────────────────────────────
 
@@ -159,8 +164,28 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE INDEX IF NOT EXISTS idx_runs_agent  ON runs(agent);
 CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
 
+-- ─── Stack Mappings ──────────────────────────────────────────────────────────
+-- Created by stack-advisor after inventory; confirmed by a human before planning.
+
+CREATE TABLE IF NOT EXISTS stack_mappings (
+    id               TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+    legacy_framework TEXT NOT NULL,
+    target_framework TEXT NOT NULL,
+    strategy         TEXT CHECK (strategy IS NULL OR strategy IN ('direct', 'adapter', 'rewrite')),
+    notes            TEXT,
+    confirmed        INTEGER NOT NULL DEFAULT 0 CHECK (confirmed IN (0, 1)),
+    confirmed_by     TEXT,
+    confirmed_at     TEXT,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (legacy_framework, target_framework)
+);
+
+CREATE INDEX IF NOT EXISTS idx_stack_mappings_confirmed ON stack_mappings(confirmed);
+
 -- ─── Migrations for existing databases ───────────────────────────────────────
 
 ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS claimed_by   TEXT;
 ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS claimed_at   TEXT;
 ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS claimed_from TEXT;
+ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS tier         TEXT NOT NULL DEFAULT 'second-class'
+  CHECK (tier IN ('first-class', 'second-class'));
