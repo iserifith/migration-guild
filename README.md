@@ -2,7 +2,13 @@
 
 **Migrate any legacy Java codebase to a modern framework using GitHub Copilot CLI.**
 
-Supports Spring Boot 3.x, Quarkus, Micronaut, Jakarta EE 10, and plain Java 21.
+The target framework is chosen based on what the legacy code actually is — not assumed upfront:
+
+| Legacy project type | Target |
+| --- | --- |
+| Web apps (JAX-RS, servlets, `web.xml`) | Spring Boot 3.x + `spring-boot-starter-web` |
+| Services, batch jobs, CLI tools, queue consumers | Spring Boot 3.x + `spring-boot-starter` (no embedded server) |
+| Libraries and utilities (no `main()`, published as JAR) | Plain Java 17+ with JUnit 5 |
 
 ---
 
@@ -35,8 +41,8 @@ npx legmod-setup
 
 The setup wizard asks two questions:
 
-1. **Target framework** — choose from the list or type your own
-2. **Legacy repo URL** — paste the GitHub URL; it will be cloned into `legacy/` automatically
+1. **Legacy repo URL** — paste the GitHub URL; it will be cloned into `legacy/` automatically
+2. **Project type** — `web`, `service`, or `library` (used to select the right Gradle build template)
 
 Then build the registry CLI:
 
@@ -134,7 +140,7 @@ Migrate next task
 1. The agent claims the next available `planned` artifact (lowest wave first)
 2. Reads the legacy file
 3. Finds the target framework equivalent using the reference agent
-4. Writes tests in `modern/` first (TDD)
+4. Writes tests in `modern/` first (TDD) — plain JUnit 5 for libraries, Spring Boot test slices (`@WebMvcTest`, `@SpringBootTest`) for web and service targets
 5. Writes the migrated production code
 6. Updates the registry to `migrated`
 
@@ -225,6 +231,12 @@ node migration/registry/dist/cli.js wave-plan
 # All artifacts with a filter
 node migration/registry/dist/cli.js list-artifacts --status needs-rework
 
+# See what every agent is currently working on (with age)
+node migration/registry/dist/cli.js show-in-progress
+
+# Release a stuck in-progress artifact (e.g. after a crashed agent)
+node migration/registry/dist/cli.js release --id "legacy-source:jolt-core:Chainr" --agent "operator" --reason "agent crashed"
+
 # Event history for one file
 node migration/registry/dist/cli.js get-events --id "legacy-source:jolt-core:Chainr"
 ```
@@ -273,7 +285,13 @@ cd migration && npm install && npm run build && cd ..
 Make sure you run Copilot from the workspace root (not inside `legacy/` or `migration/`).
 
 **"No claimable tasks"**
-All planned artifacts are either in-progress or waiting on dependencies. Check `wave-plan` to see which wave is blocked and why.
+All planned artifacts are either in-progress or waiting on dependencies. Check `wave-plan` to see which wave is blocked and why. Use `show-in-progress` to see what agents are holding claims.
+
+**Agent crashed mid-task**
+An artifact left `in-progress` by a crashed agent blocks that slot. Release it so another session can pick it up:
+```bash
+node migration/registry/dist/cli.js release --id "<id>" --agent "operator" --reason "agent crashed"
+```
 
 **Agent doesn't run shell commands**
 Ensure you pass `--yolo` (or `--allow-all-tools`) when starting Copilot. Without it, the agent can't run `node migration/registry/dist/cli.js`.
