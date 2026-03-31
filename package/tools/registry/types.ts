@@ -23,6 +23,7 @@ export type Role =
 export type Status =
   | "pending"
   | "planned"
+  | "analyzed"
   | "in-progress"
   | "tests-written"
   | "migrated"
@@ -58,6 +59,9 @@ export type EventType =
 
 export type Agent =
   | "context-agent"
+  | "analyze-agent"
+  | "test-agent"
+  | "codegen-agent"
   | "planner-agent"
   | "migration-agent"
   | "review-agent"

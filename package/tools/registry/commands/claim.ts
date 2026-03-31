@@ -3,12 +3,11 @@ import { RegistryError } from "../types";
 import type { Artifact } from "../types";
 
 /**
- * Atomically claims the next available artifact for migration.
+ * Atomically claims the next available artifact for a specific phase.
  *
  * An artifact is claimable when:
- *   1. Its status is "planned"
- *   2. All artifacts it depends on (via "source-of" relation) have status "migrated",
- *      "reviewed", "completed", or "skipped"
+ *   1. Its status matches `fromStatus`
+ *   2. All artifacts it depends on have status "migrated", "reviewed", "completed", or "skipped"
  *
  * The read-check-write is wrapped in a SQLite transaction, so concurrent sessions
  * cannot claim the same artifact.
@@ -19,9 +18,14 @@ export function claimNextTask(
   db: Database.Database,
   agent: string,
   wave?: number,
+  fromStatus: string = "planned",
 ): Artifact {
+  const toStatus = fromStatus === "planned" ? "in-progress"
+    : fromStatus === "analyzed" ? "in-progress"
+    : "in-progress";
+
   const claim = db.transaction((): Artifact => {
-    const params: Record<string, string | number> = {};
+    const params: Record<string, string | number> = { fromStatus };
     let waveClause = "";
     if (wave !== undefined) {
       waveClause = "AND a.wave = @wave";
@@ -31,7 +35,7 @@ export function claimNextTask(
     const candidate = db.prepare(`
       SELECT a.*
       FROM artifacts a
-      WHERE a.status = 'planned'
+      WHERE a.status = @fromStatus
         ${waveClause}
         AND NOT EXISTS (
           SELECT 1
@@ -46,21 +50,21 @@ export function claimNextTask(
 
     if (!candidate) {
       const msg = wave !== undefined
-        ? `No claimable tasks in wave ${wave}.`
-        : "No claimable tasks. All planned artifacts are either in-progress or waiting on dependencies.";
+        ? `No claimable tasks in wave ${wave} with status '${fromStatus}'.`
+        : `No claimable tasks. All '${fromStatus}' artifacts are either in-progress or waiting on dependencies.`;
       throw new RegistryError(2, msg);
     }
 
     db.prepare(`
       UPDATE artifacts
-      SET status = 'in-progress', updated_at = datetime('now')
-      WHERE id = ? AND status = 'planned'
-    `).run(candidate.id);
+      SET status = '${toStatus}', updated_at = datetime('now')
+      WHERE id = ? AND status = @fromStatus
+    `).run(candidate.id, { fromStatus });
 
     db.prepare(`
       INSERT INTO events (event_id, artifact_id, type, agent, summary)
       VALUES (lower(hex(randomblob(8))), ?, 'claimed', ?, ?)
-    `).run(candidate.id, agent, `Claimed by ${agent} for migration`);
+    `).run(candidate.id, agent, `Claimed by ${agent} (from ${fromStatus})`);
 
     return db.prepare(`SELECT * FROM artifacts WHERE id = ?`).get(candidate.id) as Artifact;
   });

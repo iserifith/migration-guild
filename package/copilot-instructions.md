@@ -14,11 +14,12 @@ This project is undergoing a Java migration using the **legmod** kit.
 Phases run in order. Phases 3–5 are parallelizable across multiple Copilot sessions.
 
 ```
-1. Inventory   — scan legacy/, register all artifacts (status: pending)
-2. Planning    — analyze dependencies, assign waves, set status: planned
-3. Test Prep   — claim task, write target-side tests first
-4. Execute     — migrate production code to modern/
-5. Review      — verify correctness, write verdict
+1. Inventory — scan legacy/, register all artifacts (status: pending)
+2. Planning  — analyze dependencies, assign waves, set status: planned
+3. Analyze   — extract behavior from legacy file, write context, set status: analyzed
+4. Tests     — write target-side tests from context, set status: tests-written
+5. Codegen   — write migrated production code, set status: migrated
+6. Review    — verify correctness, write verdict
 ```
 
 ## Registry CLI
@@ -51,10 +52,12 @@ Run each phase with the most cost-effective model for the task:
 
 | Phase | Agent | Recommended model | Reason |
 |---|---|---|---|
-| Inventory | `context-agent` | `gpt-5-mini` | High volume, pattern matching |
-| Planning  | `planner-agent` | `claude-sonnet-4.6` | Dependency graph reasoning |
-| Migration | `migration-agent` | `gpt-5-mini` | High volume, mechanical transformations |
-| Review    | `review-agent` | `claude-sonnet-4.6` | Code review judgment |
-| Reference | `reference-agent` | `gpt-5-mini` | Simple pattern retrieval |
+| Inventory | `context-agent`  | `gpt-5-mini`        | High volume, pattern matching |
+| Planning  | `planner-agent`  | `claude-sonnet-4.6` | Dependency graph reasoning |
+| Analysis  | `analyze-agent`  | `gpt-5-mini`        | Pattern extraction, structured output |
+| Tests     | `test-agent`     | `claude-sonnet-4.6` | Behavior reasoning, meaningful tests |
+| Codegen   | `codegen-agent`  | `gpt-5-mini`        | Mechanical translation given spec |
+| Review    | `review-agent`   | `claude-sonnet-4.6` | Code review judgment |
+| Reference | `reference-agent`| `gpt-5-mini`        | Simple pattern retrieval |
 
 Usage: `copilot --agent <agent-name> --model <model-id> -p "..."`

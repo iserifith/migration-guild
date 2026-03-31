@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
     status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN (
                      'pending',
                      'planned',
+                     'analyzed',
                      'in-progress',
                      'tests-written',
                      'migrated',
