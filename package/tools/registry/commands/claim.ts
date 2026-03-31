@@ -12,7 +12,9 @@ import type { Artifact } from "../types";
  * The read-check-write is wrapped in a SQLite transaction, so concurrent sessions
  * cannot claim the same artifact.
  *
- * Returns the claimed artifact, or throws NOT_FOUND if nothing is available.
+ * Returns the claimed artifact, or throws:
+ *   - RegistryError(2) — nothing claimable right now, but work remains (blocked by deps or in-progress)
+ *   - RegistryError(4) — all tasks are in terminal states; agent should stop
  */
 export function claimNextTask(
   db: Database.Database,
@@ -21,9 +23,7 @@ export function claimNextTask(
   fromStatus: string = "planned",
   model?: string,
 ): Artifact {
-  const toStatus = fromStatus === "planned" ? "in-progress"
-    : fromStatus === "analyzed" ? "in-progress"
-    : "in-progress";
+  const toStatus = "in-progress";
 
   const claim = db.transaction((): Artifact => {
     const params: Record<string, string | number> = { fromStatus };
@@ -50,17 +50,36 @@ export function claimNextTask(
     `).get(params) as Artifact | undefined;
 
     if (!candidate) {
+      // Distinguish: is there any work still in flight, or is everything done?
+      const waveParam = wave !== undefined ? { wave } : {};
+      const waveFilter = wave !== undefined ? "AND wave = @wave" : "";
+
+      const activeCount = db.prepare(`
+        SELECT COUNT(*) AS count FROM artifacts
+        WHERE status IN ('planned', 'analyzed', 'in-progress', 'tests-written')
+          ${waveFilter}
+      `).get(waveParam) as { count: number };
+
+      if (activeCount.count === 0) {
+        const scope = wave !== undefined ? ` in wave ${wave}` : "";
+        throw new RegistryError(4, `All tasks complete${scope}. Nothing planned or in-progress remains.`);
+      }
+
       const msg = wave !== undefined
-        ? `No claimable tasks in wave ${wave} with status '${fromStatus}'.`
-        : `No claimable tasks. All '${fromStatus}' artifacts are either in-progress or waiting on dependencies.`;
+        ? `No claimable tasks in wave ${wave} with status '${fromStatus}'. ${activeCount.count} artifact(s) are in-progress or waiting on dependencies.`
+        : `No claimable tasks. ${activeCount.count} artifact(s) are in-progress or waiting on dependencies.`;
       throw new RegistryError(2, msg);
     }
 
     db.prepare(`
       UPDATE artifacts
-      SET status = '${toStatus}', updated_at = datetime('now')
+      SET status = ?,
+          claimed_by = ?,
+          claimed_at = datetime('now'),
+          claimed_from = ?,
+          updated_at = datetime('now')
       WHERE id = ? AND status = @fromStatus
-    `).run(candidate.id, { fromStatus });
+    `).run(toStatus, agent, fromStatus, candidate.id, { fromStatus });
 
     db.prepare(`
       INSERT INTO events (event_id, artifact_id, type, agent, model, summary)

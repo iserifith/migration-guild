@@ -278,6 +278,32 @@ export function showFileStatus(db: Database.Database, filePath: string) {
   return { artifact, tags, recent_events: events, agent_context: context };
 }
 
+/** Returns all artifacts currently in-progress, with claim ownership and age. */
+export function showInProgress(db: Database.Database): {
+  id: string;
+  path: string;
+  module: string | null;
+  role: string | null;
+  claimed_by: string | null;
+  claimed_at: string | null;
+  claimed_minutes_ago: number | null;
+}[] {
+  return db.prepare(`
+    SELECT
+      id, path, module, role,
+      claimed_by,
+      claimed_at,
+      CASE
+        WHEN claimed_at IS NOT NULL
+        THEN CAST(ROUND((julianday('now') - julianday(claimed_at)) * 1440) AS INTEGER)
+        ELSE NULL
+      END AS claimed_minutes_ago
+    FROM artifacts
+    WHERE status = 'in-progress'
+    ORDER BY claimed_at ASC
+  `).all() as ReturnType<typeof showInProgress>;
+}
+
 /** Returns all planned artifacts whose dependencies are all done — ready to claim now. */
 export function listReadyToMigrate(
   db: Database.Database,
