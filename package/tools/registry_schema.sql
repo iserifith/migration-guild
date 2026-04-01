@@ -182,6 +182,23 @@ CREATE TABLE IF NOT EXISTS stack_mappings (
 
 CREATE INDEX IF NOT EXISTS idx_stack_mappings_confirmed ON stack_mappings(confirmed);
 
+-- ─── Triggers ────────────────────────────────────────────────────────────────
+-- Auto-write a status-changed event whenever any agent (at any depth) updates
+-- an artifact's status. legmod CLI polls this table — no agent cooperation needed.
+
+CREATE TRIGGER IF NOT EXISTS trg_artifact_status_change
+AFTER UPDATE OF status ON artifacts
+WHEN OLD.status != NEW.status
+BEGIN
+  INSERT INTO events (artifact_id, type, agent, summary)
+  VALUES (
+    NEW.id,
+    'status-changed',
+    COALESCE(NEW.claimed_by, 'system'),
+    OLD.status || ' → ' || NEW.status
+  );
+END;
+
 -- ─── Migrations for existing databases ───────────────────────────────────────
 
 ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS claimed_by   TEXT;
