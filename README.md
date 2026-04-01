@@ -44,7 +44,7 @@ The setup wizard asks two questions:
 1. **Legacy repo URL** — paste the GitHub URL; it will be cloned into `legacy/` automatically
 2. **Project type** — `web`, `service`, or `library` (used to select the right Gradle build template)
 
-Then build the registry CLI:
+Then build the registry and legmod CLIs:
 
 ```bash
 cd migration && npm install && npm run build && cd ..
@@ -66,7 +66,46 @@ migration/       ← registry CLI and database
 
 ---
 
-## 2. Inventory
+## Using the legmod CLI (recommended)
+
+The `legmod` CLI is a one-command orchestrator that drives the full pipeline for you. It spawns Copilot under the hood with the right agent, model, and flags — no manual wiring needed.
+
+```bash
+# Run the full pipeline (inventory → plan → migrate → review)
+node migration/legmod/dist/cli.js run
+
+# Run with 3 parallel migration + review sessions
+node migration/legmod/dist/cli.js run --parallel 3
+
+# Run individual phases
+node migration/legmod/dist/cli.js inventory
+node migration/legmod/dist/cli.js plan
+node migration/legmod/dist/cli.js migrate --parallel 3
+node migration/legmod/dist/cli.js review --parallel 2
+
+# Check current status
+node migration/legmod/dist/cli.js status
+```
+
+**What legmod handles automatically:**
+- Selects the right agent and model per phase
+- Passes `--yolo` so agents can run registry commands without interruption
+- Prompts you to confirm framework mappings before planning proceeds
+- Spawns N parallel sessions for migration and review
+- Polls `registry.db` for live progress via SQLite triggers (no agent cooperation needed)
+- Advances phases automatically when the current phase completes
+
+> **Tip:** Set `COPILOT_CMD=gh` (or whatever your Copilot CLI binary is named) if `copilot` doesn't resolve on `PATH`. For example: `COPILOT_CMD=gh node migration/legmod/dist/cli.js run`
+>
+> Set `LEGMOD_STALL_MINS=<n>` to change the stall warning threshold in `legmod watch` (default: 10 minutes).
+
+---
+
+## Manual Copilot invocation (advanced)
+
+The steps below describe the same workflow using raw `copilot` CLI commands. Use these when you need fine-grained control, want to target a specific file, or the legmod CLI doesn't cover your use case.
+
+
 
 Open Copilot in your workspace and run the inventory phase. This scans every Java file in `legacy/`, classifies it, and registers it in the registry.
 
