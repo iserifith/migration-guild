@@ -171,10 +171,11 @@ async function runInstall() {
   console.log("\nNext steps:");
   if (!repoUrl) console.log("  1. Copy your legacy Java source into legacy/");
   const n = repoUrl ? 1 : 2;
-  console.log(`  ${n}. Build the registry CLI: cd migration && npm install && npm run build && cd ..`);
-  console.log(`  ${n+1}. Run Copilot and say: "Run inventory"`);
-  console.log(`  ${n+2}. Then: "Run planning"`);
-  console.log(`  ${n+3}. Then open sessions and say: "Migrate next task"\n`);
+  console.log(`  ${n}. Build the registry and legmod CLIs: cd migration && npm install && npm run build && cd ..`);
+  console.log(`  ${n+1}. Run the full migration pipeline:`);
+  console.log(`       node migration/legmod/dist/cli.js run --parallel 3`);
+  console.log(`  ${n+2}. Or watch live progress in a second terminal:`);
+  console.log(`       node migration/legmod/dist/cli.js watch\n`);
 }
 
 async function main() {
