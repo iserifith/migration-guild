@@ -5,7 +5,8 @@
   "main": "registry/dist/index.js",
   "types": "registry/dist/index.d.ts",
   "bin": {
-    "registry": "registry/dist/cli.js"
+    "registry": "registry/dist/cli.js",
+    "legmod": "legmod/dist/cli.js"
   },
   "scripts": {
     "build": "tsup",
