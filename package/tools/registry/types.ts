@@ -63,7 +63,13 @@ export type EventType =
   | "tag-added"
   | "tag-removed"
   | "context-written"
-  | "status-changed";
+  | "status-changed"
+  | "evaluated"
+  | "auto-completed"
+  | "auto-rework"
+  | "batch-submitted"
+  | "batch-applied"
+  | "thread-created";
 
 export type Agent =
   | "context-agent"
@@ -91,6 +97,11 @@ export const TAG_VOCABULARY = [
   "no-legacy-deps",
   "blocked-external",
   "blocked-human-decision",
+  "eval-passed",
+  "eval-failed",
+  "eval-partial",
+  "batch-analyzed",
+  "thread-active",
 ] as const;
 
 export type Tag = (typeof TAG_VOCABULARY)[number];
@@ -203,4 +214,195 @@ export function validateId(id: string): void {
       `Invalid artifact ID format: "${id}". Expected <kind>:<module>:<ClassName>`,
     );
   }
+}
+
+// ─── Foundry types ────────────────────────────────────────────────────────────
+
+export type EvaluatorName =
+  | "no-legacy-imports"
+  | "signature-preservation"
+  | "test-coverage"
+  | "correctness";
+
+export interface Evaluation {
+  eval_id: string;
+  artifact_id: string;
+  evaluator: EvaluatorName;
+  score: number | null;
+  pass: 0 | 1;
+  feedback: string | null;
+  model: string | null;
+  eval_at: string;
+}
+
+export type BatchJobType = "inventory" | "embed" | "evaluate";
+export type BatchJobStatus = "submitted" | "running" | "completed" | "failed";
+
+export interface BatchJob {
+  job_id: string;
+  foundry_job_id: string | null;
+  type: BatchJobType;
+  wave: number | null;
+  status: BatchJobStatus;
+  artifact_ids: string; // JSON array
+  submitted_at: string;
+  completed_at: string | null;
+  result_path: string | null;
+}
+
+export interface Trace {
+  trace_id: string;
+  run_id: string | null;
+  artifact_id: string | null;
+  span_name: string;
+  model: string | null;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  latency_ms: number | null;
+  cost_usd: number | null;
+  ts: string;
+}
+
+export type AgentThreadType = "migration" | "review" | "context";
+
+export interface AgentThread {
+  artifact_id: string;
+  thread_id: string;
+  agent_type: AgentThreadType;
+  created_at: string;
+  last_message_at: string | null;
+}
+
+// ─── Monitoring Dashboard API DTOs ────────────────────────────────────────────
+// Stable response shapes for the monitoring dashboard HTTP endpoints.
+// All future feature slices MUST extend these rather than invent new shapes.
+// serve.ts is the only allowed consumer of these types on the server side.
+
+/** GET /api/artifacts — one row per artifact, full detail. */
+export interface ApiArtifactRow {
+  id: string;
+  slug: string;
+  kind: Kind;
+  tier: ArtifactTier;
+  path: string;
+  module: string | null;
+  role: Role | null;
+  framework: string | null;
+  status: Status;
+  wave: number | null;
+  data_path: string | null;
+  claimed_by: string | null;
+  claimed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** GET /api/status — overall migration progress summary. */
+export interface ApiStatusResponse {
+  files: {
+    total: number;
+    completed: number;
+    in_progress: number;
+    pending: number;
+    by_status: Record<string, number>;
+  };
+  /** Parsed value of operator_state key "current_focus" (null if unset). */
+  current_focus: unknown | null;
+  /** Parsed value of operator_state key "next" (null if unset). */
+  next: unknown | null;
+  open_blockers: ApiBlockerRow[];
+  open_issues: ApiIssueRow[];
+}
+
+/** One entry in GET /api/wave-plan. */
+export interface ApiWavePlanEntry {
+  wave: number;
+  total: number;
+  by_status: Record<string, number>;
+}
+
+/**
+ * One row in GET /api/events.
+ * Column aliases preserve the names ArtifactDetail.tsx already depends on:
+ *   event_id → id, type → event_type, summary → note, ts → created_at
+ */
+export interface ApiEventRow {
+  id: string;
+  event_type: string;
+  agent: string;
+  model: string | null;
+  note: string;
+  event_data: Record<string, unknown> | null;
+  created_at: string;
+}
+
+/** One row in GET /api/sessions — in-progress artifact with claim info. */
+export interface ApiSessionRow {
+  id: string;
+  path: string;
+  module: string | null;
+  role: string | null;
+  status: Status;
+  claimed_by: string | null;
+  claimed_at: string | null;
+  claimed_minutes_ago: number | null;
+  /** True when claimed_minutes_ago exceeds the stall threshold. */
+  stalled: boolean;
+}
+
+/** One row in GET /api/blockers. */
+export interface ApiBlockerRow {
+  artifact_id: string;
+  blocker_id: string | null;
+  summary: string;
+  since: string;
+}
+
+/** One row in GET /api/issues. */
+export interface ApiIssueRow {
+  artifact_id: string;
+  issue_id: string | null;
+  severity: string | null;
+  category: string | null;
+  summary: string;
+  ts: string;
+}
+
+/** One row in GET /api/runs. */
+export interface ApiRunRow {
+  run_id: string;
+  agent: string;
+  model: string | null;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  exit_code: number | null;
+  log_file: string | null;
+}
+
+/** One row in GET /api/evaluations — aggregated per evaluator. */
+export interface ApiEvalSummary {
+  evaluator: EvaluatorName;
+  total: number;
+  passed: number;
+  failed: number;
+  avg_score: number | null;
+}
+
+/** Top-level shape of GET /api/cost. */
+export interface ApiCostSummary {
+  total_tokens_in: number;
+  total_tokens_out: number;
+  total_cost_usd: number;
+  total_calls: number;
+  by_model: ApiCostByModel[];
+}
+
+/** Per-model cost breakdown inside GET /api/cost. */
+export interface ApiCostByModel {
+  model: string;
+  calls: number;
+  tokens_in: number;
+  tokens_out: number;
+  cost_usd: number;
 }

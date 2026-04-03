@@ -7,7 +7,9 @@
   },
   "scripts": {
     "build": "tsup setup.ts --format cjs --out-dir dist",
-    "dev": "tsx setup.ts"
+    "dev": "tsx setup.ts",
+    "build:dist": "./scripts/build-dist.sh",
+    "build:dist:version": "./scripts/build-dist.sh --version"
   },
   "devDependencies": {
     "tsup": "^8.0.2",

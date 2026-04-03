@@ -1,6 +1,7 @@
 import * as path from "path";
 import type Database from "better-sqlite3";
 import type { RegistryEvent } from "./poller";
+import { STALL_MINUTES } from "./monitoring";
 
 // ─── ANSI helpers ─────────────────────────────────────────────────────────────
 const R = "\x1b[0m";
@@ -50,7 +51,7 @@ export function printWavePlan(db: Database.Database): void {
   const rows = db.prepare(`
     SELECT wave,
            COUNT(*) AS total,
-           SUM(CASE WHEN status IN ('reviewed','completed') THEN 1 ELSE 0 END) AS done,
+           SUM(CASE WHEN status IN ('reviewed','completed','skipped') THEN 1 ELSE 0 END) AS done,
            SUM(CASE WHEN status IN ('migrated','tests-written','in-progress','analyzed') THEN 1 ELSE 0 END) AS active
     FROM artifacts
     WHERE tier = 'first-class' AND wave IS NOT NULL
@@ -115,7 +116,10 @@ export function printInProgress(db: Database.Database): void {
       ? Math.round((Date.now() - new Date(row.claimed_at + "Z").getTime()) / 1000)
       : 0;
     const ageStr = age > 60 ? `${Math.round(age / 60)}m` : `${age}s`;
+    const stalled = age >= STALL_MINUTES * 60;
     const file = path.basename(row.path);
-    console.log(`  ${YELLOW}${row.claimed_by.padEnd(18)}${R}  ${file}  ${DIM}${ageStr}${R}`);
+    const ageColor = stalled ? RED : DIM;
+    const stallFlag = stalled ? `  ${RED}⚠ stalled${R}` : "";
+    console.log(`  ${YELLOW}${row.claimed_by.padEnd(18)}${R}  ${file}  ${ageColor}${ageStr}${R}${stallFlag}`);
   }
 }

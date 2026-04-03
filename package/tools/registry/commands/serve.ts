@@ -2,6 +2,18 @@ import * as http from "http";
 import * as fs from "fs";
 import * as path from "path";
 import type Database from "better-sqlite3";
+import {
+  queryArtifactsForUI,
+  queryStatusSummary,
+  queryWavePlanForUI,
+  queryEventsForUI,
+  queryStalledSessions,
+  queryOpenBlockers,
+  queryOpenIssues,
+  queryRunHistory,
+  queryEvaluationSummary,
+  queryCostSummary,
+} from "./queries";
 
 const MIME: Record<string, string> = {
   ".html": "text/html",
@@ -32,68 +44,74 @@ function json(res: http.ServerResponse, data: unknown) {
 export function startServer(db: Database.Database, port = 3322) {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? "/", `http://localhost:${port}`);
-    const pathname = url.pathname;
+    const p = url.pathname;
 
     // ── API routes ────────────────────────────────────────────────────────
-    if (pathname === "/api/artifacts") {
-      const status = url.searchParams.get("status");
-      const module = url.searchParams.get("module");
-      const kind   = url.searchParams.get("kind");
-      let q = "SELECT * FROM artifacts WHERE 1=1";
-      const params: string[] = [];
-      if (status) { q += " AND status = ?"; params.push(status); }
-      if (module) { q += " AND module = ?"; params.push(module); }
-      if (kind)   { q += " AND kind = ?";   params.push(kind);   }
-      q += " ORDER BY wave ASC NULLS LAST, id ASC";
-      return json(res, db.prepare(q).all(...params));
+    //
+    // All data access goes through query helpers in commands/queries.ts.
+    // This file is intentionally a thin HTTP dispatcher — no raw SQL here.
+
+    if (p === "/api/artifacts") {
+      return json(res, queryArtifactsForUI(db, {
+        status: url.searchParams.get("status") ?? undefined,
+        module: url.searchParams.get("module") ?? undefined,
+        kind:   url.searchParams.get("kind")   ?? undefined,
+        tier:   url.searchParams.get("tier")   ?? undefined,
+      }));
     }
 
-    if (pathname === "/api/status") {
-      const rows = db.prepare(
-        "SELECT status, COUNT(*) as n FROM artifacts GROUP BY status"
-      ).all() as { status: string; n: number }[];
-      const by_status: Record<string, number> = {};
-      let total = 0, in_progress = 0, completed = 0;
-      for (const r of rows) {
-        by_status[r.status] = r.n;
-        total += r.n;
-        if (r.status === "in-progress") in_progress = r.n;
-        if (["migrated","reviewed","completed","skipped"].includes(r.status)) completed += r.n;
-      }
-      const op = db.prepare("SELECT key, value FROM operator_state WHERE key IN ('current_focus','next_action')").all() as
-        { key: string; value: string }[];
-      const opMap = Object.fromEntries(op.map((r) => [r.key, r.value]));
-      return json(res, {
-        files: { total, completed, in_progress, by_status },
-        current_focus: opMap["current_focus"] ?? null,
-        next: opMap["next_action"] ?? null,
-      });
+    if (p === "/api/status") {
+      return json(res, queryStatusSummary(db));
     }
 
-    if (pathname === "/api/wave-plan") {
-      const rows = db.prepare(
-        "SELECT wave, status, COUNT(*) as n FROM artifacts WHERE wave IS NOT NULL GROUP BY wave, status ORDER BY wave"
-      ).all() as { wave: number; status: string; n: number }[];
-      const plan = new Map<number, Record<string, number>>();
-      for (const r of rows) {
-        if (!plan.has(r.wave)) plan.set(r.wave, {});
-        plan.get(r.wave)![r.status] = r.n;
-      }
-      return json(res, [...plan.entries()].map(([wave, by_status]) => ({
-        wave, total: Object.values(by_status).reduce((a, b) => a + b, 0), by_status,
-      })));
+    if (p === "/api/wave-plan") {
+      return json(res, queryWavePlanForUI(db));
     }
 
-    if (pathname === "/api/events") {
-      const id = url.searchParams.get("id");
+    if (p === "/api/events") {
+      const id    = url.searchParams.get("id");
+      const limit = Number(url.searchParams.get("limit") ?? 50);
       if (!id) return json(res, []);
-      return json(res, db.prepare(
-        "SELECT event_id as id, type as event_type, agent, summary as note, ts as created_at FROM events WHERE artifact_id = ? ORDER BY ts DESC LIMIT 50"
-      ).all(id));
+      return json(res, queryEventsForUI(db, id, limit));
+    }
+
+    // ── Future slice endpoints ────────────────────────────────────────────
+    // These are intentionally wired up now so later feature-slice agents
+    // have a stable URL contract to code against.  The query helpers already
+    // return full data; slices only need to add filtering / UI.
+
+    if (p === "/api/sessions") {
+      const threshold = Number(url.searchParams.get("stall_minutes") ?? 60);
+      return json(res, queryStalledSessions(db, threshold));
+    }
+
+    if (p === "/api/blockers") {
+      return json(res, queryOpenBlockers(db));
+    }
+
+    if (p === "/api/issues") {
+      return json(res, queryOpenIssues(db));
+    }
+
+    if (p === "/api/runs") {
+      return json(res, queryRunHistory(db, {
+        agent:  url.searchParams.get("agent")  ?? undefined,
+        status: url.searchParams.get("status") ?? undefined,
+        limit:  Number(url.searchParams.get("limit") ?? 100),
+      }));
+    }
+
+    if (p === "/api/evaluations") {
+      const artifactId = url.searchParams.get("id") ?? undefined;
+      return json(res, queryEvaluationSummary(db, artifactId));
+    }
+
+    if (p === "/api/cost") {
+      return json(res, queryCostSummary(db));
     }
 
     // ── Static UI ─────────────────────────────────────────────────────────
-    if (pathname === "/" || pathname === "/index.html") {
+    if (p === "/" || p === "/index.html") {
       const index = path.join(UI_DIR, "index.html");
       if (!serveStatic(res, index)) {
         res.writeHead(404); res.end("UI not built. Run: npm run build:ui");
@@ -101,7 +119,7 @@ export function startServer(db: Database.Database, port = 3322) {
       return;
     }
 
-    const file = path.join(UI_DIR, pathname);
+    const file = path.join(UI_DIR, p);
     if (!serveStatic(res, file)) {
       // SPA fallback
       const index = path.join(UI_DIR, "index.html");

@@ -4,9 +4,25 @@ import * as path from "path";
 import * as readline from "readline";
 import { execSync } from "child_process";
 
-const PKG_DIR = path.join(__dirname, "..", "package");
+const PKG_DIR = fs.existsSync(path.join(__dirname, "package"))
+  ? path.join(__dirname, "package")          // setup.js at kit root (e.g. node setup.js)
+  : path.join(__dirname, "..", "package");   // setup.js inside dist/ subfolder
 const CWD = process.cwd();
 const GITHUB_DIR = path.join(CWD, ".github");
+
+// ── CLI flag parsing ──────────────────────────────────────────────────────────
+// Supports non-interactive mode:
+//   --framework "Spring Boot 3.x"   skip framework prompt
+//   --legacy-url <url>               skip repo URL prompt + auto-clone
+//   --legacy-path <dir>              copy from a local directory instead
+//   --update                         update kit files only
+//   --yes                            accept all defaults (Spring Boot 3.x, no clone)
+const args = process.argv.slice(2);
+const flag = (name: string) => {
+  const i = args.indexOf(name);
+  return i !== -1 && i + 1 < args.length ? args[i + 1] : undefined;
+};
+const hasFlag = (name: string) => args.includes(name);
 
 const GITHUB_MAPPINGS: Record<string, string> = {
   agents:       path.join(GITHUB_DIR, "agents"),
@@ -93,25 +109,43 @@ async function runInstall() {
   console.log("║   legmod — Java Migration Kit Setup  ║");
   console.log("╚══════════════════════════════════════╝\n");
 
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  let framework: string;
+  let repoUrl: string;
+  let legacyPath: string | undefined;
 
-  console.log("Which framework are you migrating to?\n");
-  FRAMEWORKS.forEach((f, i) => console.log(`  ${i + 1}. ${f.label}`));
-  console.log();
+  const cliFramework = flag("--framework");
+  const cliUrl       = flag("--legacy-url");
+  const cliPath      = flag("--legacy-path");
+  const nonInteractive = hasFlag("--yes") || (cliFramework !== undefined && (cliUrl !== undefined || cliPath !== undefined));
 
-  let framework = FRAMEWORKS[0].value;
-  const answer = (await ask(rl, "Enter number [1]: ")).trim();
-  const choice = parseInt(answer || "1", 10);
-  if (choice >= 1 && choice <= FRAMEWORKS.length) {
-    framework = FRAMEWORKS[choice - 1].value;
-  } else if (answer) {
-    framework = answer;
+  if (nonInteractive) {
+    framework  = cliFramework ?? FRAMEWORKS[0].value;
+    repoUrl    = cliUrl ?? "";
+    legacyPath = cliPath;
+    console.log(`✓ Target framework : ${framework}`);
+    if (repoUrl)    console.log(`✓ Legacy repo URL  : ${repoUrl}`);
+    if (legacyPath) console.log(`✓ Legacy path      : ${legacyPath}`);
+    console.log();
+  } else {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+    console.log("Which framework are you migrating to?\n");
+    FRAMEWORKS.forEach((f, i) => console.log(`  ${i + 1}. ${f.label}`));
+    console.log();
+
+    framework = FRAMEWORKS[0].value;
+    const answer = (await ask(rl, "Enter number [1]: ")).trim();
+    const choice = parseInt(answer || "1", 10);
+    if (choice >= 1 && choice <= FRAMEWORKS.length) {
+      framework = FRAMEWORKS[choice - 1].value;
+    } else if (answer) {
+      framework = answer;
+    }
+    console.log(`\n✓ Target framework: ${framework}\n`);
+
+    repoUrl = (await ask(rl, "Legacy repo URL (leave blank to skip): ")).trim();
+    rl.close();
   }
-
-  console.log(`\n✓ Target framework: ${framework}\n`);
-
-  const repoUrl = (await ask(rl, "Legacy repo URL (leave blank to skip): ")).trim();
-  rl.close();
 
   let total = 0;
 
@@ -148,6 +182,17 @@ async function runInstall() {
     total++;
   }
 
+  // Copy .env.example and legmod.config.json to workspace root
+  for (const f of [".env.example", "legmod.config.json"]) {
+    const src  = path.join(PKG_DIR, f);
+    const dest = path.join(CWD, f);
+    if (fs.existsSync(src) && !fs.existsSync(dest)) {
+      fs.copyFileSync(src, dest);
+      console.log(`    + ${f}`);
+      total++;
+    }
+  }
+
   if (repoUrl) {
     console.log(`\nCloning legacy repo into legacy/...`);
     try {
@@ -155,6 +200,7 @@ async function runInstall() {
       if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true });
       execSync(`git clone --depth 1 ${repoUrl} "${tmpDir}"`, { stdio: "inherit" });
       const legacyDir = path.join(CWD, "legacy");
+      fs.mkdirSync(legacyDir, { recursive: true });
       for (const entry of fs.readdirSync(tmpDir)) {
         if (entry === ".git") continue;
         fs.renameSync(path.join(tmpDir, entry), path.join(legacyDir, entry));
@@ -165,21 +211,33 @@ async function runInstall() {
       console.error(`✗ Clone failed: ${(err as Error).message}`);
       console.error(`  You can clone manually: git clone ${repoUrl} legacy/`);
     }
+  } else if (legacyPath) {
+    console.log(`\nCopying legacy source from ${legacyPath}...`);
+    try {
+      const legacyDir = path.join(CWD, "legacy");
+      const files = copyDir(legacyPath, legacyDir, [".git"]);
+      console.log(`✓ ${files.length} files copied into legacy/`);
+      total += files.length;
+    } catch (err) {
+      console.error(`✗ Copy failed: ${(err as Error).message}`);
+    }
   }
 
   console.log(`\nDone. ${total} file(s) installed.`);
+  const hasLegacy = repoUrl || legacyPath;
   console.log("\nNext steps:");
-  if (!repoUrl) console.log("  1. Copy your legacy Java source into legacy/");
-  const n = repoUrl ? 1 : 2;
-  console.log(`  ${n}. Build the registry and legmod CLIs: cd migration && npm install && npm run build && cd ..`);
+  if (!hasLegacy) console.log("  1. Copy your legacy Java source into legacy/");
+  const n = hasLegacy ? 1 : 2;
+  console.log(`  ${n}. Install runtime dependencies:`);
+  console.log(`       cd migration && npm install && cd ..`);
   console.log(`  ${n+1}. Run the full migration pipeline:`);
   console.log(`       node migration/legmod/dist/cli.js run --parallel 3`);
-  console.log(`  ${n+2}. Or watch live progress in a second terminal:`);
-  console.log(`       node migration/legmod/dist/cli.js watch\n`);
+  console.log(`  ${n+2}. Watch live progress (second terminal):`);
+  console.log(`       node migration/registry/dist/cli.js serve\n`);
 }
 
 async function main() {
-  if (process.argv.includes("--update")) {
+  if (hasFlag("--update")) {
     await runUpdate();
   } else {
     await runInstall();

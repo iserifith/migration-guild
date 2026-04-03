@@ -12,6 +12,20 @@ export interface RegisterArtifactOptions {
   tier?: ArtifactTier;
 }
 
+export interface UpdateArtifactOptions {
+  id: string;
+  module?: string;
+  role?: Role;
+  framework?: string;
+  tier?: ArtifactTier;
+}
+
+export interface SetArtifactStatusOptions {
+  agent?: string;
+  model?: string;
+  reason?: string;
+}
+
 export function registerArtifact(
   db: Database.Database,
   opts: RegisterArtifactOptions,
@@ -49,15 +63,91 @@ export function setArtifactStatus(
   db: Database.Database,
   id: string,
   status: Status,
+  opts: SetArtifactStatusOptions = {},
 ): void {
   validateId(id);
-  const result = db
-    .prepare(
+  const tx = db.transaction(() => {
+    const artifact = db
+      .prepare("SELECT status FROM artifacts WHERE id = ?")
+      .get(id) as { status: Status } | undefined;
+    if (!artifact) {
+      throw new RegistryError(2, `Artifact not found: "${id}"`);
+    }
+
+    db.prepare(
       `UPDATE artifacts SET status = @status, updated_at = datetime('now') WHERE id = @id`,
-    )
-    .run({ id, status });
-  if (result.changes === 0)
-    throw new RegistryError(2, `Artifact not found: "${id}"`);
+    ).run({ id, status });
+
+    const shouldRecordEvent = opts.agent || opts.reason || opts.model;
+    if (!shouldRecordEvent) return;
+
+    const summary = opts.reason
+      ? `Status changed ${artifact.status} -> ${status}: ${opts.reason}`
+      : `Status changed ${artifact.status} -> ${status}`;
+    const eventData = JSON.stringify({
+      previous_status: artifact.status,
+      new_status: status,
+      reason: opts.reason ?? null,
+    });
+
+    db.prepare(`
+      INSERT INTO events (event_id, artifact_id, type, agent, model, summary, event_data)
+      VALUES (lower(hex(randomblob(8))), @artifact_id, 'status-changed', @agent, @model, @summary, @event_data)
+    `).run({
+      artifact_id: id,
+      agent: opts.agent ?? "operator",
+      model: opts.model ?? null,
+      summary,
+      event_data: eventData,
+    });
+  });
+
+  tx();
+}
+
+export function updateArtifact(
+  db: Database.Database,
+  opts: UpdateArtifactOptions,
+): Artifact {
+  validateId(opts.id);
+
+  const updates: string[] = [];
+  const params: Record<string, string> = { id: opts.id };
+
+  if (opts.module !== undefined) {
+    updates.push("module = @module");
+    params["module"] = opts.module;
+  }
+  if (opts.role !== undefined) {
+    updates.push("role = @role");
+    params["role"] = opts.role;
+  }
+  if (opts.framework !== undefined) {
+    updates.push("framework = @framework");
+    params["framework"] = opts.framework;
+  }
+  if (opts.tier !== undefined) {
+    updates.push("tier = @tier");
+    params["tier"] = opts.tier;
+  }
+
+  if (updates.length === 0) {
+    throw new RegistryError(
+      1,
+      'No artifact fields provided. Use at least one of "--module", "--role", "--framework", or "--tier".',
+    );
+  }
+
+  updates.push("updated_at = datetime('now')");
+
+  const result = db
+    .prepare(`UPDATE artifacts SET ${updates.join(", ")} WHERE id = @id`)
+    .run(params);
+  if (result.changes === 0) {
+    throw new RegistryError(2, `Artifact not found: "${opts.id}"`);
+  }
+
+  return db.prepare("SELECT * FROM artifacts WHERE id = ?").get(opts.id) as Artifact;
 }
 
 export function releaseTask(

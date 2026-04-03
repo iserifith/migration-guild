@@ -89,7 +89,11 @@ export function getEventsQuery(
     params["limit"] = limit;
   }
 
-  return db.prepare(sql).all(params);
+  const rows = db.prepare(sql).all(params) as Array<Record<string, unknown> & { event_data?: string | null }>;
+  return rows.map((row) => ({
+    ...row,
+    event_data: typeof row.event_data === "string" ? JSON.parse(row.event_data) : row.event_data ?? null,
+  }));
 }
 
 export function showStatus(db: Database.Database) {
@@ -364,4 +368,307 @@ export function wavePlan(db: Database.Database): {
     wave: Number(wave),
     ...data,
   }));
+}
+
+// ─── Monitoring Dashboard API query helpers ───────────────────────────────────
+// These are the ONLY functions serve.ts should call to populate API responses.
+// All raw SQL for the monitoring layer lives here; serve.ts stays a thin router.
+
+import type {
+  ApiArtifactRow,
+  ApiStatusResponse,
+  ApiWavePlanEntry,
+  ApiEventRow,
+  ApiSessionRow,
+  ApiBlockerRow,
+  ApiIssueRow,
+  ApiRunRow,
+  ApiEvalSummary,
+  ApiCostSummary,
+  ApiCostByModel,
+} from "../types";
+
+/** Safe JSON.parse — returns the raw string if the value is not valid JSON. */
+function tryParseJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+// ── /api/artifacts ─────────────────────────────────────────────────────────
+
+/** Returns all artifacts, optionally filtered. Typed as the stable DTO. */
+export function queryArtifactsForUI(
+  db: Database.Database,
+  opts: { status?: string; module?: string; kind?: string; tier?: string } = {},
+): ApiArtifactRow[] {
+  const conditions: string[] = ["1=1"];
+  const params: string[] = [];
+  if (opts.status) { conditions.push("status = ?"); params.push(opts.status); }
+  if (opts.module) { conditions.push("module = ?"); params.push(opts.module); }
+  if (opts.kind)   { conditions.push("kind = ?");   params.push(opts.kind);   }
+  if (opts.tier)   { conditions.push("tier = ?");   params.push(opts.tier);   }
+  const sql = `
+    SELECT * FROM artifacts
+    WHERE ${conditions.join(" AND ")}
+    ORDER BY wave ASC NULLS LAST, id ASC
+  `;
+  return db.prepare(sql).all(...params) as ApiArtifactRow[];
+}
+
+// ── /api/status ─────────────────────────────────────────────────────────────
+
+/**
+ * Returns the overall migration status summary for the monitoring dashboard.
+ *
+ * IMPORTANT: operator_state uses the key "next" (not "next_action").
+ * The old serve.ts had a bug where it queried "next_action" and always
+ * returned null.  This helper uses the correct key.
+ */
+export function queryStatusSummary(db: Database.Database): ApiStatusResponse {
+  const rows = db.prepare(
+    "SELECT status, COUNT(*) AS n FROM artifacts GROUP BY status",
+  ).all() as { status: string; n: number }[];
+
+  const by_status: Record<string, number> = {};
+  let total = 0, in_progress = 0, completed = 0, pending = 0;
+  for (const r of rows) {
+    by_status[r.status] = r.n;
+    total += r.n;
+    if (r.status === "in-progress")  in_progress = r.n;
+    if (r.status === "pending")      pending     = r.n;
+    if (["migrated", "reviewed", "completed", "skipped"].includes(r.status)) {
+      completed += r.n;
+    }
+  }
+
+  const stateVal = (key: string): unknown | null => {
+    const row = db
+      .prepare("SELECT value FROM operator_state WHERE key = ?")
+      .get(key) as { value: string } | undefined;
+    return row ? tryParseJson(row.value) : null;
+  };
+
+  return {
+    files: { total, completed, in_progress, pending, by_status },
+    current_focus: stateVal("current_focus"),
+    next:          stateVal("next"),            // ← correct key (was "next_action")
+    open_blockers: queryOpenBlockers(db),
+    open_issues:   queryOpenIssues(db),
+  };
+}
+
+// ── /api/wave-plan ──────────────────────────────────────────────────────────
+
+/** Returns first-class artifact progress by wave, shaped as the API DTO. */
+export function queryWavePlanForUI(db: Database.Database): ApiWavePlanEntry[] {
+  // wavePlan() already filters tier = 'first-class'; re-use it.
+  return wavePlan(db);
+}
+
+// ── /api/events ─────────────────────────────────────────────────────────────
+
+/**
+ * Returns the event log for a single artifact, with column aliases matching
+ * what ArtifactDetail.tsx expects:
+ *   event_id → id,  type → event_type,  summary → note,  ts → created_at
+ */
+export function queryEventsForUI(
+  db: Database.Database,
+  artifactId: string,
+  limit = 50,
+): ApiEventRow[] {
+  type RawRow = Omit<ApiEventRow, "event_data"> & { event_data: string | null };
+  const rows = db.prepare(`
+    SELECT
+      event_id  AS id,
+      type      AS event_type,
+      agent,
+      model,
+      summary   AS note,
+      event_data,
+      ts        AS created_at
+    FROM events
+    WHERE artifact_id = ?
+    ORDER BY ts DESC
+    LIMIT ?
+  `).all(artifactId, limit) as RawRow[];
+
+  return rows.map((row) => ({
+    ...row,
+    event_data: row.event_data
+      ? (tryParseJson(row.event_data) as Record<string, unknown>)
+      : null,
+  }));
+}
+
+// ── /api/sessions ───────────────────────────────────────────────────────────
+
+/**
+ * Returns all in-progress artifacts annotated with stall detection.
+ * An artifact is "stalled" when it has been claimed for more than
+ * `thresholdMinutes` without a status change.  Default threshold: 60 min.
+ */
+export function queryStalledSessions(
+  db: Database.Database,
+  thresholdMinutes = 60,
+): ApiSessionRow[] {
+  type RawRow = Omit<ApiSessionRow, "stalled"> & { claimed_minutes_ago: number | null };
+  const rows = db.prepare(`
+    SELECT
+      id, path, module, role, status,
+      claimed_by,
+      claimed_at,
+      CASE
+        WHEN claimed_at IS NOT NULL
+        THEN CAST(ROUND((julianday('now') - julianday(claimed_at)) * 1440) AS INTEGER)
+        ELSE NULL
+      END AS claimed_minutes_ago
+    FROM artifacts
+    WHERE status = 'in-progress'
+    ORDER BY claimed_at ASC
+  `).all() as RawRow[];
+
+  return rows.map((r) => ({
+    ...r,
+    stalled:
+      r.claimed_minutes_ago != null &&
+      r.claimed_minutes_ago > thresholdMinutes,
+  }));
+}
+
+// ── /api/blockers ───────────────────────────────────────────────────────────
+
+/** Returns all currently open blockers (not yet unblocked). */
+export function queryOpenBlockers(db: Database.Database): ApiBlockerRow[] {
+  return db.prepare(`
+    SELECT
+      e.artifact_id,
+      json_extract(e.event_data, '$.blocker_id') AS blocker_id,
+      e.summary,
+      e.ts AS since
+    FROM events e
+    WHERE e.type = 'blocked'
+      AND NOT EXISTS (
+        SELECT 1 FROM events u
+        WHERE u.artifact_id = e.artifact_id
+          AND u.type = 'unblocked'
+          AND json_extract(u.event_data, '$.blocker_id')
+              = json_extract(e.event_data, '$.blocker_id')
+      )
+    ORDER BY e.ts ASC
+  `).all() as ApiBlockerRow[];
+}
+
+// ── /api/issues ─────────────────────────────────────────────────────────────
+
+/** Returns all currently open issues (not yet resolved). */
+export function queryOpenIssues(db: Database.Database): ApiIssueRow[] {
+  return db.prepare(`
+    SELECT
+      e.artifact_id,
+      json_extract(e.event_data, '$.issue_id')  AS issue_id,
+      json_extract(e.event_data, '$.severity')  AS severity,
+      json_extract(e.event_data, '$.category')  AS category,
+      e.summary,
+      e.ts
+    FROM events e
+    WHERE e.type = 'issue-opened'
+      AND NOT EXISTS (
+        SELECT 1 FROM events r
+        WHERE r.type = 'issue-resolved'
+          AND json_extract(r.event_data, '$.issue_id')
+              = json_extract(e.event_data, '$.issue_id')
+      )
+    ORDER BY e.ts ASC
+  `).all() as ApiIssueRow[];
+}
+
+// ── /api/runs ───────────────────────────────────────────────────────────────
+
+/** Returns agent run history, optionally filtered by agent or status. */
+export function queryRunHistory(
+  db: Database.Database,
+  opts: { agent?: string; status?: string; limit?: number } = {},
+): ApiRunRow[] {
+  const conditions: string[] = ["1=1"];
+  const params: (string | number)[] = [];
+  if (opts.agent)  { conditions.push("agent = ?");  params.push(opts.agent);  }
+  if (opts.status) { conditions.push("status = ?"); params.push(opts.status); }
+  params.push(opts.limit ?? 100);
+  const sql = `
+    SELECT run_id, agent, model, status, started_at, finished_at, exit_code, log_file
+    FROM runs
+    WHERE ${conditions.join(" AND ")}
+    ORDER BY started_at DESC
+    LIMIT ?
+  `;
+  return db.prepare(sql).all(...params) as ApiRunRow[];
+}
+
+// ── /api/evaluations ────────────────────────────────────────────────────────
+
+/**
+ * Returns evaluation pass/fail/score summary grouped by evaluator.
+ * Optionally scope to a single artifact by passing its ID.
+ */
+export function queryEvaluationSummary(
+  db: Database.Database,
+  artifactId?: string,
+): ApiEvalSummary[] {
+  const conditions: string[] = [];
+  const params: string[] = [];
+  if (artifactId) {
+    conditions.push("artifact_id = ?");
+    params.push(artifactId);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const sql = `
+    SELECT
+      evaluator,
+      COUNT(*)                                        AS total,
+      SUM(CASE WHEN pass = 1 THEN 1 ELSE 0 END)      AS passed,
+      SUM(CASE WHEN pass = 0 THEN 1 ELSE 0 END)      AS failed,
+      AVG(score)                                      AS avg_score
+    FROM evaluations
+    ${where}
+    GROUP BY evaluator
+    ORDER BY evaluator
+  `;
+  return db.prepare(sql).all(...params) as ApiEvalSummary[];
+}
+
+// ── /api/cost ───────────────────────────────────────────────────────────────
+
+/** Returns token-usage and cost totals, broken down by model. */
+export function queryCostSummary(db: Database.Database): ApiCostSummary {
+  const totals = db.prepare(`
+    SELECT
+      COALESCE(SUM(tokens_in),  0) AS total_tokens_in,
+      COALESCE(SUM(tokens_out), 0) AS total_tokens_out,
+      COALESCE(SUM(cost_usd),   0) AS total_cost_usd,
+      COUNT(*)                     AS total_calls
+    FROM traces
+  `).get() as {
+    total_tokens_in: number;
+    total_tokens_out: number;
+    total_cost_usd: number;
+    total_calls: number;
+  };
+
+  const by_model = db.prepare(`
+    SELECT
+      COALESCE(model, '(unknown)') AS model,
+      COUNT(*)                     AS calls,
+      COALESCE(SUM(tokens_in),  0) AS tokens_in,
+      COALESCE(SUM(tokens_out), 0) AS tokens_out,
+      COALESCE(SUM(cost_usd),   0) AS cost_usd
+    FROM traces
+    GROUP BY model
+    ORDER BY cost_usd DESC
+  `).all() as ApiCostByModel[];
+
+  return { ...totals, by_model };
 }

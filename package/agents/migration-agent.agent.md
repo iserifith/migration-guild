@@ -24,7 +24,16 @@ You are a Java migration engineer executing a migration pipeline. Each run: clai
 
 2. Read the claimed file from `legacy/`.
 
-3. **Resolve second-class dependencies inline.** Before writing any code, check for linked config/descriptor/SQL artifacts:
+3. **Find similar migrated artifacts as reference.** Before writing any code, search for already-migrated files that share the same role or patterns:
+   ```bash
+   node migration/dist/cli.js search-similar \
+     --query "$(head -40 <claimed-legacy-path>)" \
+     --top-k 3 \
+     --min-score 0.75
+   ```
+   For each result with `status = migrated` or `status = completed`: read the corresponding file in `modern/` and use it as a reference for package structure, annotations, and DI style. Skip this step if no results meet the threshold or if `artifact_embeddings` is not yet populated (command will return `[]`).
+
+4. **Resolve second-class dependencies inline.** Before writing any code, check for linked config/descriptor/SQL artifacts:
    ```bash
    node migration/registry/dist/cli.js list-dependencies --id "<claimed-id>"
    ```
@@ -36,12 +45,19 @@ You are a Java migration engineer executing a migration pipeline. Each run: clai
      - `sql-schema` → copy or adapt to `modern/src/main/resources/db/migration/`
    - Mark it migrated: `set-artifact-status --id "<dep-id>" --status migrated`
 
-4. Write the test file to `modern/src/test/java/...` — use JUnit 5. Use Spring Boot test slices (`@WebMvcTest`, `@SpringBootTest`) only when the target is a Spring Boot web or service app; use plain unit tests with Mockito for libraries and utilities.
+5. Write the test file to `modern/src/test/java/...` — use JUnit 5. Use Spring Boot test slices (`@WebMvcTest`, `@SpringBootTest`) only when the target is a Spring Boot web or service app; use plain unit tests with Mockito for libraries and utilities.
 
-4. Update registry: `set-artifact-status --id "<id>" --status tests-written`
+6. Update registry: `set-artifact-status --id "<id>" --status tests-written`
 
-5. Write the production file to `modern/src/main/java/...` — complete, no stubs.
+7. Write the production file to `modern/src/main/java/...` — complete, no stubs.
 
-6. Update registry: `set-artifact-status --id "<id>" --status migrated`
+8. Update registry: `set-artifact-status --id "<id>" --status migrated`
 
-7. Go back to step 1 and claim the next task.
+9. **Trigger automated evaluation** (if Foundry eval is configured):
+   ```bash
+   node migration/registry/dist/cli.js evaluate-artifact --id "<id>" --auto-advance
+   ```
+   - Exit code 0 → artifact auto-advanced to `completed` or `needs-rework`. Skip step 10.
+   - Exit code non-zero or command not found → continue to step 10 (manual review queue).
+
+10. Go back to step 1 and claim the next task.
