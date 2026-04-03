@@ -11,6 +11,7 @@ import {
   removeTag,
   setArtifactStatus,
   setArtifactWave,
+  updateArtifact,
 } from "./commands/artifacts";
 import { claimNextTask } from "./commands/claim";
 import {
@@ -143,10 +144,35 @@ program
   .description("Update artifact status")
   .requiredOption("--id <id>")
   .requiredOption("--status <status>")
+  .option("--agent <agent>", "Agent or operator recording the status change")
+  .option("--model <model>", "Model used when recording the status change")
+  .option("--reason <reason>", "Reason for the status change")
   .action((opts) =>
     run(() => {
-      setArtifactStatus(db(), opts.id, opts.status as Status);
+      setArtifactStatus(db(), opts.id, opts.status as Status, {
+        agent: opts.agent,
+        model: opts.model,
+        reason: opts.reason,
+      });
     }),
+  );
+
+program
+  .command("update-artifact")
+  .description("Update artifact classification fields")
+  .requiredOption("--id <id>")
+  .option("--module <module>")
+  .option("--role <role>")
+  .option("--framework <framework>")
+  .option("--tier <tier>", "first-class or second-class")
+  .action((opts) =>
+    run(() => updateArtifact(db(), {
+      id: opts.id,
+      module: opts.module,
+      role: opts.role as Role | undefined,
+      framework: opts.framework,
+      tier: opts.tier as ArtifactTier | undefined,
+    })),
   );
 
 program

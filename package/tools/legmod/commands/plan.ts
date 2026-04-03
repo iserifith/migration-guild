@@ -1,9 +1,11 @@
 import * as readline from "readline";
 import type Database from "better-sqlite3";
-import { spawnCopilot } from "../runner";
+import { spawnAgent } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printWavePlan } from "../dashboard";
 import { getLogDir } from "../util";
+import { getConfigPath, loadConfig, resolvePhaseModel, resolvePhaseProvider } from "../../foundry/config";
+import { getStatusCounts, printPoolSummary, printResolvedRuntime, printStaleSessionWarnings } from "../monitoring";
 
 async function confirmMappings(
   db: Database.Database,
@@ -69,27 +71,49 @@ function getMappings(db: Database.Database) {
 }
 
 export async function runPlan(db: Database.Database): Promise<void> {
+  const cfg = loadConfig();
+  const planningModel = resolvePhaseModel("planning", cfg.foundry);
+  const planningProvider = resolvePhaseProvider("planning", cfg.foundry);
+
   // ── Stack advisor ───────────────────────────────────────────────────────────
   printPhaseHeader("Phase 2a · Stack Advisor");
-  console.log("  Agent: stack-advisor   Model: claude-sonnet-4.6\n");
+  console.log(`  Agent: stack-advisor   Model: ${planningModel}\n`);
+  printResolvedRuntime({
+    phase: "planning",
+    provider: planningProvider,
+    model: planningModel,
+    configPath: getConfigPath(),
+    batchEnabled: cfg.foundry?.batchEnabled,
+    providerType: cfg.foundry?.providerType,
+    endpoint: planningProvider === "foundry" ? cfg.foundry?.openaiEndpoint : undefined,
+  });
 
   let stopPolling = startPolling(db, (events) => {
     for (const e of events) printEvent(e);
   });
 
-  let code = await spawnCopilot({
+  const beforeAdvisor = getStatusCounts(db);
+  let result = await spawnAgent({
     agent: "stack-advisor",
-    model: "claude-sonnet-4.6",
+    model: planningModel,
     prompt: "Analyze all registered artifacts and propose a legacy→target framework mapping table.",
     db,
     logDir: getLogDir(),
+    phase: "planning",
   });
+  printPoolSummary({
+    label: "Stack advisor",
+    results: [result],
+    before: beforeAdvisor,
+    after: getStatusCounts(db),
+  });
+  printStaleSessionWarnings(db);
 
   stopPolling();
 
-  if (code !== 0) {
-    process.stderr.write(`\n  ✗ Stack advisor exited with code ${code}\n`);
-    process.exit(code);
+  if (result.exitCode !== 0) {
+    process.stderr.write(`\n  ✗ Stack advisor exited with code ${result.exitCode}\n`);
+    process.exit(result.exitCode);
   }
 
   // ── Human confirmation gate ─────────────────────────────────────────────────
@@ -109,26 +133,44 @@ export async function runPlan(db: Database.Database): Promise<void> {
 
   // ── Planner ─────────────────────────────────────────────────────────────────
   printPhaseHeader("Phase 2b · Planner");
-  console.log("  Agent: planner-agent   Model: claude-sonnet-4.6\n");
+  console.log(`  Agent: planner-agent   Model: ${planningModel}\n`);
+  printResolvedRuntime({
+    phase: "planning",
+    provider: planningProvider,
+    model: planningModel,
+    configPath: getConfigPath(),
+    batchEnabled: cfg.foundry?.batchEnabled,
+    providerType: cfg.foundry?.providerType,
+    endpoint: planningProvider === "foundry" ? cfg.foundry?.openaiEndpoint : undefined,
+  });
 
   stopPolling = startPolling(db, (events) => {
     for (const e of events) printEvent(e);
   });
 
-  code = await spawnCopilot({
+  const beforePlanner = getStatusCounts(db);
+  result = await spawnAgent({
     agent: "planner-agent",
-    model: "claude-sonnet-4.6",
+    model: planningModel,
     prompt: "Run planning: build the dependency graph and assign wave numbers to all pending artifacts.",
     db,
     logDir: getLogDir(),
+    phase: "planning",
   });
 
   stopPolling();
+  printPoolSummary({
+    label: "Planner",
+    results: [result],
+    before: beforePlanner,
+    after: getStatusCounts(db),
+  });
+  printStaleSessionWarnings(db);
   printWavePlan(db);
 
-  if (code !== 0) {
-    process.stderr.write(`\n  ✗ Planner exited with code ${code}\n`);
-    process.exit(code);
+  if (result.exitCode !== 0) {
+    process.stderr.write(`\n  ✗ Planner exited with code ${result.exitCode}\n`);
+    process.exit(result.exitCode);
   }
   console.log("\n  ✓ Planning complete\n");
 }
