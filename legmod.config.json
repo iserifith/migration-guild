@@ -1,0 +1,49 @@
+{
+  "llmProvider": "copilot",
+  "foundry": {
+    "openaiEndpoint": "${FOUNDRY_OPENAI_ENDPOINT}",
+    "embedEndpoint": "${FOUNDRY_EMBED_ENDPOINT}",
+    "projectEndpoint": "${FOUNDRY_PROJECT_ENDPOINT}",
+    "apiKey": "${FOUNDRY_API_KEY}",
+    "chatModel": "gpt-5.4-nano",
+    "embeddingModel": "text-embedding-ada-002",
+    "batchEnabled": true,
+    "providerType": "openai",
+    "modelTokenLimits": {
+      "gpt-oss-120b": 8000,
+      "gpt-5.4-mini": 2000,
+      "gpt-5.4-nano": 500
+    },
+    "phaseModels": {
+      "inventory": "gpt-5.4-mini",
+      "planning": "claude-sonnet-4.6",
+      "migration": "gpt-oss-120b",
+      "test-writing": "gpt-5.4-mini",
+      "code-writing": "gpt-oss-120b",
+      "review": "claude-sonnet-4.6",
+      "eval": "gpt-5.4-mini"
+    },
+    "phaseProviders": {
+      "inventory":    "foundry",
+      "planning":     "copilot",
+      "test-writing": "foundry",
+      "code-writing": "foundry",
+      "review":       "copilot",
+      "eval":         "foundry"
+    }
+  },
+  "eval": {
+    "autoAdvance": true,
+    "passThreshold": 0.85,
+    "evaluators": [
+      "no-legacy-imports",
+      "signature-preservation",
+      "test-coverage",
+      "correctness"
+    ]
+  },
+  "tracing": {
+    "enabled": true,
+    "localOnly": false
+  }
+}

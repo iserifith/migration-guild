@@ -1,0 +1,24 @@
+{
+  "name": "@legmod/registry",
+  "version": "0.1.0",
+  "description": "Migration artifact registry — CLI and library",
+  "main": "registry/dist/index.js",
+  "types": "registry/dist/index.d.ts",
+  "bin": {
+    "registry": "registry/dist/cli.js",
+    "legmod": "legmod/dist/cli.js"
+  },
+  "scripts": {
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "commander": "^12.1.0",
+    "dotenv": "^17.4.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.5.0",
+    "tsx": "^4.7.0"
+  }
+}
