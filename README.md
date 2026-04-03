@@ -20,6 +20,8 @@ legmod installs a set of Copilot agents, skills, and prompts into your project. 
 Inventory → Planning → Migration (parallel) → Review
 ```
 
+**Want the internals?** See [docs/how-legmod-works.md](docs/how-legmod-works.md) for the registry model, phase orchestration, agent spawning, failure handling, and recovery flow.
+
 ---
 
 ## Prerequisites
@@ -47,7 +49,7 @@ The setup wizard asks two questions:
 Then build the registry and legmod CLIs:
 
 ```bash
-cd migration && npm install && npm run build && cd ..
+cd migration && npm install && cd ..
 ```
 
 Your workspace will look like:
@@ -288,7 +290,7 @@ When a new version of legmod is released, update your workspace without touching
 
 ```bash
 npx legmod-setup --update
-cd migration && npm install && npm run build && cd ..
+cd migration && npm install && cd ..
 ```
 
 ---
