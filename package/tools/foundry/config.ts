@@ -5,7 +5,7 @@ import * as path from "path";
 
 export type LLMProvider = "copilot" | "foundry";
 export type ProviderType = "openai" | "azure" | "anthropic";
-export type PhaseKey = "inventory" | "planning" | "test-writing" | "code-writing" | "review" | "eval";
+export type PhaseKey = "inventory" | "planning" | "analysis" | "test-writing" | "code-writing" | "review" | "eval";
 
 export interface FoundryConfig {
   /**
@@ -122,6 +122,7 @@ export const BUILTIN_MODEL_TOKENS: Record<string, number> = {
 const PHASE_MODEL_DEFAULTS: Record<PhaseKey, string> = {
   inventory:      "gpt-5.4-mini",
   planning:       "claude-sonnet-4.6",
+  analysis:       "gpt-5-mini",
   "test-writing": "gpt-5.4-mini",
   "code-writing": "gpt-oss-120b",
   review:         "claude-sonnet-4.6",
@@ -131,6 +132,7 @@ const PHASE_MODEL_DEFAULTS: Record<PhaseKey, string> = {
 export const PHASE_PROVIDER_DEFAULTS: Record<PhaseKey, LLMProvider> = {
   "inventory":    "foundry",
   "planning":     "copilot",
+  "analysis":     "foundry",
   "test-writing": "foundry",
   "code-writing": "foundry",
   "review":       "copilot",
@@ -299,5 +301,35 @@ export function requireFoundryConfig(cfg: LegmodConfig): FoundryConfig {
         "Set FOUNDRY_OPENAI_ENDPOINT, FOUNDRY_PROJECT_ENDPOINT, and FOUNDRY_API_KEY, or update legmod.config.json."
     );
   }
+  return cfg.foundry;
+}
+
+export function requirePhaseFoundryConfig(
+  phase: PhaseKey,
+  cfg: LegmodConfig,
+  opts: { batch?: boolean } = {},
+): FoundryConfig {
+  if (!cfg.foundry) {
+    throw new Error(
+      `[legmod] Phase "${phase}" is configured to use ${opts.batch ? "Foundry batch" : "Foundry"}, ` +
+        "but no Foundry config is present. Add a \"foundry\" section to legmod.config.json " +
+        "with endpoint, apiKey, chatModel, and embeddingModel."
+    );
+  }
+
+  const missing: string[] = [];
+  if (!cfg.foundry.openaiEndpoint) missing.push("FOUNDRY_OPENAI_ENDPOINT");
+  if (!cfg.foundry.projectEndpoint) missing.push("FOUNDRY_PROJECT_ENDPOINT");
+  if (!cfg.foundry.apiKey) missing.push("FOUNDRY_API_KEY");
+
+  if (missing.length > 0) {
+    const missingList = missing.join(", ");
+    throw new Error(
+      `[legmod] Phase "${phase}" is configured to use ${opts.batch ? "Foundry batch" : "Foundry"}, ` +
+        `but ${missingList} ${missing.length === 1 ? "is" : "are"} not set. ` +
+        `Set ${missingList} or update legmod.config.json before rerunning.`
+    );
+  }
+
   return cfg.foundry;
 }

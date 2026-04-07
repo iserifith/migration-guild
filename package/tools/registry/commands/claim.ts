@@ -22,15 +22,21 @@ export function claimNextTask(
   wave?: number,
   fromStatus: string = "planned",
   model?: string,
+  tier?: string,
 ): Artifact {
   const toStatus = "in-progress";
 
   const claim = db.transaction((): Artifact => {
     const params: Record<string, string | number> = { fromStatus };
     let waveClause = "";
+    let tierClause = "";
     if (wave !== undefined) {
       waveClause = "AND a.wave = @wave";
       params["wave"] = wave;
+    }
+    if (tier) {
+      tierClause = "AND a.tier = @tier";
+      params["tier"] = tier;
     }
 
     const candidate = db.prepare(`
@@ -38,6 +44,7 @@ export function claimNextTask(
       FROM artifacts a
       WHERE a.status = @fromStatus
         ${waveClause}
+        ${tierClause}
         AND NOT EXISTS (
           SELECT 1
           FROM dependencies d
@@ -51,23 +58,33 @@ export function claimNextTask(
 
     if (!candidate) {
       // Distinguish: is there any work still in flight, or is everything done?
-      const waveParam = wave !== undefined ? { wave } : {};
+      const activeParams: Record<string, string | number> = {};
       const waveFilter = wave !== undefined ? "AND wave = @wave" : "";
+      const tierFilter = tier ? "AND tier = @tier" : "";
+      if (wave !== undefined) activeParams["wave"] = wave;
+      if (tier) activeParams["tier"] = tier;
 
       const activeCount = db.prepare(`
         SELECT COUNT(*) AS count FROM artifacts
         WHERE status IN ('planned', 'analyzed', 'in-progress', 'tests-written')
+          ${tierFilter}
           ${waveFilter}
-      `).get(waveParam) as { count: number };
+      `).get(activeParams) as { count: number };
 
       if (activeCount.count === 0) {
         const scope = wave !== undefined ? ` in wave ${wave}` : "";
-        throw new RegistryError(4, `All tasks complete${scope}. Nothing planned or in-progress remains.`);
+        const tierScope = tier ? ` for tier '${tier}'` : "";
+        throw new RegistryError(4, `All tasks complete${scope}${tierScope}. Nothing planned or in-progress remains.`);
       }
 
+      const scopeParts = [
+        wave !== undefined ? `in wave ${wave}` : null,
+        tier ? `for tier '${tier}'` : null,
+      ].filter(Boolean);
+      const scopedSuffix = scopeParts.length > 0 ? ` ${scopeParts.join(" ")}` : "";
       const msg = wave !== undefined
-        ? `No claimable tasks in wave ${wave} with status '${fromStatus}'. ${activeCount.count} artifact(s) are in-progress or waiting on dependencies.`
-        : `No claimable tasks. ${activeCount.count} artifact(s) are in-progress or waiting on dependencies.`;
+        ? `No claimable tasks${scopedSuffix} with status '${fromStatus}'. ${activeCount.count} artifact(s) are in-progress or waiting on dependencies.`
+        : `No claimable tasks${scopedSuffix}. ${activeCount.count} artifact(s) are in-progress or waiting on dependencies.`;
       throw new RegistryError(2, msg);
     }
 

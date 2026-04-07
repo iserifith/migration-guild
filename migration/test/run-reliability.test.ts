@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
 import { spawnCopilot } from "../legmod/runner";
+import { registerArtifact, setArtifactStatus } from "../registry/commands/artifacts";
 import { startRun, reapDeadRuns } from "../registry/commands/runs";
 import { applySchema } from "../registry/db/schema";
 
@@ -61,6 +62,112 @@ test("spawnCopilot records failed stub runs and writes a log file", async () => 
     assert.equal(stored.exit_code, 1);
     assert.ok(stored.log_file);
     assert.match(readFileSync(stored.log_file, "utf8"), /simulated runner failure/);
+  } finally {
+    if (original == null) {
+      delete process.env["COPILOT_CMD"];
+    } else {
+      process.env["COPILOT_CMD"] = original;
+    }
+    rmSync(workDir, { recursive: true, force: true });
+    db.close();
+  }
+});
+
+test("spawnCopilot auto-releases claimed artifacts after a failed run", async () => {
+  const db = createDb();
+  const workDir = mkdtempSync(path.join(tmpdir(), "legmod-runner-"));
+  const stubPath = path.join(workDir, "fake-copilot.sh");
+  const original = process.env["COPILOT_CMD"];
+  const claimOwner = "test-writer-agent:claim-1";
+  const artifactId = "legacy-source:com.acme:WidgetService";
+
+  try {
+    registerArtifact(db, {
+      id: artifactId,
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/src/main/java/com/acme/WidgetService.java",
+    });
+    setArtifactStatus(db, artifactId, "planned");
+    setArtifactStatus(db, artifactId, "in-progress", { agent: claimOwner });
+
+    writeFileSync(stubPath, "#!/bin/sh\necho simulated runner failure >&2\nexit 1\n", {
+      mode: 0o755,
+    });
+    process.env["COPILOT_CMD"] = stubPath;
+
+    const result = await spawnCopilot({
+      agent: "test-writer-agent",
+      model: "test-model",
+      prompt: "small task",
+      db,
+      logDir: workDir,
+      claimOwner,
+      releaseClaimsOnFailure: true,
+    });
+    const artifact = db.prepare(
+      "SELECT status, claimed_by, claimed_from FROM artifacts WHERE id = ?",
+    ).get(artifactId) as { status: string; claimed_by: string | null; claimed_from: string | null };
+
+    assert.equal(result.exitCode, 1);
+    assert.equal(artifact.status, "planned");
+    assert.equal(artifact.claimed_by, null);
+    assert.equal(artifact.claimed_from, null);
+  } finally {
+    if (original == null) {
+      delete process.env["COPILOT_CMD"];
+    } else {
+      process.env["COPILOT_CMD"] = original;
+    }
+    rmSync(workDir, { recursive: true, force: true });
+    db.close();
+  }
+});
+
+test("spawnCopilot treats lingering claimed artifacts after exit 0 as failure", async () => {
+  const db = createDb();
+  const workDir = mkdtempSync(path.join(tmpdir(), "legmod-runner-"));
+  const stubPath = path.join(workDir, "fake-copilot.sh");
+  const original = process.env["COPILOT_CMD"];
+  const claimOwner = "code-writer-agent:claim-1";
+  const artifactId = "legacy-source:com.acme:WidgetDto";
+
+  try {
+    registerArtifact(db, {
+      id: artifactId,
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/src/main/java/com/acme/WidgetDto.java",
+    });
+    setArtifactStatus(db, artifactId, "tests-written");
+    setArtifactStatus(db, artifactId, "in-progress", { agent: claimOwner });
+
+    writeFileSync(stubPath, "#!/bin/sh\necho simulated false success >&2\nexit 0\n", {
+      mode: 0o755,
+    });
+    process.env["COPILOT_CMD"] = stubPath;
+
+    const result = await spawnCopilot({
+      agent: "code-writer-agent",
+      model: "test-model",
+      prompt: "small task",
+      db,
+      logDir: workDir,
+      claimOwner,
+    });
+    const artifact = db.prepare(
+      "SELECT status, claimed_by, claimed_from FROM artifacts WHERE id = ?",
+    ).get(artifactId) as { status: string; claimed_by: string | null; claimed_from: string | null };
+    const stored = db.prepare(
+      "SELECT status, exit_code FROM runs WHERE run_id = ?",
+    ).get(result.runId) as { status: string; exit_code: number };
+
+    assert.equal(result.exitCode, 1);
+    assert.equal(stored.status, "failed");
+    assert.equal(stored.exit_code, 1);
+    assert.equal(artifact.status, "tests-written");
+    assert.equal(artifact.claimed_by, null);
+    assert.equal(artifact.claimed_from, null);
   } finally {
     if (original == null) {
       delete process.env["COPILOT_CMD"];

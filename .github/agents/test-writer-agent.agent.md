@@ -20,13 +20,21 @@ You are a Java test engineer in a split migration pipeline. Your sole responsibi
 
 1. Claim the next task:
    ```bash
-   node migration/registry/dist/cli.js claim --agent test-writer-agent --model "${MODEL:-unknown}"
+   node migration/registry/dist/cli.js claim --agent "${LEGMOD_AGENT_NAME:-test-writer-agent}" --model "${MODEL:-unknown}" --from-status analyzed --tier first-class
    ```
    Exit code 2 = nothing left. Stop.
 
-2. Read the claimed file from `legacy/`.
+2. Read the analyze context first:
+   ```bash
+   node migration/registry/dist/cli.js get-context-path --id "<claimed-id>" --agent analyze-agent
+   ```
+   Read that file and treat it as the primary source of truth.
 
-3. **Resolve second-class dependencies inline.** Before writing any test code, check for linked config/descriptor/SQL artifacts:
+3. Read the claimed legacy file only for spot checks or when the analysis is ambiguous.
+
+4. Do **not** run `search-similar` and do **not** scan broad areas of `modern/`. Keep context short. If you need a style reference, read at most one directly relevant existing test file.
+
+5. **Resolve second-class dependencies inline.** Before writing any test code, check for linked config/descriptor/SQL artifacts:
    ```bash
    node migration/registry/dist/cli.js list-dependencies --id "<claimed-id>"
    ```
@@ -38,16 +46,16 @@ You are a Java test engineer in a split migration pipeline. Your sole responsibi
      - `sql-schema` → copy or adapt to `modern/src/main/resources/db/migration/`
    - Mark it migrated: `set-artifact-status --id "<dep-id>" --status migrated`
 
-4. Write the test file to `modern/src/test/java/...` using JUnit 5:
-   - Mirror the legacy class's package structure under the test tree
-   - Cover: happy path, edge cases (null inputs, empty collections, boundary values), and all error/exception conditions present in the legacy code
-   - For Spring Boot web/service targets: use `@WebMvcTest` for controllers, `@SpringBootTest` for integration scenarios, `@MockBean` for dependencies
-   - For library/utility targets: use plain JUnit 5 + Mockito (`@ExtendWith(MockitoExtension.class)`)
-   - Reference only the target-framework package names for the class under test — the production class does not exist yet and that is expected
+6. Write the test file to `modern/src/test/java/...` using JUnit 5:
+    - Mirror the legacy class's package structure under the test tree
+    - Cover the behaviors and edge cases explicitly listed in the analyze context first
+    - For Spring Boot web/service targets: use `@WebMvcTest` for controllers, `@SpringBootTest` for integration scenarios, `@MockBean` for dependencies
+    - For library/utility targets: use plain JUnit 5 + Mockito (`@ExtendWith(MockitoExtension.class)`)
+    - Reference only the target-framework package names for the class under test — the production class does not exist yet and that is expected
 
-5. Update registry:
+7. Update registry:
    ```bash
    node migration/registry/dist/cli.js set-artifact-status --id "<claimed-id>" --status tests-written
    ```
 
-6. Go back to step 1 and claim the next task.
+8. Go back to step 1 and claim the next task.

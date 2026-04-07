@@ -317,20 +317,26 @@ export function showInProgress(db: Database.Database): {
 export function listReadyToMigrate(
   db: Database.Database,
   wave?: number,
+  tier?: string,
 ): Artifact[] {
   const params: Record<string, string | number> = {};
   let waveClause = "";
+  let tierClause = "";
   if (wave !== undefined) {
     waveClause = "AND a.wave = @wave";
     params["wave"] = wave;
+  }
+  if (tier) {
+    tierClause = "AND a.tier = @tier";
+    params["tier"] = tier;
   }
 
   return db.prepare(`
     SELECT a.*
     FROM artifacts a
-    WHERE a.tier = 'first-class'
-      AND a.status = 'planned'
+    WHERE a.status = 'planned'
       ${waveClause}
+      ${tierClause}
       AND NOT EXISTS (
         SELECT 1
         FROM dependencies d

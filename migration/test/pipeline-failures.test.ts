@@ -38,32 +38,45 @@ function failedRun(agent: string): AgentRunResult {
   };
 }
 
-test("runMigrate rejects when a test-writer session exits non-zero", async () => {
+test("runMigrate stops after analyzer failures without spawning later pools", async () => {
   const db = createDb();
   const agents: string[] = [];
+  const originalCwd = process.cwd();
+  const originalOpenAi = process.env["FOUNDRY_OPENAI_ENDPOINT"];
+  const originalProject = process.env["FOUNDRY_PROJECT_ENDPOINT"];
+  const originalApiKey = process.env["FOUNDRY_API_KEY"];
 
   try {
+    process.chdir("/Users/seri/Workspace/legmod");
+    process.env["FOUNDRY_OPENAI_ENDPOINT"] = "https://example.openai.azure.com/openai/v1";
+    process.env["FOUNDRY_PROJECT_ENDPOINT"] = "https://example.services.ai.azure.com/api/projects/test";
+    process.env["FOUNDRY_API_KEY"] = "test-key";
+
     registerFirstClassArtifact(db, "legacy-source:com.acme.customer:CustomerKeyService", "planned");
 
-    await assert.rejects(
-      () =>
-        runMigrate(
-          db,
-          { testParallel: 1, codeParallel: 1 },
-          {
-            startPolling: () => () => undefined,
-            getLogDir: () => "/tmp",
-            spawnAgent: async ({ agent }) => {
-              agents.push(agent);
-              return failedRun(agent);
-            },
-          },
-        ),
-      /Test-writer pool failed: 1 agent run\(s\) failed: test-writer-agent exit=1/,
+    await runMigrate(
+      db,
+      { testParallel: 1, codeParallel: 1 },
+      {
+        startPolling: () => () => undefined,
+        getLogDir: () => "/tmp",
+        needsBootstrap: () => false,
+        spawnAgent: async ({ agent }) => {
+          agents.push(agent);
+          return failedRun(agent);
+        },
+      },
     );
 
-    assert.deepEqual(agents, ["test-writer-agent"]);
+    assert.deepEqual(agents, ["analyze-agent"]);
   } finally {
+    process.chdir(originalCwd);
+    if (originalOpenAi == null) delete process.env["FOUNDRY_OPENAI_ENDPOINT"];
+    else process.env["FOUNDRY_OPENAI_ENDPOINT"] = originalOpenAi;
+    if (originalProject == null) delete process.env["FOUNDRY_PROJECT_ENDPOINT"];
+    else process.env["FOUNDRY_PROJECT_ENDPOINT"] = originalProject;
+    if (originalApiKey == null) delete process.env["FOUNDRY_API_KEY"];
+    else process.env["FOUNDRY_API_KEY"] = originalApiKey;
     db.close();
   }
 });

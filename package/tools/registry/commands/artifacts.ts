@@ -68,15 +68,39 @@ export function setArtifactStatus(
   validateId(id);
   const tx = db.transaction(() => {
     const artifact = db
-      .prepare("SELECT status FROM artifacts WHERE id = ?")
-      .get(id) as { status: Status } | undefined;
+      .prepare("SELECT status, claimed_by, claimed_at, claimed_from FROM artifacts WHERE id = ?")
+      .get(id) as Pick<Artifact, "status" | "claimed_by" | "claimed_at" | "claimed_from"> | undefined;
     if (!artifact) {
       throw new RegistryError(2, `Artifact not found: "${id}"`);
     }
 
-    db.prepare(
-      `UPDATE artifacts SET status = @status, updated_at = datetime('now') WHERE id = @id`,
-    ).run({ id, status });
+    if (status === "in-progress") {
+      db.prepare(`
+        UPDATE artifacts
+        SET status = @status,
+            claimed_by = @claimed_by,
+            claimed_at = @claimed_at,
+            claimed_from = @claimed_from,
+            updated_at = datetime('now')
+        WHERE id = @id
+      `).run({
+        id,
+        status,
+        claimed_by: opts.agent ?? artifact.claimed_by,
+        claimed_at: artifact.status === "in-progress" ? artifact.claimed_at : new Date().toISOString().slice(0, 19).replace("T", " "),
+        claimed_from: artifact.status === "in-progress" ? artifact.claimed_from : artifact.status,
+      });
+    } else {
+      db.prepare(`
+        UPDATE artifacts
+        SET status = @status,
+            claimed_by = NULL,
+            claimed_at = NULL,
+            claimed_from = NULL,
+            updated_at = datetime('now')
+        WHERE id = @id
+      `).run({ id, status });
+    }
 
     const shouldRecordEvent = opts.agent || opts.reason || opts.model;
     if (!shouldRecordEvent) return;
@@ -194,6 +218,23 @@ export function releaseTask(
   });
 
   return release();
+}
+
+export function releaseClaimedArtifactsForOwner(
+  db: Database.Database,
+  claimedBy: string,
+  agent: string,
+  reason?: string,
+): Artifact[] {
+  const rows = db.prepare(`
+    SELECT id
+    FROM artifacts
+    WHERE status = 'in-progress'
+      AND claimed_by = ?
+    ORDER BY claimed_at ASC
+  `).all(claimedBy) as Array<{ id: string }>;
+
+  return rows.map((row) => releaseTask(db, row.id, agent, reason));
 }
 
 export function setArtifactWave(

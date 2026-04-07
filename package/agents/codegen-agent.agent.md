@@ -18,13 +18,13 @@ You are a Java code generator. Translate legacy Java files to the target framewo
 
 1. Claim the next task:
    ```bash
-   node migration/registry/dist/cli.js claim --agent codegen-agent --model "${MODEL:-unknown}" --from-status tests-written
+   node migration/registry/dist/cli.js claim --agent "${LEGMOD_AGENT_NAME:-codegen-agent}" --model "${MODEL:-unknown}" --from-status tests-written
    ```
    Exit code 2 = nothing left. Stop.
 
 2. Read the context file:
    ```bash
-   node migration/registry/dist/cli.js get-context-path --id "<id>"
+   node migration/registry/dist/cli.js get-context-path --id "<id>" --agent analyze-agent
    # then read the file at that path
    ```
 
