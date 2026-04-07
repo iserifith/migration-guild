@@ -126,6 +126,30 @@ Review repeatedly looks for first-class artifacts with `status = migrated`, then
 
 If review runs but no registry progress occurs, the phase is treated as stalled rather than silently successful.
 
+## Exception path — Remediation
+
+Remediation is not part of the happy-path phase sequence. It exists to repair artifacts when normal phase advancement is no longer safe.
+
+Typical triggers:
+
+- a worker run exited non-zero
+- a recorded PID disappeared
+- an artifact stayed `in-progress` long enough to be considered stalled
+- review moved an artifact to `needs-rework`
+- an artifact is `blocked` and needs an explicit operator-facing reason
+
+The intended split is:
+
+- `migration-orchestrator` detects abnormal state and pauses normal advancement
+- `remediation-agent` inspects the affected artifact and chooses one safe repair action
+
+Typical remediation outcomes:
+
+- release the claim so the artifact can be retried
+- move the artifact back to `planned` for another migration pass
+- leave the artifact `blocked` with a reason
+- escalate to a human when automatic repair is unsafe
+
 ---
 
 ## The registry state machine

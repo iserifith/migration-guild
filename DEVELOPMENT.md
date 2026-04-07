@@ -1,0 +1,208 @@
+# legmod development guide
+
+This file is for people changing the **kit itself**, not for users running a migration workspace.
+
+## What this repository contains
+
+legmod has two parallel concerns:
+
+1. **Repository-local development artifacts** used while building the kit in this repo
+2. **Packaged kit artifacts** copied into user workspaces by `setup.ts`
+
+The split matters because not everything in this repository ships.
+
+## Source of truth by area
+
+| Path | Purpose | Ships |
+| --- | --- | --- |
+| `.github/agents/` | Repo-local custom agents used while developing legmod | No |
+| `.github/skills/` | Repo-local skills and runtime template assets used while developing legmod | No |
+| `.github/prompts/` | Repo-local prompts for this repo | No |
+| `.github/instructions/` | Repo-local instructions for this repo | No |
+| `.github/copilot-instructions.md` | Repo-local Copilot context for this repository | No |
+| `package/agents/` | Agent definitions installed into migration workspaces | Yes |
+| `package/skills/` | Skill definitions and shipped skill assets installed into migration workspaces | Yes |
+| `package/prompts/` | Prompt shortcuts installed into migration workspaces | Yes |
+| `package/instructions/` | Path-scoped instructions installed into migration workspaces | Yes |
+| `package/tools/` | Registry CLI, legmod CLI, Foundry integrations, packaging-time runtime files | Yes |
+| `setup.ts` | Installer entrypoint that copies `package/` into a target workspace | Yes, as compiled `dist/setup.js` |
+| `scripts/build-dist.sh` | Builds the distributable tarball | Dev tool |
+
+## Shipping model
+
+The distributable kit is built from **`package/` plus selected top-level docs and the compiled installer**.
+
+`scripts/build-dist.sh` assembles:
+
+- `dist/setup.js`
+- `README.md`
+- `GETTING-STARTED.md`
+- `AGENTS.md`
+- `docs/`
+- `package/` without source-only clutter such as `node_modules`, raw TypeScript, local `.env`, or repo-only working trees
+
+Important consequence:
+
+- If a migration capability should exist in user workspaces, it must be represented in **`package/`**
+- If something is only for maintaining this repository, keep it at the repo root (for example `.github/agents/documentation-agent.agent.md` and `.githooks/pre-commit`)
+
+## Repository layout
+
+### Top-level docs
+
+- `README.md` — user-facing overview
+- `GETTING-STARTED.md` — setup and first-run guide
+- `docs/` — deeper architecture and Copilot customization reference material
+- `DEVELOPMENT.md` — maintainer workflow and packaging rules
+- `CHANGELOGS.MD` — repository-level change log for ongoing development
+
+### Runtime and packaging paths
+
+- `migration/` — live development copy of the registry and legmod CLIs used in this repo
+- `package/tools/` — packaged copy of the same toolset that gets shipped
+- `dist/` — compiled installer and assembled tarball output
+- `legacy/` / `modern/` — workspace-like directories used for developing the kit and trying migration behavior locally
+
+## Core workflows
+
+### 1. Update repo-local Copilot behavior
+
+Use the root `.github/` tree when you are changing how Copilot behaves **inside this repository**.
+
+Typical examples:
+
+- dev-only agents
+- repo-specific prompts
+- maintainer instructions
+
+These changes do not ship unless you separately mirror them into `package/`.
+
+### 2. Update shipped migration behavior
+
+Use `package/` when you are changing what users receive after running the installer.
+
+Common paths:
+
+- `package/agents/`
+- `package/skills/`
+- `package/prompts/`
+- `package/instructions/`
+- `package/tools/`
+- `package/copilot-instructions.md`
+
+In practice, many migration changes require edits in both places:
+
+- root `.github/` so the repo behaves correctly during development
+- `package/` so installed workspaces get the same behavior
+
+If a migration runtime reads template assets from a skill directory, treat that skill as shipped runtime input, not just prompt content. For example, `migration/legmod/commands/bootstrap.ts` reads bootstrap templates from `.github/skills/target-module-bootstrap/assets`, so template changes must be mirrored to `package/skills/target-module-bootstrap/assets`.
+
+### 3. Update installer behavior
+
+`setup.ts` is the installer source. It:
+
+- copies packaged agents, prompts, skills, and instructions into `.github/`
+- copies `package/tools/` into `migration/`
+- writes `.github/copilot-instructions.md` with the selected target framework
+- optionally clones or copies legacy source into `legacy/`
+
+If setup behavior changes, update:
+
+- `setup.ts`
+- packaged files under `package/` if the installed workspace should change
+- user-facing docs if setup flow or resulting layout changes
+
+### 4. Build the repo
+
+Common commands:
+
+```bash
+npm run build
+npm run build:dist
+```
+
+What they do:
+
+- `npm run build` compiles `setup.ts` to `dist/setup.js`
+- `npm run build:dist` builds `package/tools/`, rebuilds `dist/setup.js`, then assembles `dist/legmod-kit.tar.gz`
+
+## Mirroring rules
+
+When working on migration behavior, always check whether a file has both:
+
+- a root copy used by this repo
+- a packaged copy used by installed workspaces
+
+Typical mirrored pairs:
+
+- `.github/agents/*` and `package/agents/*`
+- `.github/skills/*` and `package/skills/*`
+- `.github/prompts/*` and `package/prompts/*`
+- `.github/instructions/*` and `package/instructions/*`
+- `migration/*` and `package/tools/*`
+
+Do not assume both copies stay aligned automatically. If the packaged behavior must change, edit the packaged copy too.
+
+## Docs expectations for this repo
+
+Use docs by audience:
+
+- **Users of the kit** → `README.md`, `GETTING-STARTED.md`, `docs/`
+- **Maintainers of the kit** → `DEVELOPMENT.md`, `CHANGELOGS.MD`
+
+When a change affects maintainer workflow, packaging, mirrored artifacts, or repo-local automation, capture it in `DEVELOPMENT.md`.
+
+When a change is notable enough that future maintainers should see it in chronological form, add it to `CHANGELOGS.MD` under `Unreleased`.
+
+## Documentation agent
+
+This repository has a repo-local `documentation-agent`.
+
+Current intent:
+
+- keep maintainer docs current while the broader docs set is still evolving
+- avoid touching shipped kit files just to document repo-only workflows
+- keep the workflow lightweight locally until repository/CI automation is provisioned
+
+Current doc targets:
+
+- `DEVELOPMENT.md`
+- `CHANGELOGS.MD`
+
+### Run it manually
+
+```bash
+copilot --agent documentation-agent --yolo -p \
+  "Review the staged changes for the current commit in this repository. Update only DEVELOPMENT.md and CHANGELOGS.MD when the staged behavior changes require maintainer workflow notes or an unreleased changelog entry. If no such docs changes are needed, do not edit anything."
+```
+
+Then review only the maintainer docs:
+
+```bash
+git status --short -- DEVELOPMENT.md CHANGELOGS.MD
+```
+
+### Future automation
+
+- Preferred end state: run the documentation agent after CI, not in `pre-commit`
+- Until repo/CI provisioning is available, keep this as a manual maintainer step
+
+### Copilot binary selection
+
+Use `COPILOT_CMD` if you need to point at a non-default Copilot CLI binary.
+
+Example:
+
+```bash
+COPILOT_CMD=/path/to/copilot copilot --agent documentation-agent --yolo -p "<prompt>"
+```
+
+## Practical maintainer checklist
+
+When making a change, ask:
+
+1. Is this repo-only, or should it ship?
+2. If it should ship, did I update the `package/` copy?
+3. If it changes installer or runtime behavior, did I update the right docs?
+4. If it changes maintainer workflow, did I update `DEVELOPMENT.md`?
+5. If it is worth recording for later context, did I add an `Unreleased` note to `CHANGELOGS.MD`?

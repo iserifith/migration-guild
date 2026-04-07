@@ -456,8 +456,9 @@ program
   .requiredOption("--agent <agent>", "Name of the agent claiming the task")
   .option("--wave <n>", "Only claim from this wave number", parseInt)
   .option("--from-status <status>", "Claim artifacts with this status (default: planned)", "planned")
+  .option("--tier <tier>", "Claim only artifacts from this tier")
   .option("--model <model>", "Model running this agent (logged to events)")
-  .action((opts) => run(() => claimNextTask(db(), opts.agent, opts.wave, opts.fromStatus, opts.model)));
+  .action((opts) => run(() => claimNextTask(db(), opts.agent, opts.wave, opts.fromStatus, opts.model, opts.tier)));
 
 // ─── Wave Planning ───────────────────────────────────────────────────────────
 
@@ -477,7 +478,8 @@ program
   .command("list-ready")
   .description("List all planned artifacts whose dependencies are satisfied (ready to claim)")
   .option("--wave <n>", "Filter to a specific wave", parseInt)
-  .action((opts) => run(() => listReadyToMigrate(db(), opts.wave)));
+  .option("--tier <tier>", "Filter to a specific artifact tier")
+  .action((opts) => run(() => listReadyToMigrate(db(), opts.wave, opts.tier)));
 
 program
   .command("serve")

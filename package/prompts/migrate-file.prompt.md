@@ -12,5 +12,5 @@ Use the full migration workflow:
 4. Bootstrap `modern/` if it does not yet exist.
 5. Run `migration-agent` to claim the task and execute tests-first migration.
 6. Run `review-agent` to review the result.
-7. If findings are narrow and safe (missing tests, annotation corrections, config externalization), apply one remediation pass and re-review once.
+7. If findings are narrow and safe (missing tests, annotation corrections, config externalization), run `remediation-agent` for one remediation pass and re-review once.
 8. Report the final result: production path, test paths, review verdict, assumptions, and any follow-up items.

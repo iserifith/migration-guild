@@ -80,6 +80,11 @@ export type Agent =
   | "stack-advisor"
   | "migration-agent"
   | "review-agent"
+  | "reference-agent"
+  | "test-writer-agent"
+  | "code-writer-agent"
+  | "migration-orchestrator"
+  | "remediation-agent"
   | "orchestrator";
 
 export const TAG_VOCABULARY = [

@@ -153,7 +153,7 @@ program
 
 program
   .command("search-similar")
-  .description("Find artifacts semantically similar to a query using stored embeddings (requires legmod batch --type embed)")
+  .description("Find artifacts semantically similar to a query using stored embeddings (requires legmod batch-submit --type embed)")
   .requiredOption("--query <text>", "Natural language or code query")
   .option("--top-k <n>", "Number of results to return (default: 5)", parseInt)
   .option("--min-score <f>", "Minimum cosine similarity threshold 0–1 (default: 0)", parseFloat)

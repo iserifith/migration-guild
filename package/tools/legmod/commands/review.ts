@@ -4,7 +4,7 @@ import type { AgentRunResult } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printStatusSummary } from "../dashboard";
 import { getLogDir } from "../util";
-import { getConfigPath, loadConfig, resolvePhaseModel, resolvePhaseProvider } from "../../foundry/config";
+import { getConfigPath, loadConfig, requirePhaseFoundryConfig, resolvePhaseModel, resolvePhaseProvider } from "../../foundry/config";
 import { getStatusCounts, printCompletionReason, printPoolSummary, printResolvedRuntime, printStaleSessionWarnings } from "../monitoring";
 import { reapDeadRuns } from "../../registry/commands/runs";
 
@@ -65,8 +65,9 @@ export async function runReview(db: Database.Database, opts: ReviewOpts = {}): P
   const cfg = loadConfig();
   const model = resolvePhaseModel("review", cfg.foundry);
   const provider = resolvePhaseProvider("review", cfg.foundry);
+  if (provider === "foundry") requirePhaseFoundryConfig("review", cfg);
 
-  printPhaseHeader("Phase 4 · Review");
+  printPhaseHeader("Phase 5 · Review");
   console.log(`  Agent: review-agent   Model: ${model}   Parallel: ${parallel}\n`);
   printResolvedRuntime({
     phase: "review",
