@@ -4,7 +4,7 @@ import { spawnAgent } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printWavePlan } from "../dashboard";
 import { getLogDir } from "../util";
-import { getConfigPath, loadConfig, resolvePhaseModel, resolvePhaseProvider } from "../../foundry/config";
+import { getConfigPath, loadConfig, requirePhaseFoundryConfig, resolvePhaseModel, resolvePhaseProvider } from "../../foundry/config";
 import { getStatusCounts, printPoolSummary, printResolvedRuntime, printStaleSessionWarnings } from "../monitoring";
 
 async function confirmMappings(
@@ -74,6 +74,7 @@ export async function runPlan(db: Database.Database): Promise<void> {
   const cfg = loadConfig();
   const planningModel = resolvePhaseModel("planning", cfg.foundry);
   const planningProvider = resolvePhaseProvider("planning", cfg.foundry);
+  if (planningProvider === "foundry") requirePhaseFoundryConfig("planning", cfg);
 
   // ── Stack advisor ───────────────────────────────────────────────────────────
   printPhaseHeader("Phase 2a · Stack Advisor");

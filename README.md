@@ -17,7 +17,7 @@ The target framework is chosen based on what the legacy code actually is — not
 legmod installs a set of Copilot agents, skills, and prompts into your project. Each agent handles one phase of the migration. A SQLite registry tracks every file's status so multiple Copilot sessions can run in parallel without stepping on each other.
 
 ```
-Inventory → Planning → Migration (parallel) → Review
+Inventory → Planning → Bootstrap → Migration (parallel) → Review
 ```
 
 **Want the internals?** See [docs/how-legmod-works.md](docs/how-legmod-works.md) for the registry model, phase orchestration, agent spawning, failure handling, and recovery flow.
@@ -82,6 +82,7 @@ node migration/legmod/dist/cli.js run --parallel 3
 # Run individual phases
 node migration/legmod/dist/cli.js inventory
 node migration/legmod/dist/cli.js plan
+node migration/legmod/dist/cli.js bootstrap
 node migration/legmod/dist/cli.js migrate --parallel 3
 node migration/legmod/dist/cli.js review --parallel 2
 
@@ -162,7 +163,24 @@ node migration/registry/dist/cli.js wave-plan
 
 ---
 
-## 4. Migration
+## 4. Bootstrap
+
+Before agents start writing migrated files, scaffold the target module:
+
+```bash
+node migration/legmod/dist/cli.js bootstrap
+```
+
+**What happens:**
+
+1. legmod classifies the legacy project as `web`, `service`, or `library`
+2. Scaffolds `modern/` with the matching Gradle template
+3. Creates source roots, `settings.gradle`, and for Spring targets an `Application.java` plus `application.yml`
+4. Leaves any existing target files in place
+
+---
+
+## 5. Migration
 
 This is the main phase. Each session claims one task atomically — you can run many sessions in parallel.
 
@@ -208,7 +226,7 @@ Each session will claim a different task — the registry prevents conflicts.
 
 ---
 
-## 5. Review
+## 6. Review
 
 After migration, review each file for correctness.
 
@@ -238,7 +256,25 @@ If a file needs rework, run migration again for that file:
 
 ---
 
-## Inspect progress
+## 6. Remediation (exception path)
+
+When a background worker fails, a claim stalls, or review sends an artifact back, use the dedicated remediation agent instead of folding recovery policy into the orchestrator.
+
+```bash
+copilot --agent remediation-agent --model claude-sonnet-4.6 --yolo
+```
+
+Then say:
+
+```
+Remediate the next blocked or stalled artifact
+```
+
+**What happens:** The remediation agent inspects registry state, recent events, and worker outcomes, then chooses one safe action: release for retry, send the artifact back to `planned`, leave it `blocked` with a reason, or escalate to a human.
+
+---
+
+## 7. Inspect progress
 
 **Terminal dashboard:**
 
@@ -275,6 +311,9 @@ node migration/registry/dist/cli.js list-artifacts --status needs-rework
 # See what every agent is currently working on (with age)
 node migration/registry/dist/cli.js show-in-progress
 
+# Inspect recent worker outcomes
+node migration/registry/dist/cli.js list-runs --limit 20
+
 # Release a stuck in-progress artifact (e.g. after a crashed agent)
 node migration/registry/dist/cli.js release --id "legacy-source:jolt-core:Chainr" --agent "operator" --reason "agent crashed"
 
@@ -303,6 +342,7 @@ cd migration && npm install && cd ..
 | Planning  | `planner-agent`   | `claude-sonnet-4.6` |
 | Migration | `migration-agent` | `gpt-5-mini`        |
 | Review    | `review-agent`    | `claude-sonnet-4.6` |
+| Remediation | `remediation-agent` | `claude-sonnet-4.6` |
 
 ---
 
@@ -333,6 +373,8 @@ An artifact left `in-progress` by a crashed agent blocks that slot. Release it s
 ```bash
 node migration/registry/dist/cli.js release --id "<id>" --agent "operator" --reason "agent crashed"
 ```
+
+If the failure mode is unclear or the artifact already moved to `needs-rework` / `blocked`, run `remediation-agent` instead of guessing the next state.
 
 **Agent doesn't run shell commands**
 Ensure you pass `--yolo` (or `--allow-all-tools`) when starting Copilot. Without it, the agent can't run `node migration/registry/dist/cli.js`.

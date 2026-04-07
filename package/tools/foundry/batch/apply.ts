@@ -3,7 +3,8 @@ import * as path from "path";
 import Database from "better-sqlite3";
 
 import { FoundryClient } from "../foundry-client";
-import type { BatchJob } from "../../registry/types";
+import type { BatchJob, Artifact } from "../../registry/types";
+import { resolveTargetPath } from "./target-path";
 
 interface InventoryResult {
   framework: string | null;
@@ -125,9 +126,16 @@ export async function applyEmbedResults(
       artifact_id TEXT PRIMARY KEY,
       model       TEXT,
       embedding   TEXT NOT NULL,
+      target_path TEXT,
       embedded_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
+  // Migration for existing tables created without target_path.
+  try {
+    db.exec(`ALTER TABLE artifact_embeddings ADD COLUMN target_path TEXT`);
+  } catch {
+    // Column already exists — safe to ignore.
+  }
 
   const jsonl = await downloadOutputFile(client, job);
   const lines = jsonl.split("\n").filter((l) => l.trim());
@@ -136,8 +144,8 @@ export async function applyEmbedResults(
   let failed = 0;
 
   const upsert = db.prepare(
-    `INSERT OR REPLACE INTO artifact_embeddings (artifact_id, model, embedding)
-     VALUES (?, ?, ?)`,
+    `INSERT OR REPLACE INTO artifact_embeddings (artifact_id, model, embedding, target_path)
+     VALUES (?, ?, ?, ?)`,
   );
 
   for (const line of lines) {
@@ -165,7 +173,10 @@ export async function applyEmbedResults(
       continue;
     }
 
-    upsert.run(artifactId, model, JSON.stringify(embeddingData));
+    const artifact = db.prepare("SELECT * FROM artifacts WHERE id = ?").get(artifactId) as Artifact | undefined;
+    const targetPath = artifact ? resolveTargetPath(db, artifact) : null;
+
+    upsert.run(artifactId, model, JSON.stringify(embeddingData), targetPath);
     processed++;
   }
 

@@ -5,14 +5,13 @@
     "embedEndpoint": "${FOUNDRY_EMBED_ENDPOINT}",
     "projectEndpoint": "${FOUNDRY_PROJECT_ENDPOINT}",
     "apiKey": "${FOUNDRY_API_KEY}",
-    "chatModel": "gpt-5.4-nano",
+    "chatModel": "gpt-5.4-mini",
     "embeddingModel": "text-embedding-ada-002",
-    "batchEnabled": true,
+    "batchEnabled": false,
     "providerType": "openai",
     "modelTokenLimits": {
       "gpt-oss-120b": 8000,
-      "gpt-5.4-mini": 2000,
-      "gpt-5.4-nano": 500
+      "gpt-5.4-mini": 2000
     },
     "phaseModels": {
       "inventory": "gpt-5.4-mini",
@@ -24,12 +23,12 @@
       "eval": "gpt-5.4-mini"
     },
     "phaseProviders": {
-      "inventory":    "foundry",
-      "planning":     "copilot",
+      "inventory": "foundry",
+      "planning": "copilot",
       "test-writing": "foundry",
       "code-writing": "foundry",
-      "review":       "copilot",
-      "eval":         "foundry"
+      "review": "copilot",
+      "eval": "foundry"
     }
   },
   "eval": {

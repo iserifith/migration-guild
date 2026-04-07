@@ -5,6 +5,7 @@ import { FoundryClient } from "../foundry-client";
 import type { FoundryConfig } from "../config";
 import { resolveTokenLimit } from "../config";
 import type { Artifact, BatchJob, BatchJobType } from "../../registry/types";
+import { resolveTargetPath } from "./target-path";
 
 function readArtifactFile(artifactPath: string): string | null {
   try {
@@ -59,18 +60,36 @@ export function buildInventoryBatchInput(
   return lines.join("\n");
 }
 
+/**
+ * Selects artifacts that are ready to serve as reference corpus entries and
+ * embeds their **target-side** content (files under `modern/`), not the
+ * legacy source.
+ *
+ * Corpus eligibility:
+ *   - `legacy-source` with status in ('migrated', 'reviewed', 'completed')
+ *   - `target-source` / `test` with any non-terminal-negative status
+ *
+ * The target path for each artifact is resolved via {@link resolveTargetPath}.
+ * Artifacts whose target file does not exist on disk are silently skipped.
+ */
 export function buildEmbedBatchInput(
   db: Database.Database,
   cfg: FoundryConfig,
-  statusFilter: string = "completed",
 ): string {
   const artifacts = db
-    .prepare(`SELECT * FROM artifacts WHERE status = ?`)
-    .all(statusFilter) as Artifact[];
+    .prepare(
+      `SELECT * FROM artifacts
+       WHERE (kind = 'legacy-source'  AND status IN ('migrated', 'reviewed', 'completed'))
+          OR (kind IN ('target-source', 'test') AND status NOT IN ('pending', 'blocked', 'skipped'))`,
+    )
+    .all() as Artifact[];
 
   const lines: string[] = [];
   for (const artifact of artifacts) {
-    const content = readArtifactFile(artifact.path);
+    const targetPath = resolveTargetPath(db, artifact);
+    if (targetPath === null) continue;
+
+    const content = readArtifactFile(targetPath);
     if (content === null) continue;
 
     lines.push(

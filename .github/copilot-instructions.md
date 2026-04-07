@@ -22,6 +22,12 @@ Phases run in order. Phases 3–5 are parallelizable across multiple Copilot ses
 6. Review    — verify correctness, write verdict
 ```
 
+Exception path:
+
+```
+Remediation — recover failed runs, stalled claims, blocked artifacts, or needs-rework items before resuming the happy path
+```
+
 ## Registry CLI
 
 The registry CLI tracks all migration state. Run from the project root:
@@ -45,6 +51,11 @@ Key commands:
 - Always write tests before production code
 - Check registry before starting work — use `claim` to avoid duplicate work
 - Update registry status after each meaningful step
+- On "start", "let's start", "continue", or "proceed", determine the next phase from registry state first, then execute it immediately
+- If the registry is empty, default to **Inventory** immediately — do not do exploratory classification first
+- Do not create or update `plan.md` unless the user explicitly requested planning mode
+- Do not invoke classification or mapping skills before inventory unless the user explicitly asked for analysis
+- Prefer phase execution over broad exploration; read only the minimum needed to safely run the next phase
 
 ## Recommended Models per Phase
 
@@ -58,6 +69,7 @@ Run each phase with the most cost-effective model for the task:
 | Tests     | `test-agent`     | `claude-sonnet-4.6` | Behavior reasoning, meaningful tests |
 | Codegen   | `codegen-agent`  | `gpt-5-mini`        | Mechanical translation given spec |
 | Review    | `review-agent`   | `claude-sonnet-4.6` | Code review judgment |
+| Remediation | `remediation-agent` | `claude-sonnet-4.6` | Failure diagnosis and conservative recovery |
 | Reference | `reference-agent`| `gpt-5-mini`        | Simple pattern retrieval |
 
 Usage: `copilot --agent <agent-name> --model <model-id> -p "..."`

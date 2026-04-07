@@ -59,6 +59,7 @@ node migration/registry/dist/cli.js list-artifacts
 # Run phase by phase (recommended for first run):
 node migration/legmod/dist/cli.js run inventory
 node migration/legmod/dist/cli.js run plan
+node migration/legmod/dist/cli.js run bootstrap
 node migration/legmod/dist/cli.js run migrate --parallel 3
 node migration/legmod/dist/cli.js run review
 
@@ -80,6 +81,7 @@ node migration/legmod/dist/cli.js run --parallel 3
 |---|---|
 | Inventory | Every `.java` file in `legacy/` is registered and classified |
 | Planning | Dependency graph built, files assigned to migration waves |
+| Bootstrap | `modern/` scaffolded with the minimal target module structure |
 | Migration | Tests written first (default/config-driven model: gpt-5.4-mini), then production code (default/config-driven model: gpt-oss-120b) |
 | Review | Migrated files checked for regressions and issues |
 
@@ -106,6 +108,7 @@ The CLI loads `.env` automatically — no `export` or `source` needed.
 | Problem | Fix |
 |---|---|
 | Agent left a file stuck | `node migration/registry/dist/cli.js release --id "<id>" --agent operator --reason "crashed"` |
+| Background run failed or stalled and the next state is unclear | Run `copilot --agent remediation-agent --model claude-sonnet-4.6 --yolo` |
 | Nothing to claim | `node migration/registry/dist/cli.js wave-plan` |
 | Files need rework | `node migration/registry/dist/cli.js list-artifacts --status needs-rework` |
 | Foundry env not picked up | Ensure `.env` is in the project root (`my-migration/`), not a subdirectory |
