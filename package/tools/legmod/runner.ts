@@ -3,8 +3,9 @@ import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import type Database from "better-sqlite3";
+import { releaseClaimedArtifactsForOwner } from "../registry/commands/artifacts";
 import { startRun, finishRun } from "../registry/commands/runs";
-import { loadConfig, resolvePhaseProvider } from "../foundry/config";
+import { loadConfig, requireFoundryConfig, requirePhaseFoundryConfig, resolvePhaseProvider } from "../foundry/config";
 import type { PhaseKey } from "../foundry/config";
 
 export interface SpawnCopilotOpts {
@@ -15,6 +16,8 @@ export interface SpawnCopilotOpts {
   logDir?: string;
   phase?: PhaseKey;
   timeoutMs?: number;
+  claimOwner?: string;
+  releaseClaimsOnFailure?: boolean;
 }
 
 export interface AgentRunResult {
@@ -32,6 +35,7 @@ function getCopilotCommand(): string {
 
 export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
   const { agent, model, prompt, db } = opts;
+  const claimOwner = opts.claimOwner ?? `${agent}:${randomUUID()}`;
 
   const logFile = opts.logDir
     ? path.join(opts.logDir, `${agent}-${Date.now()}-${randomUUID()}.log`)
@@ -47,6 +51,7 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
   const projectRoot = path.resolve(__dirname, "..", "..", "..");
   const proc = spawn(getCopilotCommand(), args, {
     cwd: projectRoot,
+    env: { ...process.env, LEGMOD_AGENT_NAME: claimOwner },
     stdio: logFile ? ["ignore", "pipe", "pipe"] : "inherit",
   });
   const run = startRun(db, { agent, model, prompt, logFile, pid: proc.pid ?? null });
@@ -68,14 +73,41 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
       settled = true;
       if (timeoutHandle) clearTimeout(timeoutHandle);
       if (killHandle) clearTimeout(killHandle);
-      finishRun(db, { runId: run.run_id, exitCode });
+      let finalExitCode = exitCode;
+      try {
+        if (exitCode === 0) {
+          const released = releaseClaimedArtifactsForOwner(
+            db,
+            claimOwner,
+            "legmod",
+            `auto-released after ${agent} exited without advancing claimed work`,
+          );
+          if (released.length > 0) {
+            finalExitCode = 1;
+            process.stderr.write(
+              `[legmod] ${agent} exited with code 0 but left ${released.length} claimed artifact(s); marking run failed and releasing claims\n`,
+            );
+          }
+        } else if (opts.releaseClaimsOnFailure) {
+          releaseClaimedArtifactsForOwner(
+            db,
+            claimOwner,
+            "legmod",
+            `auto-released after ${agent} exited with code ${exitCode}`,
+          );
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        process.stderr.write(`[legmod] Failed to auto-release claims for ${claimOwner}: ${message}\n`);
+      }
+      finishRun(db, { runId: run.run_id, exitCode: finalExitCode });
       resolve({
         runId: run.run_id,
         agent,
         model,
         prompt,
         logFile,
-        exitCode,
+        exitCode: finalExitCode,
       });
     };
 
@@ -129,8 +161,8 @@ export async function spawnAgent(opts: SpawnCopilotOpts & { phase?: PhaseKey }):
     ? resolvePhaseProvider(phase, cfg.foundry)
     : cfg.llmProvider;  // fallback to global when no phase given
 
-  if (provider === "foundry" && cfg.foundry) {
-    const f = cfg.foundry;
+  if (provider === "foundry") {
+    const f = phase ? requirePhaseFoundryConfig(phase, cfg) : requireFoundryConfig(cfg);
     process.env["COPILOT_PROVIDER_BASE_URL"] = f.openaiEndpoint;
     process.env["COPILOT_PROVIDER_TYPE"]     = f.providerType;
     process.env["COPILOT_PROVIDER_API_KEY"]  = f.apiKey;

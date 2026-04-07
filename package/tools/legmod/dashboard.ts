@@ -51,8 +51,8 @@ export function printWavePlan(db: Database.Database): void {
   const rows = db.prepare(`
     SELECT wave,
            COUNT(*) AS total,
-           SUM(CASE WHEN status IN ('reviewed','completed','skipped') THEN 1 ELSE 0 END) AS done,
-           SUM(CASE WHEN status IN ('migrated','tests-written','in-progress','analyzed') THEN 1 ELSE 0 END) AS active
+           SUM(CASE WHEN status IN ('migrated','reviewed','completed','skipped') THEN 1 ELSE 0 END) AS done,
+           SUM(CASE WHEN status IN ('planned','analyzed','tests-written','in-progress') THEN 1 ELSE 0 END) AS active
     FROM artifacts
     WHERE tier = 'first-class' AND wave IS NOT NULL
     GROUP BY wave

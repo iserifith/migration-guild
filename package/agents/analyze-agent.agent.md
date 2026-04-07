@@ -16,16 +16,11 @@ You are a Java code analyst. Read legacy Java files and write a structured analy
 
 1. Claim the next task:
    ```bash
-   node migration/registry/dist/cli.js claim --agent analyze-agent --model "${MODEL:-unknown}" --from-status planned
+   node migration/registry/dist/cli.js claim --agent "${LEGMOD_AGENT_NAME:-analyze-agent}" --model "${MODEL:-unknown}" --from-status planned --tier first-class
    ```
    Exit code 2 = nothing left. Stop.
 
-2. Get the context file path:
-   ```bash
-   node migration/registry/dist/cli.js get-context-path --id "<id>"
-   ```
-
-3. Read the legacy file. Extract:
+2. Read the legacy file. Extract:
    - Class responsibility (one sentence)
    - Public methods and their behavior
    - Framework annotations and what they do
@@ -33,21 +28,29 @@ You are a Java code analyst. Read legacy Java files and write a structured analy
    - Edge cases and error handling
    - Config values that must be externalized
 
-4. Write the analysis as JSON to the context path:
-   ```json
-   {
-     "id": "<artifact-id>",
-     "path": "<legacy path>",
-     "responsibility": "<one sentence>",
-     "methods": [
-       { "name": "<method>", "behavior": "<what it does>" }
-     ],
-     "annotations": ["<annotation>: <purpose>"],
-     "dependencies": ["<type>: <role>"],
-     "config": ["<key>: <description>"],
-     "edgeCases": ["<description>"],
-     "notes": "<anything unusual>"
-   }
+3. Write a compact markdown context file to a temporary path. It must contain:
+   - `## Summary` with a concise test-oriented summary
+   - `## Structured Context` with a fenced `json` block using this shape:
+     ```json
+     {
+       "id": "<artifact-id>",
+       "path": "<legacy path>",
+       "responsibility": "<one sentence>",
+       "methods": [
+         { "name": "<method>", "behavior": "<what it does>" }
+       ],
+       "annotations": ["<annotation>: <purpose>"],
+       "dependencies": ["<type>: <role>"],
+       "config": ["<key>: <description>"],
+       "edgeCases": ["<description>"],
+       "testCases": ["<specific behavior to cover>"],
+       "notes": "<anything unusual>"
+     }
+     ```
+
+4. Persist the context file into the registry:
+   ```bash
+   node migration/registry/dist/cli.js write-context --id "<id>" --agent analyze-agent --file "<temp-file>"
    ```
 
 5. Update registry:

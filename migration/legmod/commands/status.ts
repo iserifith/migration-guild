@@ -42,7 +42,7 @@ export function printNextSteps(db: Database.Database): void {
   }
 
   if (s.migrated < s.total) {
-    console.log(`  3. Migration (test-writer + code-writer run in parallel pools)\n`);
+    console.log(`  3. Migration (analyze + test-writer + code-writer pipeline)\n`);
     console.log(`       ${cmd} run migrate --parallel 3\n`);
     console.log(`     ↳ Each --parallel session is an independent agent.`);
     console.log(`       Run multiple terminals if you want more throughput.\n`);

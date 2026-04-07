@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { printPhaseHeader, printWavePlan, printStatusSummary, printInProgress } from "../dashboard";
 import { getStatusCounts, printCompletionReason, printStaleSessionWarnings } from "../monitoring";
+import { needsBootstrap } from "./bootstrap";
 
 export interface PhaseState {
   total: number;
@@ -42,8 +43,14 @@ export function printNextSteps(db: Database.Database): void {
     return;
   }
 
+  if (needsBootstrap(db)) {
+    console.log(`  3. Bootstrap (scaffold the target module)\n`);
+    console.log(`       ${cmd} run bootstrap\n`);
+    return;
+  }
+
   if (s.migrated < s.total) {
-    console.log(`  3. Migration (test-writer + code-writer run in parallel pools)\n`);
+    console.log(`  4. Migration (analyze + test-writer + code-writer pipeline)\n`);
     console.log(`       ${cmd} run migrate --parallel 3\n`);
     console.log(`     ↳ Each --parallel session is an independent agent.`);
     console.log(`       Run multiple terminals if you want more throughput.\n`);
@@ -51,7 +58,7 @@ export function printNextSteps(db: Database.Database): void {
   }
 
   if (s.reviewed < s.total) {
-    console.log(`  4. Review (can run in parallel with migration)\n`);
+    console.log(`  5. Review (can run in parallel with migration)\n`);
     console.log(`       ${cmd} run review --parallel 2\n`);
     console.log(`     ↳ Start this once some files are migrated — no need to wait for all.\n`);
     return;
