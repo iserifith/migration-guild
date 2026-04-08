@@ -15,6 +15,7 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ### Changed
 
+- Changed `build:dist` to use a cross-platform Node builder instead of a Bash-only script so packaging works from Windows shells.
 - Scoped the bootstrap documentation workflow to maintainer docs instead of broad user-facing docs.
 - Switched the documentation-agent workflow from a local pre-commit hook to a manual maintainer step, with post-CI automation as the intended long-term home.
 - Documented the split between repo-local `.github/` artifacts and shipped `package/` artifacts.

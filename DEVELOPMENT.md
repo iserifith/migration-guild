@@ -26,13 +26,13 @@ The split matters because not everything in this repository ships.
 | `package/instructions/` | Path-scoped instructions installed into migration workspaces | Yes |
 | `package/tools/` | Registry CLI, legmod CLI, Foundry integrations, packaging-time runtime files | Yes |
 | `setup.ts` | Installer entrypoint that copies `package/` into a target workspace | Yes, as compiled `dist/setup.js` |
-| `scripts/build-dist.sh` | Builds the distributable tarball | Dev tool |
+| `scripts/build-dist.mjs` | Builds the distributable tarball | Dev tool |
 
 ## Shipping model
 
 The distributable kit is built from **`package/` plus selected top-level docs and the compiled installer**.
 
-`scripts/build-dist.sh` assembles:
+`scripts/build-dist.mjs` assembles:
 
 - `dist/setup.js`
 - `README.md`
@@ -124,7 +124,7 @@ npm run build:dist
 What they do:
 
 - `npm run build` compiles `setup.ts` to `dist/setup.js`
-- `npm run build:dist` builds `package/tools/`, rebuilds `dist/setup.js`, then assembles `dist/legmod-kit.tar.gz`
+- `npm run build:dist` runs the cross-platform dist builder, builds `package/tools/`, rebuilds `dist/setup.js`, then assembles `dist/legmod-kit.tar.gz`
 
 ## Mirroring rules
 
