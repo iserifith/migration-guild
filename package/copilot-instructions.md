@@ -49,6 +49,8 @@ Key commands:
 
 - `legacy/` is **read-only** — never modify files here
 - `modern/` is the **only** write target for migrated code
+- Remediation is registry-only — do not fix `needs-rework` or stalled items by editing files during triage; requeue them and resume the normal phase flow
+- If `legacy/` was edited accidentally, restore it from version control or a fresh copy before running more migration steps
 - Always write tests before production code
 - Check registry before starting work — use `claim` to avoid duplicate work
 - Update registry status after each meaningful step

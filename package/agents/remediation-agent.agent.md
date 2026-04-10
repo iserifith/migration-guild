@@ -21,6 +21,7 @@ Use this agent when any of these are true:
 2. Preserve registry truth and leave a clear audit trail
 3. Take exactly one recovery action per artifact
 4. Escalate quickly when the correct fix is ambiguous
+5. Keep remediation registry-only — do not patch source files as part of exception handling
 
 ## Procedure
 
@@ -47,6 +48,8 @@ Use this agent when any of these are true:
    - **Ambiguous state**: evidence conflicts or run/artifact attribution is unclear
 
 4. Choose one recovery action.
+
+   Remediation is **registry-only**. Do not edit files in `legacy/` or `modern/` while diagnosing or recovering a stuck artifact. If code changes are needed, requeue the artifact and let the normal migration or review agent perform the next pass.
 
    **A. Release for retry** — use when the claim is stuck because the worker died or timed out before producing a trustworthy result.
    ```bash
@@ -106,6 +109,7 @@ Use this agent when any of these are true:
 ## Guardrails
 
 - Never modify `legacy/`
+- Never edit files in `modern/` as part of remediation; this agent only changes registry state and escalation metadata
 - Do not hide failures behind success-shaped status updates
 - Do not guess when run-to-artifact attribution is weak; escalate instead
 - Prefer releasing a stuck claim over inventing partial progress

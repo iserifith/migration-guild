@@ -2,19 +2,17 @@
 
 This file tracks **development changes to the kit repository itself**.
 
-It is intended for maintainers, not migration-workspace users. User-facing setup and behavior docs belong in `README.md`, `GETTING-STARTED.md`, and `docs/`.
+It is intended for maintainers, not migration-workspace users. User-facing setup and behavior docs belong in `README.md`, `GETTING-STARTED.md`, and `docs/`. Date headings inside `Unreleased` group development batches; they are not release dates.
 
 ## Unreleased
 
-### Added
+### April 10, 2026
 
 - Added a repo-local `documentation-agent` under `.github/agents/`.
 - Added `DEVELOPMENT.md` as the maintainer guide for packaging, mirroring, and repo-local workflows.
 - Added automatic target-module bootstrap before migration when `modern/` is not yet scaffolded, using `target-module-bootstrap` skill assets and artifact-derived project/package detection.
 - Added tier-aware registry claiming and ready-list filtering so split migration agents can stay on first-class artifacts while resolving second-class dependencies inline.
-
-### Changed
-
+- Tightened shipped migration remediation guidance so `migration-orchestrator` and `remediation-agent` treat rework as registry-only triage, explicitly forbid source edits during remediation, and instruct operators to restore `legacy/` before continuing if it was modified accidentally.
 - Changed `build:dist` to use a cross-platform Node builder instead of a Bash-only script so packaging works from Windows shells.
 - Scoped the bootstrap documentation workflow to maintainer docs instead of broad user-facing docs.
 - Switched the documentation-agent workflow from a local pre-commit hook to a manual maintainer step, with post-CI automation as the intended long-term home.
