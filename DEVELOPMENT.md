@@ -146,7 +146,7 @@ Use docs by audience:
 
 When a change affects maintainer workflow, packaging, source-of-truth boundaries, or repo-local automation, capture it in `DEVELOPMENT.md`.
 
-When a change is notable enough that future maintainers should see it in chronological form, add it to `CHANGELOGS.MD` under `Unreleased`.
+When a change is notable enough that future maintainers should see it in chronological form, add it to `CHANGELOGS.MD` under `Unreleased` using a human-readable date heading with the related items listed beneath it, for example `### April 10, 2026`. These headings group unreleased development batches; they are not release dates.
 
 ## Documentation agent
 
@@ -167,7 +167,7 @@ Current doc targets:
 
 ```bash
 copilot --agent documentation-agent --yolo -p \
-  "Review the staged changes for the current commit in this repository. Update only DEVELOPMENT.md and CHANGELOGS.MD when the staged behavior changes require maintainer workflow notes or an unreleased changelog entry. If no such docs changes are needed, do not edit anything."
+  "Review the staged changes for the current commit in this repository. Update only DEVELOPMENT.md and CHANGELOGS.MD when the staged behavior changes require maintainer workflow notes or an unreleased changelog entry grouped under the appropriate human-readable date heading. If no such docs changes are needed, do not edit anything."
 ```
 
 Then review only the maintainer docs:
@@ -199,4 +199,4 @@ When making a change, ask:
 2. If it should ship, did I update the `package/` copy?
 3. If it changes `migration/`, did I update `package/tools/` too?
 4. If it changes maintainer workflow, did I update `DEVELOPMENT.md`?
-5. If it is worth recording for later context, did I add an `Unreleased` note to `CHANGELOGS.MD`?
+5. If it is worth recording for later context, did I add it to the correct `Unreleased` date group in `CHANGELOGS.MD`?

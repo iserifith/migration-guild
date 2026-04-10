@@ -376,5 +376,8 @@ node migration/registry/dist/cli.js release --id "<id>" --agent "operator" --rea
 
 If the failure mode is unclear or the artifact already moved to `needs-rework` / `blocked`, run `remediation-agent` instead of guessing the next state.
 
+**`legacy/` changed unexpectedly**
+Stop and restore `legacy/` from version control or a fresh copy before continuing. The legacy tree is read-only; remediation should only change registry state, then send the artifact back through the normal migration or review flow.
+
 **Agent doesn't run shell commands**
 Ensure you pass `--yolo` (or `--allow-all-tools`) when starting Copilot. Without it, the agent can't run `node migration/registry/dist/cli.js`.

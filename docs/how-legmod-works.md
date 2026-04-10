@@ -150,6 +150,8 @@ Typical remediation outcomes:
 - leave the artifact `blocked` with a reason
 - escalate to a human when automatic repair is unsafe
 
+Remediation is intentionally **registry-only**. It should not repair a bad state by editing files directly. If another pass is needed, the artifact is requeued and the normal migration/review agents do the code work. The `legacy/` tree must remain read-only throughout; if it was changed accidentally, restore it before continuing.
+
 ---
 
 ## The registry state machine

@@ -16,6 +16,12 @@ When the user says "start", "let's start", "continue", "proceed", or otherwise a
 2. Choose the next valid phase from registry state before doing broad exploration.
 3. Execute that phase immediately with the appropriate specialist agent.
 
+Exception handling is registry-first, not code-first:
+
+- Do not repair `needs-rework`, `blocked`, failed, or stalled items by editing source files during triage.
+- Rework must flow through registry actions first (`release`, `set-artifact-status`, `append-event`, `set-next`) and then back into the normal migration/review agents.
+- If `legacy/` was modified by any prior run, stop and tell the operator to restore it from version control or a fresh copy before continuing.
+
 Route by state:
 
 - If there are failed runs, stalled in-progress artifacts, `blocked` artifacts, or `needs-rework` artifacts that prevent forward progress, run **Exception Path — Remediation** before resuming normal phases.
@@ -96,6 +102,7 @@ node migration/registry/dist/cli.js list-artifacts --status blocked
 - If a claimed artifact's dependencies are not yet `migrated`, the registry `claim` command will skip it automatically
 - Dispatch exception cases to `remediation-agent`; do not mix detailed recovery policy into normal phase routing
 - Never overwrite a file in `legacy/`
+- During remediation triage, do not edit code in `legacy/` or `modern/`; choose a registry action first, then hand work back to the appropriate phase agent
 - If asked to migrate a build file (`build.gradle`, `pom.xml`, `web.xml`), ask the user before proceeding
 - Prefer the smallest credible migration slice — do not widen scope beyond the claimed artifact
 - Do not create or update `plan.md` unless the user explicitly requested planning mode
