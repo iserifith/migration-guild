@@ -16,7 +16,7 @@
     "phaseModels": {
       "inventory": "gpt-5.4-mini",
       "planning": "claude-sonnet-4.6",
-      "migration": "gpt-oss-120b",
+      "analysis": "gpt-5.4-mini",
       "test-writing": "gpt-5.4-mini",
       "code-writing": "gpt-oss-120b",
       "review": "claude-sonnet-4.6",
@@ -25,6 +25,7 @@
     "phaseProviders": {
       "inventory": "foundry",
       "planning": "copilot",
+      "analysis": "foundry",
       "test-writing": "foundry",
       "code-writing": "foundry",
       "review": "copilot",

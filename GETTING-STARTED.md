@@ -98,6 +98,7 @@ FOUNDRY_API_KEY=<your-key>
 ```
 
 Then in `legmod.config.json`, set `"llmProvider": "foundry"` and configure per-phase models under `foundry.phaseModels`.
+For the migration pipeline, the phase keys are `analysis`, `test-writing`, and `code-writing`.
 
 The CLI loads `.env` automatically — no `export` or `source` needed.
 
