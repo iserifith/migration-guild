@@ -6,6 +6,8 @@ import * as path from "path";
 export type LLMProvider = "copilot" | "foundry";
 export type ProviderType = "openai" | "azure" | "anthropic";
 export type PhaseKey = "inventory" | "planning" | "analysis" | "test-writing" | "code-writing" | "review" | "eval";
+const VALID_PHASE_KEYS: PhaseKey[] = ["inventory", "planning", "analysis", "test-writing", "code-writing", "review", "eval"];
+const VALID_PHASE_KEY_SET = new Set<string>(VALID_PHASE_KEYS);
 
 export interface FoundryConfig {
   /**
@@ -118,6 +120,29 @@ export const BUILTIN_MODEL_TOKENS: Record<string, number> = {
   "gpt-5.4-nano":        500,
   "gpt-5-mini":         2000,
 };
+
+function validatePhaseOverrideMap<T>(
+  section: "phaseModels" | "phaseProviders",
+  overrides: unknown,
+): Partial<Record<PhaseKey, T>> | undefined {
+  if (overrides == null) return undefined;
+  if (typeof overrides !== "object" || Array.isArray(overrides)) {
+    throw new Error(
+      `[legmod] foundry.${section} must be an object keyed by phase name (${VALID_PHASE_KEYS.join(", ")}).`,
+    );
+  }
+
+  const invalidKeys = Object.keys(overrides as Record<string, unknown>)
+    .filter((key) => !VALID_PHASE_KEY_SET.has(key));
+  if (invalidKeys.length > 0) {
+    throw new Error(
+      `[legmod] foundry.${section} contains unsupported phase key(s): ${invalidKeys.map((key) => `"${key}"`).join(", ")}. ` +
+        `Use only: ${VALID_PHASE_KEYS.join(", ")}.`,
+    );
+  }
+
+  return overrides as Partial<Record<PhaseKey, T>>;
+}
 
 const PHASE_MODEL_DEFAULTS: Record<PhaseKey, string> = {
   inventory:      "gpt-5.4-mini",
@@ -241,6 +266,8 @@ export function loadConfig(workspaceRoot?: string): LegmodConfig {
 
   if (partial.foundry) {
     const f = partial.foundry;
+    const phaseModels = validatePhaseOverrideMap<string>("phaseModels", f.phaseModels);
+    const phaseProviders = validatePhaseOverrideMap<LLMProvider>("phaseProviders", f.phaseProviders);
     config.foundry = interpolateFoundry({
       openaiEndpoint: f.openaiEndpoint ?? "",
       embedEndpoint: f.embedEndpoint,
@@ -251,8 +278,8 @@ export function loadConfig(workspaceRoot?: string): LegmodConfig {
       batchEnabled: f.batchEnabled ?? true,
       providerType: f.providerType ?? "openai",
       modelTokenLimits: f.modelTokenLimits,
-      phaseModels: f.phaseModels,
-      phaseProviders: f.phaseProviders,
+      phaseModels,
+      phaseProviders,
     });
   }
 
