@@ -6,7 +6,7 @@ This file is for people changing the **kit itself**, not for users running a mig
 
 legmod has two parallel concerns:
 
-1. **Repository-local development artifacts** used while building the kit in this repo
+1. **Repository-local maintainer artifacts** used while developing the kit
 2. **Packaged kit artifacts** copied into user workspaces by `setup.ts`
 
 The split matters because not everything in this repository ships.
@@ -15,10 +15,7 @@ The split matters because not everything in this repository ships.
 
 | Path | Purpose | Ships |
 | --- | --- | --- |
-| `.github/agents/` | Repo-local custom agents used while developing legmod | No |
-| `.github/skills/` | Repo-local skills and runtime template assets used while developing legmod | No |
-| `.github/prompts/` | Repo-local prompts for this repo | No |
-| `.github/instructions/` | Repo-local instructions for this repo | No |
+| `.github/agents/` | Repo-local maintainer agents for working on the kit itself | No |
 | `.github/copilot-instructions.md` | Repo-local Copilot context for this repository | No |
 | `package/agents/` | Agent definitions installed into migration workspaces | Yes |
 | `package/skills/` | Skill definitions and shipped skill assets installed into migration workspaces | Yes |
@@ -44,7 +41,7 @@ The distributable kit is built from **`package/` plus selected top-level docs an
 Important consequence:
 
 - If a migration capability should exist in user workspaces, it must be represented in **`package/`**
-- If something is only for maintaining this repository, keep it at the repo root (for example `.github/agents/documentation-agent.agent.md` and `.githooks/pre-commit`)
+- If something is only for maintaining this repository, keep it at the repo root (for example `.github/agents/documentation-agent.agent.md`)
 
 ## Repository layout
 
@@ -61,21 +58,20 @@ Important consequence:
 - `migration/` — live development copy of the registry and legmod CLIs used in this repo
 - `package/tools/` — packaged copy of the same toolset that gets shipped
 - `dist/` — compiled installer and assembled tarball output
-- `legacy/` / `modern/` — workspace-like directories used for developing the kit and trying migration behavior locally
+- `package/mock/` — packaged sample fixture content for setting up a separate test workspace
 
 ## Core workflows
 
-### 1. Update repo-local Copilot behavior
+### 1. Update repo-local maintainer behavior
 
-Use the root `.github/` tree when you are changing how Copilot behaves **inside this repository**.
+Use the root `.github/` tree only when you are changing how Copilot helps maintain **this repository itself**.
 
 Typical examples:
 
 - dev-only agents
-- repo-specific prompts
 - maintainer instructions
 
-These changes do not ship unless you separately mirror them into `package/`.
+These changes do not ship.
 
 ### 2. Update shipped migration behavior
 
@@ -90,14 +86,21 @@ Common paths:
 - `package/tools/`
 - `package/copilot-instructions.md`
 
-In practice, many migration changes require edits in both places:
+Do not mirror shipped agents, skills, prompts, or instructions into root `.github/`. `package/` is the source of truth for shipped Copilot runtime behavior.
 
-- root `.github/` so the repo behaves correctly during development
-- `package/` so installed workspaces get the same behavior
+### 3. Test shipped behavior
 
-If a migration runtime reads template assets from a skill directory, treat that skill as shipped runtime input, not just prompt content. For example, `migration/legmod/commands/bootstrap.ts` reads bootstrap templates from `.github/skills/target-module-bootstrap/assets`, so template changes must be mirrored to `package/skills/target-module-bootstrap/assets`.
+Do not use this repository root as a migration workspace.
 
-### 3. Update installer behavior
+Instead:
+
+1. Create a fresh workspace outside this repository.
+2. Install the kit there with `npx legmod-setup` or by unpacking the built tarball.
+3. Copy a fixture into that external workspace when you need a reproducible migration scenario.
+
+Use `package/mock/` for maintained sample content instead of recreating `legacy/` or `modern/` at the repo root.
+
+### 4. Update installer behavior
 
 `setup.ts` is the installer source. It:
 
@@ -112,7 +115,7 @@ If setup behavior changes, update:
 - packaged files under `package/` if the installed workspace should change
 - user-facing docs if setup flow or resulting layout changes
 
-### 4. Build the repo
+### 5. Build the repo
 
 Common commands:
 
@@ -128,20 +131,11 @@ What they do:
 
 ## Mirroring rules
 
-When working on migration behavior, always check whether a file has both:
+The only intentional live mirror is:
 
-- a root copy used by this repo
-- a packaged copy used by installed workspaces
-
-Typical mirrored pairs:
-
-- `.github/agents/*` and `package/agents/*`
-- `.github/skills/*` and `package/skills/*`
-- `.github/prompts/*` and `package/prompts/*`
-- `.github/instructions/*` and `package/instructions/*`
 - `migration/*` and `package/tools/*`
 
-Do not assume both copies stay aligned automatically. If the packaged behavior must change, edit the packaged copy too.
+For Copilot artifacts, `package/` is the shipped source of truth and root `.github/` is repo-only maintainer context. Do not reintroduce mirrored runtime copies under root `.github/`.
 
 ## Docs expectations for this repo
 
@@ -150,7 +144,7 @@ Use docs by audience:
 - **Users of the kit** → `README.md`, `GETTING-STARTED.md`, `docs/`
 - **Maintainers of the kit** → `DEVELOPMENT.md`, `CHANGELOGS.MD`
 
-When a change affects maintainer workflow, packaging, mirrored artifacts, or repo-local automation, capture it in `DEVELOPMENT.md`.
+When a change affects maintainer workflow, packaging, source-of-truth boundaries, or repo-local automation, capture it in `DEVELOPMENT.md`.
 
 When a change is notable enough that future maintainers should see it in chronological form, add it to `CHANGELOGS.MD` under `Unreleased`.
 
@@ -203,6 +197,6 @@ When making a change, ask:
 
 1. Is this repo-only, or should it ship?
 2. If it should ship, did I update the `package/` copy?
-3. If it changes installer or runtime behavior, did I update the right docs?
+3. If it changes `migration/`, did I update `package/tools/` too?
 4. If it changes maintainer workflow, did I update `DEVELOPMENT.md`?
 5. If it is worth recording for later context, did I add an `Unreleased` note to `CHANGELOGS.MD`?

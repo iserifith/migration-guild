@@ -23,6 +23,17 @@ export interface BootstrapResult {
 }
 
 function getAssetsDir(workspaceRoot: string): string {
+  const packagedAssetsDir = path.join(
+    workspaceRoot,
+    "package",
+    "skills",
+    "target-module-bootstrap",
+    "assets",
+  );
+  if (fs.existsSync(packagedAssetsDir)) {
+    return packagedAssetsDir;
+  }
+
   return path.join(
     workspaceRoot,
     ".github",
