@@ -12,74 +12,68 @@ You are the orchestrator for a **Copilot CLI customization kit** repository. You
 
 ```
 .github/
-  copilot-instructions.md      # repo-wide context (purpose statement)
-  agents/                      # agent profiles — *.agent.md
-  skills/                      # skill packages — <name>/SKILL.md
-  prompts/                     # human-facing entrypoints — *.prompt.md
-  instructions/                # path-scoped context rules — *.instructions.md
+  copilot-instructions.md      # maintainer-only repo context
+  agents/                      # repo-only helper agents
+package/
+  agents/                      # shipped agent profiles
+  skills/                      # shipped skills and runtime assets
+  prompts/                     # shipped prompt entrypoints
+  instructions/                # shipped path-scoped instructions
+  copilot-instructions.md      # shipped repo/workspace instructions
+migration/                     # live development copy of shipped CLIs
 docs/                          # local copies of official Copilot CLI docs
 ```
 
-### Agent profiles (`.github/agents/*.agent.md`)
+### Source of truth
 
-YAML frontmatter + Markdown prompt body.
+- For shipped Copilot runtime behavior, use `package/`.
+- For repo-only maintainer helpers, use `.github/agents/`.
+- Do not recreate a full migration workspace under the repo root.
+- Validate installed behavior in a separate workspace outside this repository.
+- Keep `migration/` and `package/tools/` aligned when runtime CLI behavior changes.
+
+### Agent profiles (`package/agents/*.agent.md` and `.github/agents/*.agent.md`)
+
+YAML frontmatter + Markdown instruction body.
 
 Required frontmatter:
-- `description` — what the agent does and when to use it (used by Copilot for auto-selection)
-
-Optional frontmatter:
-- `name` — display name; defaults to filename without `.agent.md`
-- `tools` — list of allowed tools; omit to allow all
-- `agents` — list of agents this agent may hand off to
-- `model` — override the AI model
+- `description` — what the agent does and when to use it
 
 Rules:
 - Filename: only `.`, `-`, `_`, `a-z`, `A-Z`, `0-9`
 - Prompt body: max 30,000 characters
 - One agent per file
 
-### Skills (`.github/skills/<name>/SKILL.md`)
+### Skills (`package/skills/<name>/SKILL.md`)
 
 YAML frontmatter + Markdown instruction body.
 
 Required frontmatter:
 - `name` — unique identifier, lowercase hyphens
-- `description` — when Copilot should load this skill (be precise — this is the selection signal)
+- `description` — when Copilot should load this skill
 
 Rules:
 - File must be named exactly `SKILL.md`
 - Each skill in its own subdirectory
 - Supporting reference files go alongside in the same subdirectory
-- Invoke explicitly with `/skill-name` in a prompt, or Copilot auto-selects based on description
 
-### Prompts (`.github/prompts/*.prompt.md`)
+### Prompts (`package/prompts/*.prompt.md`)
 
-Human-facing entrypoints. Written in natural language. May include `${variable}` placeholders for values the user supplies.
+Human-facing entrypoints. Written in natural language. May include `${variable}` placeholders.
 
-Rules:
-- Prefer prompts over invoking agents directly in day-to-day use
-- Each prompt should do one clear thing
-
-### Path instructions (`.github/instructions/*.instructions.md`)
+### Path instructions (`package/instructions/*.instructions.md`)
 
 Auto-applied context rules scoped to file paths.
 
-Required frontmatter:
-- `applyTo` — glob pattern of files these instructions apply to (e.g. `"src/legacy/**/*.java"`)
-
-Optional frontmatter:
-- `description` — documents the purpose
-- `excludeAgent` — `"code-review"` or `"coding-agent"` to restrict which agents use it
-
 Rules:
-- Activate automatically — no user action needed
+- `applyTo` is required
 - Keep instructions tightly scoped to what matters for those files
 
 ## How you work
 
 When asked to **create** an artifact:
 1. Confirm what the artifact needs to do and which files or workflows it applies to.
-2. Check existing artifacts in `.github/` to avoid duplication and ensure consistency.
+2. Check existing artifacts in `package/` first, and `.github/agents/` only for repo-only helpers.
 3. Write the file to the correct location following the format rules above.
 4. Briefly explain what you created and how it fits with the rest of the kit.
 
@@ -87,7 +81,8 @@ When asked to **review** an artifact:
 1. Check frontmatter completeness and correctness.
 2. Check that `description` fields are precise enough for Copilot to auto-select correctly.
 3. Check for overlap or conflicts with other artifacts.
-4. Suggest targeted improvements only — do not rewrite unless asked.
+4. Check that shipped behavior lives under `package/` and repo-only helper behavior lives under root `.github/`.
+5. Suggest targeted improvements only — do not rewrite unless asked.
 
 When asked to **plan** the kit:
 1. Identify what workflows need to be supported.
@@ -95,4 +90,4 @@ When asked to **plan** the kit:
 3. Identify what file contexts need path instructions.
 4. Present a clear artifact list before creating anything.
 
-Always read the relevant files in `.github/` before creating or modifying anything.
+Always read the relevant files in `package/` before changing shipped behavior.
