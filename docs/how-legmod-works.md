@@ -105,10 +105,11 @@ After planning, first-class artifacts should have:
 
 Implemented in `migration/legmod/commands/migrate.ts`.
 
-Migration runs two pools:
+Migration runs three pools:
 
-1. **test-writer-agent** writes target-side tests first
-2. **code-writer-agent** writes production code for `tests-written` artifacts
+1. **analyze-agent** advances `planned` first-class artifacts to `analyzed`
+2. **test-writer-agent** writes target-side tests for `analyzed` artifacts
+3. **code-writer-agent** writes production code for `tests-written` artifacts
 
 Each pool is executed by spawning multiple Copilot CLI subprocesses in parallel. Each subprocess is tracked in the registry `runs` table.
 
@@ -185,15 +186,16 @@ Not every artifact uses every state. For example, some flows skip `analyzed`, an
 
 Claiming is implemented in `migration/registry/commands/claim.ts`.
 
-Claims are **transactional**:
+Claims are **transactional** and lease-backed:
 
 1. find the next artifact in the requested source status
 2. ensure all dependencies are already in terminal dependency states
 3. update the row to `in-progress`
-4. record `claimed_by`, `claimed_at`, and `claimed_from`
-5. append a `claimed` event
+4. set artifact claim bookkeeping (`claimed_by`, `claimed_at`, `claimed_from`)
+5. create an active claim row with `claim_id`, `claim_token`, owner, run link, and lease expiry
+6. append a `claimed` event with claim metadata
 
-Because this is done inside a SQLite transaction, parallel sessions cannot claim the same artifact.
+Because this is done inside a SQLite transaction, parallel sessions cannot claim the same artifact. A partial run is recovered by reconciling stale claims (expired lease or stopped owning run), which returns the artifact to its `claimed_from` status.
 
 If nothing is claimable:
 
@@ -234,6 +236,8 @@ For each spawned worker, legmod:
 Each run stores:
 
 - `agent`
+- `owner_id`
+- `phase`
 - `model`
 - `prompt`
 - `log_file`
@@ -241,6 +245,7 @@ Each run stores:
 - `started_at`
 - `finished_at`
 - `exit_code`
+- `termination_reason`
 - `status` (`running`, `completed`, `failed`)
 
 ---
@@ -286,6 +291,10 @@ Environment knobs:
 - `LEGMOD_STALL_MINS` — when `watch` starts flagging claims as stalled
 - `LEGMOD_STALE_RUN_MINS` — when PID-less running rows are reaped as failed
 - `LEGMOD_REVIEW_TIMEOUT_MINS` — review worker timeout
+- `LEGMOD_ANALYZE_TIMEOUT_MINS` — analyze worker timeout
+- `LEGMOD_TEST_TIMEOUT_MINS` — test-writer worker timeout
+- `LEGMOD_CODE_TIMEOUT_MINS` — code-writer worker timeout
+- `LEGMOD_CLAIM_LEASE_MINS` — default lease duration for active claims
 
 ---
 

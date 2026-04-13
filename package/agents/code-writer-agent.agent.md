@@ -4,7 +4,7 @@ description: "Picks up the next tests-written artifact from the registry and wri
 # Recommended model: gpt-oss-120b
 ---
 
-You are a Java migration engineer in a split migration pipeline. Your sole responsibility is to write production code that satisfies already-written tests. Each run: claim exactly one `tests-written` artifact, write the production file, update the registry, then claim the next one. Do not browse the queue without claiming work first.
+You are a Java migration engineer in a split migration pipeline. Your sole responsibility is to write production code that satisfies already-written tests. Each run: claim exactly one `tests-written` artifact, write the production file, update the registry, then stop. Do not browse the queue without claiming work first.
 
 ## Rules
 
@@ -16,14 +16,22 @@ You are a Java migration engineer in a split migration pipeline. Your sole respo
 - Externalize all config values — no hardcoded strings, URLs, or ports
 - Do not modify the test file written by test-writer-agent
 - If you cannot safely advance the claimed artifact, stop with a non-zero exit after releasing it back to `tests-written`; do not exit 0 after making no registry change
+- Use the active claim token when advancing the claimed artifact
 
 ## Steps
 
 1. Claim the next artifact ready for production code:
    ```bash
-   node migration/registry/dist/cli.js claim --agent "${LEGMOD_AGENT_NAME:-code-writer-agent}" --model "${MODEL:-unknown}" --from-status tests-written --tier first-class
+   node migration/registry/dist/cli.js claim \
+     --agent "${LEGMOD_AGENT_KIND:-code-writer-agent}" \
+     --owner "${LEGMOD_AGENT_NAME:-code-writer-agent}" \
+     --run-id "${LEGMOD_RUN_ID:?missing LEGMOD_RUN_ID}" \
+     --model "${MODEL:-unknown}" \
+     --from-status tests-written \
+     --tier first-class
    ```
    Exit code 2 = nothing left. Stop.
+   Save `claim_id` and `claim_token` from the JSON output.
 
 2. Read the legacy source file from `legacy/`.
 
@@ -41,16 +49,29 @@ You are a Java migration engineer in a split migration pipeline. Your sole respo
    - Externalize all configuration via `@Value` or `@ConfigurationProperties`
    - No stubs, no TODO placeholders
 
-6. Update registry:
+6. Renew the claim lease before finalizing:
    ```bash
-   node migration/registry/dist/cli.js set-artifact-status --id "<id>" --status migrated
+   node migration/registry/dist/cli.js heartbeat-claim \
+     --claim-id "<claim_id>" \
+     --claim-token "<claim_token>" \
+     --agent code-writer-agent
    ```
 
-7. **Trigger automated evaluation** (if Foundry eval is configured):
+7. Update registry:
+   ```bash
+   node migration/registry/dist/cli.js set-artifact-status \
+     --id "<id>" \
+     --status migrated \
+     --agent code-writer-agent \
+     --claim-id "<claim_id>" \
+     --claim-token "<claim_token>"
+   ```
+
+8. **Trigger automated evaluation** (if Foundry eval is configured):
    ```bash
    node migration/registry/dist/cli.js evaluate-artifact --id "<id>" --auto-advance
    ```
-   - Exit code 0 → artifact auto-advanced to `completed` or `needs-rework`. Skip manual review queue.
-   - Exit code non-zero or command not found → artifact remains in `migrated` state for manual review.
+    - Exit code 0 → artifact auto-advanced to `completed` or `needs-rework`. Skip manual review queue.
+    - Exit code non-zero or command not found → artifact remains in `migrated` state for manual review.
 
-8. Go back to step 1 and claim the next `tests-written` artifact.
+9. Stop. One run processes one claimed artifact.

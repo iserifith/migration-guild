@@ -91,10 +91,15 @@ CREATE TABLE IF NOT EXISTS events (
     ts           TEXT NOT NULL DEFAULT (datetime('now')),
     artifact_id  TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
     type         TEXT NOT NULL CHECK (type IN (
-                     'registered',
-                     'analyzed',
                      'planned',
                      'claimed',
+                     'claim-heartbeat',
+                     'claim-completed',
+                     'claim-released',
+                     'claim-expired',
+                     'run-reaped',
+                     'registered',
+                     'analyzed',
                      'scaffolded',
                      'migrated',
                      'reviewed',
@@ -158,6 +163,8 @@ CREATE TABLE IF NOT EXISTS operator_state (
 CREATE TABLE IF NOT EXISTS runs (
     run_id       TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
     agent        TEXT NOT NULL,
+    owner_id     TEXT,
+    phase        TEXT,
     model        TEXT,
     prompt       TEXT,
     log_file     TEXT,
@@ -165,11 +172,52 @@ CREATE TABLE IF NOT EXISTS runs (
     started_at   TEXT NOT NULL DEFAULT (datetime('now')),
     finished_at  TEXT,
     exit_code    INTEGER,
+    termination_reason TEXT,
     status       TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'completed', 'failed'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_runs_agent  ON runs(agent);
 CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
+CREATE INDEX IF NOT EXISTS idx_runs_owner  ON runs(owner_id);
+
+-- ─── Claim Attempts ───────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS artifact_claims (
+    claim_id          TEXT PRIMARY KEY,
+    artifact_id       TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    run_id            TEXT REFERENCES runs(run_id) ON DELETE SET NULL,
+    owner_id          TEXT NOT NULL,
+    agent             TEXT NOT NULL,
+    from_status       TEXT NOT NULL CHECK (from_status IN (
+                         'pending',
+                         'planned',
+                         'analyzed',
+                         'in-progress',
+                         'tests-written',
+                         'migrated',
+                         'reviewed',
+                         'needs-rework',
+                         'completed',
+                         'blocked',
+                         'skipped'
+                     )),
+    claim_token       TEXT NOT NULL,
+    state             TEXT NOT NULL CHECK (state IN ('active', 'completed', 'released', 'expired', 'failed')),
+    attempt_no        INTEGER NOT NULL,
+    claimed_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    heartbeat_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    lease_expires_at  TEXT NOT NULL,
+    finished_at       TEXT,
+    finish_reason     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_claims_artifact ON artifact_claims(artifact_id);
+CREATE INDEX IF NOT EXISTS idx_claims_run      ON artifact_claims(run_id);
+CREATE INDEX IF NOT EXISTS idx_claims_owner    ON artifact_claims(owner_id);
+CREATE INDEX IF NOT EXISTS idx_claims_state    ON artifact_claims(state);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_claims_active_artifact
+  ON artifact_claims(artifact_id)
+  WHERE state = 'active';
 
 -- ─── Stack Mappings ──────────────────────────────────────────────────────────
 -- Created by stack-advisor after inventory; confirmed by a human before planning.
@@ -287,3 +335,6 @@ ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS claimed_from TEXT;
 ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS tier         TEXT NOT NULL DEFAULT 'second-class'
   CHECK (tier IN ('first-class', 'second-class'));
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS pid INTEGER;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS owner_id TEXT;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS phase TEXT;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS termination_reason TEXT;

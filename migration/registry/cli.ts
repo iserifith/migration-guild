@@ -13,7 +13,7 @@ import {
   setArtifactWave,
   updateArtifact,
 } from "./commands/artifacts";
-import { claimNextTask } from "./commands/claim";
+import { claimNextTask, heartbeatClaim, reconcileStaleClaims } from "./commands/claim";
 import {
   linkArtifacts,
   listDependencies,
@@ -21,7 +21,7 @@ import {
 } from "./commands/dependencies";
 import { appendEvent } from "./commands/events";
 import { startServer } from "./commands/serve";
-import { startRun, finishRun, listRuns } from "./commands/runs";
+import { startRun, finishRun, listRuns, setRunPid } from "./commands/runs";
 import {
   confirmMapping,
   createMapping,
@@ -147,12 +147,16 @@ program
   .option("--agent <agent>", "Agent or operator recording the status change")
   .option("--model <model>", "Model used when recording the status change")
   .option("--reason <reason>", "Reason for the status change")
+  .option("--claim-id <claimId>", "Active claim ID authorizing the status change")
+  .option("--claim-token <claimToken>", "Active claim token authorizing the status change")
   .action((opts) =>
     run(() => {
       setArtifactStatus(db(), opts.id, opts.status as Status, {
         agent: opts.agent,
         model: opts.model,
         reason: opts.reason,
+        claimId: opts.claimId,
+        claimToken: opts.claimToken,
       });
     }),
   );
@@ -454,11 +458,45 @@ program
     "Returns the claimed artifact as JSON, or exits with code 2 if nothing is available."
   )
   .requiredOption("--agent <agent>", "Name of the agent claiming the task")
+  .option("--owner <owner>", "Stable owner/session ID for this claim attempt")
   .option("--wave <n>", "Only claim from this wave number", parseInt)
   .option("--from-status <status>", "Claim artifacts with this status (default: planned)", "planned")
   .option("--tier <tier>", "Claim only artifacts from this tier")
   .option("--model <model>", "Model running this agent (logged to events)")
-  .action((opts) => run(() => claimNextTask(db(), opts.agent, opts.wave, opts.fromStatus, opts.model, opts.tier)));
+  .option("--run-id <runId>", "Owning run ID for this claim attempt")
+  .option("--lease-minutes <n>", "Lease duration in minutes", parseInt)
+  .action((opts) => run(() => claimNextTask(
+    db(),
+    opts.agent,
+    opts.wave,
+    opts.fromStatus,
+    opts.model,
+    opts.tier,
+    opts.runId,
+    opts.owner,
+    opts.leaseMinutes,
+  )));
+
+program
+  .command("heartbeat-claim")
+  .description("Renew the lease for an active claim")
+  .requiredOption("--claim-id <claimId>")
+  .requiredOption("--claim-token <claimToken>")
+  .requiredOption("--agent <agent>")
+  .option("--lease-minutes <n>", "Lease duration in minutes", parseInt)
+  .action((opts) => run(() => heartbeatClaim(
+    db(),
+    opts.claimId,
+    opts.claimToken,
+    opts.agent,
+    opts.leaseMinutes,
+  )));
+
+program
+  .command("reconcile-claims")
+  .description("Release claims whose leases expired or whose owning runs stopped")
+  .option("--agent <agent>", "Agent recorded on reconciliation events", "legmod")
+  .action((opts) => run(() => reconcileStaleClaims(db(), opts.agent)));
 
 // ─── Wave Planning ───────────────────────────────────────────────────────────
 
@@ -496,21 +534,34 @@ program
   .option("--model <model>", "Model used")
   .option("--prompt <prompt>", "Prompt sent to the agent")
   .option("--log-file <path>", "Path to the tee log file")
+  .option("--owner <owner>", "Stable owner/session ID for the run")
+  .option("--phase <phase>", "Phase responsible for the run")
   .action((opts) => run(() => startRun(db(), {
     agent: opts.agent,
+    ownerId: opts.owner,
+    phase: opts.phase,
     model: opts.model,
     prompt: opts.prompt,
     logFile: opts.logFile,
   })));
 
 program
+  .command("set-run-pid")
+  .description("Attach a child process pid to an existing run")
+  .requiredOption("--run-id <id>", "Run ID")
+  .requiredOption("--pid <pid>", "Child pid", parseInt)
+  .action((opts) => run(() => setRunPid(db(), opts.runId, opts.pid)));
+
+program
   .command("finish-run")
   .description("Record the end of an agent run (called by run-agent.sh)")
   .requiredOption("--run-id <id>", "Run ID returned by start-run")
   .requiredOption("--exit-code <n>", "Exit code of the copilot process", parseInt)
+  .option("--reason <reason>", "Optional termination reason")
   .action((opts) => run(() => finishRun(db(), {
     runId: opts.runId,
     exitCode: opts.exitCode,
+    reason: opts.reason,
   })));
 
 program
