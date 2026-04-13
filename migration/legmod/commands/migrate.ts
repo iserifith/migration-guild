@@ -19,7 +19,12 @@ import {
   printResolvedRuntime,
   printStaleSessionWarnings,
 } from "../monitoring";
+import { reconcileStaleClaims } from "../../registry/commands/claim";
 import { needsBootstrap, runBootstrap } from "./bootstrap";
+
+const ANALYZE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["LEGMOD_ANALYZE_TIMEOUT_MINS"] ?? "10", 10));
+const TEST_WRITE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["LEGMOD_TEST_TIMEOUT_MINS"] ?? "15", 10));
+const CODE_WRITE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["LEGMOD_CODE_TIMEOUT_MINS"] ?? "20", 10));
 
 function statusCountsChanged(before: Record<string, number>, after: Record<string, number>): boolean {
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
@@ -184,6 +189,7 @@ export async function runMigrate(
   let hadFailures = false;
 
   try {
+    reconcileStaleClaims(db, "legmod");
     while (hasMigrationRemaining(db, opts.wave)) {
       console.log(`\n  Pass ${pass}`);
 
@@ -201,6 +207,7 @@ export async function runMigrate(
               db,
               logDir,
               phase: "analysis",
+              timeoutMs: ANALYZE_TIMEOUT_MINUTES * 60_000,
               releaseClaimsOnFailure: true,
             })
           ));
@@ -214,6 +221,7 @@ export async function runMigrate(
         advancedStatus: "analyzed",
         claimability: getClaimabilityStats(db, "planned", opts.wave),
       });
+      reconcileStaleClaims(db, "legmod");
       printStaleSessionWarnings(db);
 
       process.stdout.write(`\n  [Pool 1] Spawning ${testParallel} test-writer session(s)\n`);
@@ -230,6 +238,7 @@ export async function runMigrate(
               db,
               logDir,
               phase: "test-writing",
+              timeoutMs: TEST_WRITE_TIMEOUT_MINUTES * 60_000,
               releaseClaimsOnFailure: true,
             })
           ));
@@ -243,6 +252,7 @@ export async function runMigrate(
         advancedStatus: "tests-written",
         claimability: getClaimabilityStats(db, "analyzed", opts.wave),
       });
+      reconcileStaleClaims(db, "legmod");
       printStaleSessionWarnings(db);
 
       process.stdout.write(`\n  [Pool 2] Spawning ${codeParallel} code-writer session(s)\n`);
@@ -259,6 +269,7 @@ export async function runMigrate(
               db,
               logDir,
               phase: "code-writing",
+              timeoutMs: CODE_WRITE_TIMEOUT_MINUTES * 60_000,
               releaseClaimsOnFailure: true,
             })
           ));
@@ -272,6 +283,7 @@ export async function runMigrate(
         advancedStatus: "migrated",
         claimability: getClaimabilityStats(db, "tests-written", opts.wave),
       });
+      reconcileStaleClaims(db, "legmod");
       printStaleSessionWarnings(db);
 
       const progressMade = statusCountsChanged(beforeAnalyze, afterCode);

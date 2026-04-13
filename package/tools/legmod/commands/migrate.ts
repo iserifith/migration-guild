@@ -19,7 +19,12 @@ import {
   printResolvedRuntime,
   printStaleSessionWarnings,
 } from "../monitoring";
+import { reconcileStaleClaims } from "../../registry/commands/claim";
 import { needsBootstrap, runBootstrap } from "./bootstrap";
+
+const ANALYZE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["LEGMOD_ANALYZE_TIMEOUT_MINS"] ?? "10", 10));
+const TEST_WRITE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["LEGMOD_TEST_TIMEOUT_MINS"] ?? "15", 10));
+const CODE_WRITE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["LEGMOD_CODE_TIMEOUT_MINS"] ?? "20", 10));
 
 function statusCountsChanged(before: Record<string, number>, after: Record<string, number>): boolean {
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
@@ -165,6 +170,7 @@ export async function runMigrate(db: Database.Database, opts: MigrateOpts = {}):
   let pass = 1;
   let hadFailures = false;
 
+  reconcileStaleClaims(db, "legmod");
   while (hasMigrationRemaining(db, opts.wave)) {
     console.log(`\n  Pass ${pass}`);
 
@@ -175,7 +181,7 @@ export async function runMigrate(db: Database.Database, opts: MigrateOpts = {}):
     const analyzeResults = analyzeQueueBefore.total === 0
       ? []
       : await Promise.all(Array.from({ length: analyzeParallel }, () =>
-          spawnAgent({ agent: "analyze-agent", model: analyzeModel, prompt: analyzePrompt, db, logDir: getLogDir(), phase: "analysis", releaseClaimsOnFailure: true })
+          spawnAgent({ agent: "analyze-agent", model: analyzeModel, prompt: analyzePrompt, db, logDir: getLogDir(), phase: "analysis", timeoutMs: ANALYZE_TIMEOUT_MINUTES * 60_000, releaseClaimsOnFailure: true })
         ));
     hadFailures ||= analyzeResults.some((result) => result.exitCode !== 0);
     const afterAnalyze = getStatusCounts(db, opts.wave);
@@ -187,6 +193,7 @@ export async function runMigrate(db: Database.Database, opts: MigrateOpts = {}):
       advancedStatus: "analyzed",
       claimability: getClaimabilityStats(db, "planned", opts.wave),
     });
+    reconcileStaleClaims(db, "legmod");
     printStaleSessionWarnings(db);
 
     process.stdout.write(`\n  [Pool 1] Spawning ${testParallel} test-writer session(s)\n`);
@@ -196,7 +203,7 @@ export async function runMigrate(db: Database.Database, opts: MigrateOpts = {}):
     const testResults = testQueueBefore.total === 0
       ? []
       : await Promise.all(Array.from({ length: testParallel }, () =>
-          spawnAgent({ agent: "test-writer-agent", model: testModel, prompt: testPrompt, db, logDir: getLogDir(), phase: "test-writing", releaseClaimsOnFailure: true })
+          spawnAgent({ agent: "test-writer-agent", model: testModel, prompt: testPrompt, db, logDir: getLogDir(), phase: "test-writing", timeoutMs: TEST_WRITE_TIMEOUT_MINUTES * 60_000, releaseClaimsOnFailure: true })
         ));
     hadFailures ||= testResults.some((result) => result.exitCode !== 0);
     const afterTests = getStatusCounts(db, opts.wave);
@@ -208,6 +215,7 @@ export async function runMigrate(db: Database.Database, opts: MigrateOpts = {}):
       advancedStatus: "tests-written",
       claimability: getClaimabilityStats(db, "analyzed", opts.wave),
     });
+    reconcileStaleClaims(db, "legmod");
     printStaleSessionWarnings(db);
 
     process.stdout.write(`\n  [Pool 2] Spawning ${codeParallel} code-writer session(s)\n`);
@@ -217,7 +225,7 @@ export async function runMigrate(db: Database.Database, opts: MigrateOpts = {}):
     const codeResults = codeQueueBefore.total === 0
       ? []
       : await Promise.all(Array.from({ length: codeParallel }, () =>
-          spawnAgent({ agent: "code-writer-agent", model: codeModel, prompt: codePrompt, db, logDir: getLogDir(), phase: "code-writing", releaseClaimsOnFailure: true })
+          spawnAgent({ agent: "code-writer-agent", model: codeModel, prompt: codePrompt, db, logDir: getLogDir(), phase: "code-writing", timeoutMs: CODE_WRITE_TIMEOUT_MINUTES * 60_000, releaseClaimsOnFailure: true })
         ));
     hadFailures ||= codeResults.some((result) => result.exitCode !== 0);
     const afterCode = getStatusCounts(db, opts.wave);
@@ -229,6 +237,7 @@ export async function runMigrate(db: Database.Database, opts: MigrateOpts = {}):
       advancedStatus: "migrated",
       claimability: getClaimabilityStats(db, "tests-written", opts.wave),
     });
+    reconcileStaleClaims(db, "legmod");
     printStaleSessionWarnings(db);
 
     const progressMade = statusCountsChanged(beforeAnalyze, afterCode);

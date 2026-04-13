@@ -135,7 +135,34 @@ The only intentional live mirror is:
 
 - `migration/*` and `package/tools/*`
 
+When runtime claim/run behavior changes, keep these pairs aligned in the same commit:
+
+- `migration/registry/**` <-> `package/tools/registry/**`
+- `migration/legmod/**` <-> `package/tools/legmod/**`
+- `migration/registry_schema.sql` <-> `package/tools/registry_schema.sql`
+- `migration/test/**` <-> `package/tools/test/**` for behavior-level regression coverage
+
 For Copilot artifacts, `package/` is the shipped source of truth and root `.github/` is repo-only maintainer context. Do not reintroduce mirrored runtime copies under root `.github/`.
+
+## Claim lease and run lifecycle notes
+
+Recent runtime behavior depends on lease-backed claims and run-linked ownership.
+
+Operator/runtime expectations:
+
+- Claims are now represented by `artifact_claims` rows with `claim_id` + `claim_token` and lease timestamps.
+- Worker runs are recorded with stable run IDs and ownership metadata (`owner_id`, `phase`) before subprocess launch.
+- Worker agents are expected to claim exactly one artifact per run, heartbeat before finalizing, then advance status with claim credentials.
+- Claim cleanup can happen by run ID, owner ID, lease expiry, or stale-run reconciliation.
+
+Environment knobs introduced for migration pool reliability:
+
+- `LEGMOD_ANALYZE_TIMEOUT_MINS`
+- `LEGMOD_TEST_TIMEOUT_MINS`
+- `LEGMOD_CODE_TIMEOUT_MINS`
+- `LEGMOD_CLAIM_LEASE_MINS`
+
+If any of the above semantics change, update both maintainer docs (`DEVELOPMENT.md`, `CHANGELOGS.MD`) and the user-facing runtime architecture docs under `docs/`.
 
 ## Docs expectations for this repo
 

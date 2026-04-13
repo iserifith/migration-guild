@@ -5,7 +5,8 @@ import * as path from "path";
 import { Transform } from "stream";
 import type Database from "better-sqlite3";
 import { releaseClaimedArtifactsForOwner } from "../registry/commands/artifacts";
-import { startRun, finishRun } from "../registry/commands/runs";
+import { releaseClaimsForRun } from "../registry/commands/claim";
+import { startRun, finishRun, setRunPid } from "../registry/commands/runs";
 import {
   loadConfig,
   requireFoundryConfig,
@@ -132,6 +133,7 @@ export function summarizeRunFailures(results: AgentRunResult[]): string | null {
 export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
   const { agent, model, prompt, db } = opts;
   const claimOwner = opts.claimOwner ?? `${agent}:${randomUUID()}`;
+  const runId = randomUUID().replace(/-/g, "").slice(0, 16);
   const startMs = Date.now();
 
   const logFile = opts.logDir
@@ -168,18 +170,27 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
   // like `node migration/registry/dist/cli.js ...` resolve correctly.
   const projectRoot = path.resolve(__dirname, "..", "..", "..");
   const beforeFiles = snapshotChangedFiles(projectRoot);
-  const proc = spawn(getCopilotCommand(), args, {
-    cwd: projectRoot,
-    env: { ...process.env, LEGMOD_AGENT_NAME: claimOwner },
-    stdio: logStream ? ["ignore", "pipe", "pipe"] : "inherit",
-  });
   const run = startRun(db, {
+    runId,
     agent,
+    ownerId: claimOwner,
+    phase: opts.phase,
     model,
     prompt,
     logFile,
-    pid: proc.pid ?? null,
+    pid: null,
   });
+  const proc = spawn(getCopilotCommand(), args, {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      LEGMOD_AGENT_NAME: claimOwner,
+      LEGMOD_AGENT_KIND: agent,
+      LEGMOD_RUN_ID: run.run_id,
+    },
+    stdio: logStream ? ["ignore", "pipe", "pipe"] : "inherit",
+  });
+  setRunPid(db, run.run_id, proc.pid ?? null);
 
   if (logStream && proc.stdout && proc.stderr) {
     proc.stdout.pipe(createTimestampTransform()).pipe(logStream, { end: false });
@@ -200,12 +211,20 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
       let finalExitCode = exitCode;
       try {
         if (exitCode === 0) {
-          const released = releaseClaimedArtifactsForOwner(
+          let released = releaseClaimsForRun(
             db,
-            claimOwner,
+            run.run_id,
             "legmod",
             `auto-released after ${agent} exited without advancing claimed work`,
           );
+          if (released.length === 0) {
+            released = releaseClaimedArtifactsForOwner(
+              db,
+              claimOwner,
+              "legmod",
+              `auto-released after ${agent} exited without advancing claimed work`,
+            );
+          }
           if (released.length > 0) {
             finalExitCode = 1;
             const msg = `[legmod] ${agent} exited with code 0 but left ${released.length} claimed artifact(s); marking run failed and releasing claims`;
@@ -213,12 +232,20 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
             writeLogLine(logStream, msg);
           }
         } else if (opts.releaseClaimsOnFailure) {
-          releaseClaimedArtifactsForOwner(
+          const released = releaseClaimsForRun(
             db,
-            claimOwner,
+            run.run_id,
             "legmod",
             `auto-released after ${agent} exited with code ${exitCode}`,
           );
+          if (released.length === 0) {
+            releaseClaimedArtifactsForOwner(
+              db,
+              claimOwner,
+              "legmod",
+              `auto-released after ${agent} exited with code ${exitCode}`,
+            );
+          }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -226,7 +253,16 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
         process.stderr.write(msg + "\n");
         writeLogLine(logStream, msg);
       }
-      finishRun(db, { runId: run.run_id, exitCode: finalExitCode });
+      const terminationReason = timedOut
+        ? `${agent} timed out`
+        : finalExitCode === 0
+          ? undefined
+          : `${agent} exited with code ${finalExitCode}`;
+      finishRun(db, {
+        runId: run.run_id,
+        exitCode: finalExitCode,
+        reason: terminationReason,
+      });
 
       if (logStream) {
         const elapsedS = ((Date.now() - startMs) / 1000).toFixed(1);

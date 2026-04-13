@@ -3,6 +3,13 @@ import { RegistryError, validateId } from "../types";
 import type { Event, EventType } from "../types";
 
 const VALID_EVENT_TYPES: readonly EventType[] = [
+  "planned",
+  "claimed",
+  "claim-heartbeat",
+  "claim-completed",
+  "claim-released",
+  "claim-expired",
+  "run-reaped",
   "registered",
   "analyzed",
   "scaffolded",

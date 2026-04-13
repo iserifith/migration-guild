@@ -49,6 +49,13 @@ export type Relation =
   | "related-issue";
 
 export type EventType =
+  | "planned"
+  | "claimed"
+  | "claim-heartbeat"
+  | "claim-completed"
+  | "claim-released"
+  | "claim-expired"
+  | "run-reaped"
   | "registered"
   | "analyzed"
   | "scaffolded"
@@ -145,6 +152,40 @@ export interface Event {
   model: string | null;
   summary: string;
   event_data: string | null;
+}
+
+export type ClaimState =
+  | "active"
+  | "completed"
+  | "released"
+  | "expired"
+  | "failed";
+
+export interface ArtifactClaim {
+  claim_id: string;
+  artifact_id: string;
+  run_id: string | null;
+  owner_id: string;
+  agent: string;
+  from_status: Status;
+  claim_token: string;
+  state: ClaimState;
+  attempt_no: number;
+  claimed_at: string;
+  heartbeat_at: string;
+  lease_expires_at: string;
+  finished_at: string | null;
+  finish_reason: string | null;
+}
+
+export interface ClaimedArtifact extends Artifact {
+  claim_id: string;
+  claim_token: string;
+  claim_run_id: string | null;
+  claim_owner_id: string;
+  lease_expires_at: string;
+  heartbeat_at: string;
+  attempt_no: number;
 }
 
 export interface AgentContext {

@@ -98,6 +98,7 @@ export function getClaimabilityStats(
         FROM dependencies d
         JOIN artifacts dep ON dep.id = d.depends_on_id
         WHERE d.artifact_id = a.id
+          AND dep.tier = 'first-class'
           AND dep.status NOT IN (${TERMINAL_DEP_STATUSES})
       )
   `).get(params) as { count: number };
@@ -113,6 +114,7 @@ export function getClaimabilityStats(
         FROM dependencies d
         JOIN artifacts dep ON dep.id = d.depends_on_id
         WHERE d.artifact_id = a.id
+          AND dep.tier = 'first-class'
           AND dep.status NOT IN (${TERMINAL_DEP_STATUSES})
       )
   `).get(params) as { count: number };

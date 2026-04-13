@@ -338,6 +338,7 @@ export function listReadyToMigrate(
   const params: Record<string, string | number> = {};
   let waveClause = "";
   let tierClause = "AND a.tier = 'first-class'";
+  let dependencyTierClause = "AND dep.tier = 'first-class'";
   if (wave !== undefined) {
     waveClause = "AND a.wave = @wave";
     params["wave"] = wave;
@@ -345,6 +346,7 @@ export function listReadyToMigrate(
   if (tier) {
     tierClause = "AND a.tier = @tier";
     params["tier"] = tier;
+    dependencyTierClause = tier === "first-class" ? "AND dep.tier = 'first-class'" : "";
   }
 
   return db
@@ -361,6 +363,7 @@ export function listReadyToMigrate(
         FROM dependencies d
         JOIN artifacts dep ON dep.id = d.depends_on_id
         WHERE d.artifact_id = a.id
+          ${dependencyTierClause}
           AND dep.status NOT IN ('migrated', 'reviewed', 'completed', 'skipped')
       )
     ORDER BY a.wave ASC, a.created_at ASC

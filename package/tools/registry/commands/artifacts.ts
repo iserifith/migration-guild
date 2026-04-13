@@ -1,6 +1,12 @@
 import type Database from "better-sqlite3";
 import { FIRST_CLASS_KINDS, idToSlug, RegistryError, TAG_VOCABULARY, validateId } from "../types";
 import type { Artifact, ArtifactTier, Kind, Role, Status } from "../types";
+import {
+  completeClaimForArtifact,
+  getActiveClaimByArtifactId,
+  releaseClaimByArtifactId,
+  releaseClaimedArtifactsForOwner as releaseClaimedArtifactsForOwnerImpl,
+} from "./claim";
 
 export interface RegisterArtifactOptions {
   id: string;
@@ -24,6 +30,8 @@ export interface SetArtifactStatusOptions {
   agent?: string;
   model?: string;
   reason?: string;
+  claimId?: string;
+  claimToken?: string;
 }
 
 export function registerArtifact(
@@ -91,6 +99,25 @@ export function setArtifactStatus(
         claimed_from: artifact.status === "in-progress" ? artifact.claimed_from : artifact.status,
       });
     } else {
+      const activeClaim = getActiveClaimByArtifactId(db, id);
+      if (artifact.status === "in-progress" && activeClaim) {
+        if (opts.claimId && opts.claimToken) {
+          completeClaimForArtifact(db, id, opts.claimId, opts.claimToken, opts.agent ?? activeClaim.agent, status);
+        } else if ((opts.agent ?? "") === "operator" || (opts.agent ?? "") === "remediation-agent" || (opts.agent ?? "") === "legmod") {
+          releaseClaimByArtifactId(
+            db,
+            id,
+            opts.agent ?? "operator",
+            opts.reason ?? `Released active claim while setting status to ${status}`,
+          );
+        } else {
+          throw new RegistryError(
+            3,
+            `Status change for "${id}" requires an active claim token while the artifact is in-progress.`,
+          );
+        }
+      }
+
       db.prepare(`
         UPDATE artifacts
         SET status = @status,
@@ -181,24 +208,24 @@ export function releaseTask(
   reason?: string,
 ): Artifact {
   validateId(id);
-
-  const release = db.transaction((): Artifact => {
-    const artifact = db
+  const artifact = db
+    .prepare("SELECT status FROM artifacts WHERE id = ?")
+    .get(id) as Pick<Artifact, "status"> | undefined;
+  if (!artifact) throw new RegistryError(2, `Artifact not found: "${id}"`);
+  if (artifact.status !== "in-progress") {
+    throw new RegistryError(
+      1,
+      `Cannot release "${id}": status is "${artifact.status}", expected "in-progress".`,
+    );
+  }
+  if (!getActiveClaimByArtifactId(db, id)) {
+    const fullArtifact = db
       .prepare("SELECT * FROM artifacts WHERE id = ?")
-      .get(id) as Artifact | undefined;
-    if (!artifact) throw new RegistryError(2, `Artifact not found: "${id}"`);
-    if (artifact.status !== "in-progress") {
-      throw new RegistryError(
-        1,
-        `Cannot release "${id}": status is "${artifact.status}", expected "in-progress".`,
-      );
-    }
-
-    const returnTo = artifact.claimed_from ?? "planned";
+      .get(id) as Artifact;
+    const returnTo = fullArtifact.claimed_from ?? "planned";
     const summary = reason
       ? `Released by ${agent}: ${reason}`
       : `Released by ${agent}, returned to ${returnTo}`;
-
     db.prepare(`
       UPDATE artifacts
       SET status = ?,
@@ -208,16 +235,13 @@ export function releaseTask(
           updated_at = datetime('now')
       WHERE id = ?
     `).run(returnTo, id);
-
     db.prepare(`
       INSERT INTO events (event_id, artifact_id, type, agent, summary)
       VALUES (lower(hex(randomblob(8))), ?, 'status-changed', ?, ?)
     `).run(id, agent, summary);
-
     return db.prepare("SELECT * FROM artifacts WHERE id = ?").get(id) as Artifact;
-  });
-
-  return release();
+  }
+  return releaseClaimByArtifactId(db, id, agent, reason);
 }
 
 export function releaseClaimedArtifactsForOwner(
@@ -226,15 +250,20 @@ export function releaseClaimedArtifactsForOwner(
   agent: string,
   reason?: string,
 ): Artifact[] {
-  const rows = db.prepare(`
+  const released = releaseClaimedArtifactsForOwnerImpl(db, claimedBy, agent, reason);
+  const legacyRows = db.prepare(`
     SELECT id
     FROM artifacts
     WHERE status = 'in-progress'
       AND claimed_by = ?
+      AND id NOT IN (
+        SELECT artifact_id
+        FROM artifact_claims
+        WHERE state = 'active'
+      )
     ORDER BY claimed_at ASC
   `).all(claimedBy) as Array<{ id: string }>;
-
-  return rows.map((row) => releaseTask(db, row.id, agent, reason));
+  return [...released, ...legacyRows.map((row) => releaseTask(db, row.id, agent, reason))];
 }
 
 export function setArtifactWave(
