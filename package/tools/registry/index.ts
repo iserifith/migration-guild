@@ -2,7 +2,15 @@ export * from "./types";
 export * from "./db/connection";
 export * from "./db/schema";
 export * from "./commands/artifacts";
-export * from "./commands/claim";
+export {
+  claimNextTask,
+  completeClaimForArtifact,
+  getActiveClaimByArtifactId,
+  heartbeatClaim,
+  reconcileStaleClaims,
+  releaseClaimByArtifactId,
+  releaseClaimsForRun,
+} from "./commands/claim";
 export * from "./commands/dependencies";
 export * from "./commands/events";
 export * from "./commands/context";
