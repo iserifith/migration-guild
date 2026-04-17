@@ -5,25 +5,34 @@
  *  - The API contract is visible in one place
  *  - Endpoint URLs never drift between components
  *  - Error handling is uniform
- *
- * Functions for endpoints not yet implemented in serve.ts are marked with a
- * "NOT YET IMPLEMENTED" comment — they will 404 in development until the
- * backend is extended, but are defined here so slice authors don't need to
- * touch this file when the server side lands.
  */
 
 import type {
   Artifact,
   ArtifactEvent,
+  ArtifactKind,
+  ArtifactStatus,
+  ArtifactTier,
+  BlockerListResult,
+  BlockerQuery,
+  BlockerEntry,
+  CostSummary,
+  EvaluationSummary,
+  IssueFilters,
+  IssueListResult,
+  IssueQuery,
+  IssueEntry,
+  PagedResult,
+  RunEntry,
+  RunFilters,
+  RunListResult,
+  RunQuery,
+  SessionFilters,
+  SessionListResult,
+  SessionQuery,
+  SessionEntry,
   StatusResponse,
   WavePlanEntry,
-  SessionEntry,
-  BlockerEntry,
-  IssueEntry,
-  EvaluationEntry,
-  TraceEntry,
-  BatchJobEntry,
-  DependencyEntry,
 } from "./types";
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -36,86 +45,144 @@ async function get<T>(url: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-function buildUrl(base: string, params: Record<string, string | undefined>): string {
+async function getText(url: string): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`API error ${res.status} ${res.statusText} — ${url}`);
+  }
+  return res.text();
+}
+
+function buildUrl(base: string, params: object): string {
   const qs = new URLSearchParams(
-    Object.entries(params).filter((entry): entry is [string, string] =>
-      entry[1] !== undefined && entry[1] !== ""
-    )
+    Object.entries(params)
+      .filter(
+        (entry): entry is [string, string | number] =>
+          (typeof entry[1] === "string" || typeof entry[1] === "number") &&
+          entry[1] !== "",
+      )
+      .map(([key, value]) => [key, String(value)]),
   ).toString();
   return qs ? `${base}?${qs}` : base;
+}
+
+function normalizePagedResult<T, TFilters = never>(
+  payload: T[] | ApiPagedPayload<T, TFilters>,
+): PagedResult<T, TFilters> {
+  if (Array.isArray(payload)) {
+    return {
+      items: payload,
+      total: null,
+      page: 1,
+      page_size: payload.length,
+      total_pages: null,
+    };
+  }
+
+  return {
+    items: payload.items,
+    total: payload.total,
+    page: payload.page,
+    page_size: payload.page_size,
+    total_pages: payload.total_pages,
+    available_filters: payload.available_filters,
+  };
+}
+
+interface ApiPagedPayload<T, TFilters = never> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  available_filters?: TFilters;
 }
 
 // ── Query parameter shapes ────────────────────────────────────────────────────
 
 export interface ArtifactQuery {
-  status?: string;
+  status?: ArtifactStatus;
   module?: string;
-  kind?: string;
+  kind?: ArtifactKind;
+  tier?: ArtifactTier;
 }
 
-// ── Implemented endpoints (served by migration/registry/commands/serve.ts) ───
+export interface EventQuery {
+  id: string;
+  limit?: number;
+}
+
+// ── Live endpoints (served by migration/registry/commands/serve.ts) ──────────
 
 /** GET /api/artifacts — list all artifacts, optionally filtered. */
 export function fetchArtifacts(query: ArtifactQuery = {}): Promise<Artifact[]> {
   return get<Artifact[]>(buildUrl("/api/artifacts", query));
 }
 
-/** GET /api/status — registry summary + operator state. */
+/** GET /api/status — registry summary plus operator state. */
 export function fetchStatus(): Promise<StatusResponse> {
   return get<StatusResponse>("/api/status");
 }
 
-/** GET /api/wave-plan — per-wave status breakdown (first-class artifacts only). */
+/** GET /api/wave-plan — per-wave status breakdown for first-class artifacts. */
 export function fetchWavePlan(): Promise<WavePlanEntry[]> {
   return get<WavePlanEntry[]>("/api/wave-plan");
 }
 
-/** GET /api/events?id=<artifactId> — event log for one artifact (newest first). */
-export function fetchEvents(artifactId: string): Promise<ArtifactEvent[]> {
-  return get<ArtifactEvent[]>(
-    `/api/events?id=${encodeURIComponent(artifactId)}`
-  );
+/** GET /api/events?id=<artifactId>[&limit=<n>] — event log for one artifact. */
+export function fetchEvents({ id, limit }: EventQuery): Promise<ArtifactEvent[]> {
+  return get<ArtifactEvent[]>(buildUrl("/api/events", { id, limit }));
 }
 
-// ── Planned endpoints (NOT YET IMPLEMENTED in serve.ts) ─────────────────────
-// These will 404 until the API foundation agent extends serve.ts.
-// Defined here so slice components can be written against a stable contract.
-
-/** GET /api/sessions — in-progress artifacts with claim ownership data. */
-export function fetchSessions(): Promise<SessionEntry[]> {
-  return get<SessionEntry[]>("/api/sessions");
+/** GET /api/sessions[?stall_minutes=<n>] — in-progress artifacts with stall flag. */
+export async function fetchSessions(
+  query: SessionQuery = {},
+): Promise<SessionListResult> {
+  const payload = await get<
+    SessionEntry[] | ApiPagedPayload<SessionEntry, SessionFilters>
+  >(buildUrl("/api/sessions", query));
+  return normalizePagedResult(payload);
 }
 
 /** GET /api/blockers — open blocker events. */
-export function fetchBlockers(): Promise<BlockerEntry[]> {
-  return get<BlockerEntry[]>("/api/blockers");
+export async function fetchBlockers(
+  query: BlockerQuery = {},
+): Promise<BlockerListResult> {
+  const payload = await get<
+    BlockerEntry[] | ApiPagedPayload<BlockerEntry>
+  >(buildUrl("/api/blockers", query));
+  return normalizePagedResult(payload);
 }
 
-/** GET /api/issues — open issue-opened events. */
-export function fetchIssues(): Promise<IssueEntry[]> {
-  return get<IssueEntry[]>("/api/issues");
+/** GET /api/issues — open issue events. */
+export async function fetchIssues(query: IssueQuery = {}): Promise<IssueListResult> {
+  const payload = await get<
+    IssueEntry[] | ApiPagedPayload<IssueEntry, IssueFilters>
+  >(buildUrl("/api/issues", query));
+  return normalizePagedResult(payload);
 }
 
-/** GET /api/evaluations[?id=<artifactId>] — foundry evaluation results. */
-export function fetchEvaluations(artifactId?: string): Promise<EvaluationEntry[]> {
-  return get<EvaluationEntry[]>(
-    buildUrl("/api/evaluations", { id: artifactId })
-  );
+/** GET /api/runs[?agent=<name>&status=<status>&limit=<n>] — run history. */
+export async function fetchRuns(query: RunQuery = {}): Promise<RunListResult> {
+  const payload = await get<
+    RunEntry[] | ApiPagedPayload<RunEntry, RunFilters>
+  >(buildUrl("/api/runs", query));
+  return normalizePagedResult(payload);
 }
 
-/** GET /api/traces[?id=<artifactId>] — token/cost traces. */
-export function fetchTraces(artifactId?: string): Promise<TraceEntry[]> {
-  return get<TraceEntry[]>(buildUrl("/api/traces", { id: artifactId }));
+/** GET /api/runs/<runId>/log — plain-text log contents for one run. */
+export function fetchRunLog(runId: string): Promise<string> {
+  return getText(`/api/runs/${encodeURIComponent(runId)}/log`);
 }
 
-/** GET /api/batch-jobs — foundry batch job queue. */
-export function fetchBatchJobs(): Promise<BatchJobEntry[]> {
-  return get<BatchJobEntry[]>("/api/batch-jobs");
+/** GET /api/evaluations[?id=<artifactId>] — evaluation summary grouped by evaluator. */
+export function fetchEvaluations(
+  artifactId?: string,
+): Promise<EvaluationSummary[]> {
+  return get<EvaluationSummary[]>(buildUrl("/api/evaluations", { id: artifactId }));
 }
 
-/** GET /api/dependencies[?id=<artifactId>] — artifact dependency graph. */
-export function fetchDependencies(artifactId?: string): Promise<DependencyEntry[]> {
-  return get<DependencyEntry[]>(
-    buildUrl("/api/dependencies", { id: artifactId })
-  );
+/** GET /api/cost — token and spend totals with per-model breakdown. */
+export function fetchCost(): Promise<CostSummary> {
+  return get<CostSummary>("/api/cost");
 }

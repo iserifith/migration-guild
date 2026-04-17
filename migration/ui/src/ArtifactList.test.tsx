@@ -42,7 +42,6 @@ function makeArtifact(overrides: Partial<Artifact> = {}): Artifact {
     data_path: null,
     claimed_by: null,
     claimed_at: null,
-    claimed_from: null,
     created_at: "2024-01-01T00:00:00Z",
     updated_at: "2024-01-01T00:00:00Z",
     ...overrides,
@@ -62,6 +61,7 @@ beforeEach(() => {
     events: [] as ArtifactEvent[],
     loading: false,
     error: null,
+    reload: vi.fn(),
   });
 });
 
@@ -72,27 +72,38 @@ afterEach(() => {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("ArtifactList", () => {
+  const renderList = (artifacts: Artifact[] = ARTIFACTS) =>
+    render(
+      <ArtifactList
+        artifacts={artifacts}
+        loading={false}
+        error={null}
+        onRetry={vi.fn()}
+        timeMode="utc"
+      />,
+    );
+
   it("renders a table row for each artifact", () => {
-    render(<ArtifactList artifacts={ARTIFACTS} />);
+    renderList();
     const rows = screen.getAllByRole("row");
     // +1 for the header row
     expect(rows).toHaveLength(ARTIFACTS.length + 1);
   });
 
   it("shows artifact paths in the table", () => {
-    render(<ArtifactList artifacts={ARTIFACTS} />);
+    renderList();
     expect(screen.getByText("Alpha.java")).toBeInTheDocument();
     expect(screen.getByText("Beta.java")).toBeInTheDocument();
     expect(screen.getByText("Gamma.java")).toBeInTheDocument();
   });
 
   it("shows count as 'total / total' when no filter is active", () => {
-    render(<ArtifactList artifacts={ARTIFACTS} />);
+    renderList();
     expect(screen.getByText(`${ARTIFACTS.length} / ${ARTIFACTS.length}`)).toBeInTheDocument();
   });
 
   it("filters rows by status and updates the count", () => {
-    render(<ArtifactList artifacts={ARTIFACTS} />);
+    renderList();
     const selects = screen.getAllByRole("combobox");
     // First select is the status filter
     fireEvent.change(selects[0], { target: { value: "in-progress" } });
@@ -104,7 +115,7 @@ describe("ArtifactList", () => {
   });
 
   it("filters rows by module", () => {
-    render(<ArtifactList artifacts={ARTIFACTS} />);
+    renderList();
     const selects = screen.getAllByRole("combobox");
     // Second select is the module filter
     fireEvent.change(selects[1], { target: { value: "core" } });
@@ -115,7 +126,7 @@ describe("ArtifactList", () => {
   });
 
   it("shows the empty message when no artifacts match the filter", () => {
-    render(<ArtifactList artifacts={ARTIFACTS} />);
+    renderList();
     const selects = screen.getAllByRole("combobox");
     fireEvent.change(selects[0], { target: { value: "reviewed" } });
     expect(screen.getByText(/no artifacts match filters/i)).toBeInTheDocument();
@@ -123,12 +134,12 @@ describe("ArtifactList", () => {
   });
 
   it("shows the empty message when the artifact list is empty", () => {
-    render(<ArtifactList artifacts={[]} />);
-    expect(screen.getByText(/no artifacts match filters/i)).toBeInTheDocument();
+    renderList([]);
+    expect(screen.getByText(/no artifacts found/i)).toBeInTheDocument();
   });
 
   it("opens the detail panel when a row is clicked", () => {
-    render(<ArtifactList artifacts={ARTIFACTS} />);
+    renderList();
     // Click the first data row
     const rows = screen.getAllByRole("row");
     fireEvent.click(rows[1]); // rows[0] is the header
@@ -137,7 +148,7 @@ describe("ArtifactList", () => {
   });
 
   it("closes the detail panel when the same row is clicked again", () => {
-    render(<ArtifactList artifacts={ARTIFACTS} />);
+    renderList();
     const rows = screen.getAllByRole("row");
     fireEvent.click(rows[1]);
     // Panel should be open
@@ -148,7 +159,7 @@ describe("ArtifactList", () => {
   });
 
   it("closes the detail panel via the close button", () => {
-    render(<ArtifactList artifacts={ARTIFACTS} />);
+    renderList();
     const rows = screen.getAllByRole("row");
     fireEvent.click(rows[1]);
     const detail = screen.getByRole("heading", { name: /alpha/i }).closest("div.detail") as HTMLElement;

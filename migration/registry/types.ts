@@ -396,12 +396,30 @@ export interface ApiSessionRow {
   stalled: boolean;
 }
 
+export interface ApiPagedResponse<T, TFilters = never> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  available_filters?: TFilters;
+}
+
+export interface ApiSessionFilters {
+  statuses: Status[];
+}
+
 /** One row in GET /api/blockers. */
 export interface ApiBlockerRow {
   artifact_id: string;
   blocker_id: string | null;
   summary: string;
   since: string;
+}
+
+export interface ApiIssueFilters {
+  severities: string[];
+  categories: string[];
 }
 
 /** One row in GET /api/issues. */
@@ -424,6 +442,12 @@ export interface ApiRunRow {
   finished_at: string | null;
   exit_code: number | null;
   log_file: string | null;
+}
+
+export interface ApiRunFilters {
+  agents: string[];
+  statuses: string[];
+  models: string[];
 }
 
 /** One row in GET /api/evaluations — aggregated per evaluator. */
