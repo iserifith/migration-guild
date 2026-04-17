@@ -78,11 +78,6 @@ export const STATUS_COLOR_FALLBACK = "#888";
 //   4. Remove the tab name from PLANNED_MONITORING_TABS below.
 //
 // Planned (not yet implemented):
-//   "Sessions"     — stalled/active agent sessions with claim metadata
-//   "Blockers"     — open blockers & issues surfaced from event log
-//   "Runs"         — per-artifact pipeline run history
-//   "Quality"      — foundry evaluation scores per artifact
-//   "Cost"         — per-span token/cost traces
 //   "Claimability" — artifacts ready-to-claim per wave (no unresolved deps)
 //   "Batch Jobs"   — foundry batch job queue
 //   "Dependencies" — artifact dependency graph

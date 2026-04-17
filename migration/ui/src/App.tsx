@@ -13,16 +13,43 @@
 
 import React from "react";
 import ArtifactList from "./components/ArtifactList";
+import BlockersView from "./components/BlockersView";
+import CostView from "./components/CostView";
+import QualityView from "./components/QualityView";
+import RunsView from "./components/RunsView";
+import SessionsView from "./components/SessionsView";
 import WavePlan from "./components/WavePlan";
-import { useRegistryData } from "./hooks";
-import type { Artifact, StatusResponse } from "./types";
+import { useRegistryData, type UseRegistryDataResult } from "./hooks";
+import type {
+  BlockerQuery,
+  IssueQuery,
+  RunQuery,
+  SessionQuery,
+  TimeDisplayMode,
+} from "./types";
 
 // ── Tab definition ────────────────────────────────────────────────────────────
 
 /** Props every tab's render function receives. */
 export interface TabProps {
-  artifacts: Artifact[];
-  status: StatusResponse | null;
+  artifacts: UseRegistryDataResult["artifacts"];
+  status: UseRegistryDataResult["status"];
+  wavePlan: UseRegistryDataResult["wavePlan"];
+  sessions: UseRegistryDataResult["sessions"];
+  blockers: UseRegistryDataResult["blockers"];
+  issues: UseRegistryDataResult["issues"];
+  runs: UseRegistryDataResult["runs"];
+  evaluations: UseRegistryDataResult["evaluations"];
+  cost: UseRegistryDataResult["cost"];
+  timeMode: TimeDisplayMode;
+  sessionQuery: SessionQuery;
+  updateSessionQuery: (updates: Partial<SessionQuery>) => void;
+  blockerQuery: BlockerQuery;
+  updateBlockerQuery: (updates: Partial<BlockerQuery>) => void;
+  issueQuery: IssueQuery;
+  updateIssueQuery: (updates: Partial<IssueQuery>) => void;
+  runQuery: RunQuery;
+  updateRunQuery: (updates: Partial<RunQuery>) => void;
 }
 
 interface TabDef {
@@ -33,41 +60,207 @@ interface TabDef {
   render: (props: TabProps) => React.ReactNode;
 }
 
-/**
- * Tab registry — the single place to add monitoring views.
- *
- * Slice authors: append a new TabDef here when implementing a monitoring slice.
- * See constants.ts for the full list of planned tabs.
- */
 const TABS: TabDef[] = [
   {
     id: "Artifacts",
     label: "Artifacts",
-    render: ({ artifacts }) => <ArtifactList artifacts={artifacts} />,
+    render: ({ artifacts, timeMode }) => (
+      <ArtifactList
+        artifacts={artifacts.artifacts}
+        loading={artifacts.loading}
+        error={artifacts.error}
+        onRetry={artifacts.reload}
+        timeMode={timeMode}
+      />
+    ),
   },
   {
     id: "Wave Plan",
     label: "Wave Plan",
-    render: ({ artifacts }) => <WavePlan artifacts={artifacts} />,
+    render: ({ wavePlan }) => (
+      <WavePlan
+        entries={wavePlan.wavePlan}
+        loading={wavePlan.loading}
+        error={wavePlan.error}
+        onRetry={wavePlan.reload}
+      />
+    ),
   },
-  // ↓ Future monitoring slices — uncomment / add entries below:
-  // { id: "Sessions",     label: "Sessions",     render: (p) => <SessionsView     {...p} /> },
-  // { id: "Blockers",     label: "Blockers",     render: (p) => <BlockersView     {...p} /> },
-  // { id: "Runs",         label: "Runs",         render: (p) => <RunsView         {...p} /> },
-  // { id: "Quality",      label: "Quality",      render: (p) => <QualityView      {...p} /> },
-  // { id: "Cost",         label: "Cost",         render: (p) => <CostView         {...p} /> },
-  // { id: "Claimability", label: "Claimability", render: (p) => <ClaimabilityView {...p} /> },
-  // { id: "Batch Jobs",   label: "Batch Jobs",   render: (p) => <BatchJobsView    {...p} /> },
-  // { id: "Dependencies", label: "Dependencies", render: (p) => <DependenciesView {...p} /> },
+  {
+    id: "Sessions",
+    label: "Sessions",
+    render: ({ sessions, sessionQuery, updateSessionQuery, timeMode }) => (
+      <SessionsView
+        sessions={sessions.sessions}
+        total={sessions.total}
+        page={sessions.page}
+        pageSize={sessions.pageSize}
+        totalPages={sessions.totalPages}
+        availableFilters={sessions.availableFilters}
+        loading={sessions.loading}
+        error={sessions.error}
+        onRetry={sessions.reload}
+        query={sessionQuery}
+        onQueryChange={updateSessionQuery}
+        timeMode={timeMode}
+      />
+    ),
+  },
+  {
+    id: "Blockers",
+    label: "Blockers",
+    render: ({
+      blockers,
+      issues,
+      blockerQuery,
+      updateBlockerQuery,
+      issueQuery,
+      updateIssueQuery,
+      timeMode,
+    }) => (
+      <BlockersView
+        blockers={blockers.blockers}
+        blockersTotal={blockers.total}
+        blockersPage={blockers.page}
+        blockersPageSize={blockers.pageSize}
+        blockersTotalPages={blockers.totalPages}
+        blockersLoading={blockers.loading}
+        blockersError={blockers.error}
+        blockersOnRetry={blockers.reload}
+        blockerQuery={blockerQuery}
+        onBlockerQueryChange={updateBlockerQuery}
+        issues={issues.issues}
+        issuesTotal={issues.total}
+        issuesPage={issues.page}
+        issuesPageSize={issues.pageSize}
+        issuesTotalPages={issues.totalPages}
+        issueFilters={issues.availableFilters}
+        issuesLoading={issues.loading}
+        issuesError={issues.error}
+        issuesOnRetry={issues.reload}
+        issueQuery={issueQuery}
+        onIssueQueryChange={updateIssueQuery}
+        timeMode={timeMode}
+      />
+    ),
+  },
+  {
+    id: "Runs",
+    label: "Runs",
+    render: ({ runs, runQuery, updateRunQuery, timeMode }) => (
+      <RunsView
+        runs={runs.runs}
+        total={runs.total}
+        page={runs.page}
+        pageSize={runs.pageSize}
+        totalPages={runs.totalPages}
+        availableFilters={runs.availableFilters}
+        loading={runs.loading}
+        error={runs.error}
+        onRetry={runs.reload}
+        query={runQuery}
+        onQueryChange={updateRunQuery}
+        timeMode={timeMode}
+      />
+    ),
+  },
+  {
+    id: "Quality",
+    label: "Quality",
+    render: ({ evaluations }) => (
+      <QualityView
+        evaluations={evaluations.evaluations}
+        loading={evaluations.loading}
+        error={evaluations.error}
+        onRetry={evaluations.reload}
+      />
+    ),
+  },
+  {
+    id: "Cost",
+    label: "Cost",
+    render: ({ cost }) => (
+      <CostView
+        cost={cost.cost}
+        loading={cost.loading}
+        error={cost.error}
+        onRetry={cost.reload}
+      />
+    ),
+  },
 ];
 
 // ── App shell ─────────────────────────────────────────────────────────────────
 
 export default function App() {
   const [activeTabId, setActiveTabId] = React.useState<string>(TABS[0].id);
-  const { artifacts, status, loading, error, reload } = useRegistryData();
+  const [timeMode, setTimeMode] = React.useState<TimeDisplayMode>("utc");
+  const [sessionQuery, setSessionQuery] = React.useState<SessionQuery>({
+    stalled: "all",
+    sort: "age-desc",
+    page: 1,
+    page_size: 25,
+  });
+  const [blockerQuery, setBlockerQuery] = React.useState<BlockerQuery>({
+    q: "",
+    sort: "oldest",
+    page: 1,
+    page_size: 25,
+  });
+  const [issueQuery, setIssueQuery] = React.useState<IssueQuery>({
+    severity: "",
+    category: "",
+    sort: "severity",
+    page: 1,
+    page_size: 25,
+  });
+  const [runQuery, setRunQuery] = React.useState<RunQuery>({
+    status: "",
+    agent: "",
+    model: "",
+    sort: "newest",
+    page: 1,
+    page_size: 25,
+  });
+  const {
+    artifacts,
+    status,
+    wavePlan,
+    sessions,
+    blockers,
+    issues,
+    runs,
+    evaluations,
+    cost,
+    reload,
+  } = useRegistryData({
+    sessions: sessionQuery,
+    blockers: blockerQuery,
+    issues: issueQuery,
+    runs: runQuery,
+  });
+  const updateSessionQuery = React.useCallback(
+    (updates: Partial<SessionQuery>) =>
+      setSessionQuery((current) => ({ ...current, ...updates })),
+    [],
+  );
+  const updateBlockerQuery = React.useCallback(
+    (updates: Partial<BlockerQuery>) =>
+      setBlockerQuery((current) => ({ ...current, ...updates })),
+    [],
+  );
+  const updateIssueQuery = React.useCallback(
+    (updates: Partial<IssueQuery>) =>
+      setIssueQuery((current) => ({ ...current, ...updates })),
+    [],
+  );
+  const updateRunQuery = React.useCallback(
+    (updates: Partial<RunQuery>) =>
+      setRunQuery((current) => ({ ...current, ...updates })),
+    [],
+  );
 
-  const byStatus = status?.files.by_status ?? {};
+  const byStatus = status.status?.files.by_status ?? {};
   const currentTab = TABS.find((t) => t.id === activeTabId) ?? TABS[0];
 
   return (
@@ -77,23 +270,33 @@ export default function App() {
         <span className="sep">›</span>
         <span className="project">registry inspector</span>
         <div className="stats">
-          {Object.entries(byStatus).map(([s, n]) => (
-            <span key={s} className={`stat ${s}`}>{n} {s}</span>
-          ))}
+          {status.loading ? (
+            <span className="stat">Loading status...</span>
+          ) : status.error ? (
+            <button className="header-button" onClick={status.reload} type="button">
+              Retry status
+            </button>
+          ) : (
+            Object.entries(byStatus).map(([s, n]) => (
+              <span key={s} className={`stat ${s}`}>
+                {n} {s}
+              </span>
+            ))
+          )}
         </div>
-        <button
-          onClick={reload}
-          style={{
-            marginLeft: 8,
-            background: "none",
-            border: "1px solid #333",
-            color: "#888",
-            borderRadius: 6,
-            padding: "4px 10px",
-            cursor: "pointer",
-            fontSize: 12,
-          }}
-        >
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ color: "#888", fontSize: 12 }}>Time</span>
+          <select
+            aria-label="Time display mode"
+            className="filter-select"
+            value={timeMode}
+            onChange={(event) => setTimeMode(event.target.value as TimeDisplayMode)}
+          >
+            <option value="utc">UTC</option>
+            <option value="local">Local time</option>
+          </select>
+        </label>
+        <button className="header-button" onClick={reload} type="button">
           ↻ refresh
         </button>
       </header>
@@ -111,15 +314,26 @@ export default function App() {
       </nav>
 
       <main className="main">
-        {loading ? (
-          <div className="loading">Loading…</div>
-        ) : error ? (
-          <div className="error" style={{ color: "#f87171", padding: 24 }}>
-            Failed to load registry data: {error.message}
-          </div>
-        ) : (
-          currentTab.render({ artifacts, status })
-        )}
+        {currentTab.render({
+          artifacts,
+          status,
+          wavePlan,
+          sessions,
+          blockers,
+          issues,
+          runs,
+          evaluations,
+          cost,
+          timeMode,
+          sessionQuery,
+          updateSessionQuery,
+          blockerQuery,
+          updateBlockerQuery,
+          issueQuery,
+          updateIssueQuery,
+          runQuery,
+          updateRunQuery,
+        })}
       </main>
     </div>
   );

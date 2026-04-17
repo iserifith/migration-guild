@@ -284,6 +284,52 @@ export function printCompletionReason(
   console.log(`  ${label}: remaining first-class artifacts -> ${details}`);
 }
 
+export function printMigrationScopeSummary(
+  db: Database.Database,
+  wave?: number,
+): void {
+  const waveClause = wave != null ? "AND wave = @wave" : "";
+  const row = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN status IN ('migrated','reviewed','completed','skipped') THEN 1 ELSE 0 END) AS done,
+      SUM(CASE WHEN status = 'planned' THEN 1 ELSE 0 END) AS planned,
+      SUM(CASE WHEN status = 'analyzed' THEN 1 ELSE 0 END) AS analyzed,
+      SUM(CASE WHEN status = 'tests-written' THEN 1 ELSE 0 END) AS tests_written,
+      SUM(CASE WHEN status = 'in-progress' THEN 1 ELSE 0 END) AS in_progress,
+      SUM(CASE WHEN status = 'needs-rework' THEN 1 ELSE 0 END) AS needs_rework,
+      SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END) AS blocked
+    FROM artifacts
+    WHERE tier = 'first-class'
+      ${waveClause}
+  `).get({ wave: wave ?? null }) as {
+    total: number;
+    done: number;
+    planned: number;
+    analyzed: number;
+    tests_written: number;
+    in_progress: number;
+    needs_rework: number;
+    blocked: number;
+  };
+
+  const scope = wave != null ? `Wave ${wave}` : "All waves";
+  const total = row.total ?? 0;
+  const done = row.done ?? 0;
+  const remaining = Math.max(0, total - done);
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  console.log(`\n${BOLD}Migration Summary (${scope})${R}`);
+  console.log(`  Progress: ${GREEN}${done}${R}/${total} (${pct}%)`);
+  console.log(
+    `  Remaining: ${remaining}  planned=${row.planned ?? 0}  analyzed=${row.analyzed ?? 0}  tests-written=${row.tests_written ?? 0}  in-progress=${row.in_progress ?? 0}`,
+  );
+
+  if ((row.needs_rework ?? 0) > 0 || (row.blocked ?? 0) > 0) {
+    console.log(`  Attention: needs-rework=${row.needs_rework ?? 0}  blocked=${row.blocked ?? 0}`);
+  }
+}
+
 export function printInventoryClassificationSummary(db: Database.Database): void {
   const counts = db.prepare(`
     SELECT

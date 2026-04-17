@@ -1,21 +1,36 @@
 import React from "react";
-import type { Artifact } from "../types";
+import type { Artifact, TimeDisplayMode } from "../types";
 import { useEvents } from "../hooks";
+import { formatTimestamp } from "../format";
+import { EmptyState, ErrorState, LoadingState } from "./ViewState";
 
-export default function ArtifactDetail({ artifact, onClose }: { artifact: Artifact; onClose: () => void }) {
-  const { events, loading: eventsLoading } = useEvents(artifact.id);
+export default function ArtifactDetail({
+  artifact,
+  onClose,
+  timeMode,
+}: {
+  artifact: Artifact;
+  onClose: () => void;
+  timeMode: TimeDisplayMode;
+}) {
+  const {
+    events,
+    loading: eventsLoading,
+    error: eventsError,
+    reload: reloadEvents,
+  } = useEvents(artifact.id);
 
   const fields: [string, string][] = [
-    ["ID",         artifact.id],
-    ["Kind",       artifact.kind],
-    ["Role",       artifact.role ?? "—"],
-    ["Module",     artifact.module ?? "—"],
-    ["Wave",       artifact.wave != null ? `wave ${artifact.wave}` : "—"],
+    ["ID", artifact.id],
+    ["Kind", artifact.kind],
+    ["Role", artifact.role ?? "-"],
+    ["Module", artifact.module ?? "-"],
+    ["Wave", artifact.wave != null ? `wave ${artifact.wave}` : "-"],
     ["Status",     artifact.status],
     ["Path",       artifact.path],
-    ["Data path",  artifact.data_path ?? "—"],
-    ["Created",    artifact.created_at],
-    ["Updated",    artifact.updated_at],
+    ["Data path",  artifact.data_path ?? "-"],
+    ["Created",    formatTimestamp(artifact.created_at, timeMode)],
+    ["Updated",    formatTimestamp(artifact.updated_at, timeMode)],
   ];
 
   return (
@@ -35,15 +50,22 @@ export default function ArtifactDetail({ artifact, onClose }: { artifact: Artifa
       <div className="events">
         <h3>Event log</h3>
         {eventsLoading ? (
-          <div style={{ color: "#444", fontSize: 12, padding: "8px 0" }}>Loading events…</div>
+          <LoadingState compact resource="event log" />
+        ) : eventsError ? (
+          <ErrorState
+            compact
+            resource="event log"
+            error={eventsError}
+            onRetry={reloadEvents}
+          />
         ) : events.length === 0 ? (
-          <div style={{ color: "#444", fontSize: 12, padding: "8px 0" }}>No events yet.</div>
+          <EmptyState compact title="No events yet." />
         ) : events.map((e) => (
           <div key={e.id} className="event-item">
             <span className="event-type">{e.event_type}</span>
-            <span className="event-agent">{e.agent ?? "—"}</span>
+            <span className="event-agent">{e.agent ?? "-"}</span>
             <span className="event-note">{e.note ?? ""}</span>
-            <span className="event-time">{e.created_at}</span>
+            <span className="event-time">{formatTimestamp(e.created_at, timeMode)}</span>
           </div>
         ))}
       </div>

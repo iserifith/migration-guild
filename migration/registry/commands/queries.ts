@@ -416,10 +416,14 @@ import type {
   ApiStatusResponse,
   ApiWavePlanEntry,
   ApiEventRow,
+  ApiPagedResponse,
   ApiSessionRow,
+  ApiSessionFilters,
   ApiBlockerRow,
   ApiIssueRow,
+  ApiIssueFilters,
   ApiRunRow,
+  ApiRunFilters,
   ApiEvalSummary,
   ApiCostSummary,
   ApiCostByModel,
@@ -432,6 +436,58 @@ function tryParseJson(value: string): unknown {
   } catch {
     return value;
   }
+}
+
+const DEFAULT_PAGE_SIZE = 25;
+const MAX_PAGE_SIZE = 100;
+
+function normalizePositiveInt(
+  value: number | undefined,
+  fallback: number,
+  max = Number.MAX_SAFE_INTEGER,
+): number {
+  if (value == null || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  const normalized = Math.trunc(value);
+  if (normalized < 1) {
+    return fallback;
+  }
+
+  return Math.min(normalized, max);
+}
+
+function buildPageResult<T, TFilters = never>(
+  items: T[],
+  total: number,
+  page: number,
+  pageSize: number,
+  availableFilters?: TFilters,
+): ApiPagedResponse<T, TFilters> {
+  return {
+    items,
+    total,
+    page,
+    page_size: pageSize,
+    total_pages: Math.max(1, Math.ceil(total / pageSize)),
+    ...(availableFilters === undefined
+      ? {}
+      : { available_filters: availableFilters }),
+  };
+}
+
+function distinctStrings(
+  db: Database.Database,
+  sql: string,
+  params: Record<string, string | number> = {},
+): string[] {
+  return (
+    db.prepare(sql).all(params) as Array<{ value: string | null }>
+  )
+    .map((row) => row.value)
+    .filter((value): value is string => Boolean(value))
+    .sort((left, right) => left.localeCompare(right));
 }
 
 // ── /api/artifacts ─────────────────────────────────────────────────────────
@@ -600,6 +656,124 @@ export function queryStalledSessions(
   }));
 }
 
+export function queryStalledSessionsPage(
+  db: Database.Database,
+  opts: {
+    thresholdMinutes?: number;
+    status?: string;
+    stalled?: "all" | "stalled" | "active";
+    sort?: "age-desc" | "age-asc" | "artifact";
+    page?: number;
+    pageSize?: number;
+  } = {},
+): ApiPagedResponse<ApiSessionRow, ApiSessionFilters> {
+  const thresholdMinutes = normalizePositiveInt(opts.thresholdMinutes, 60, 24 * 60);
+  const page = normalizePositiveInt(opts.page, 1);
+  const pageSize = normalizePositiveInt(opts.pageSize, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+  const params: Record<string, string | number> = {
+    thresholdMinutes,
+    limit: pageSize,
+    offset: (page - 1) * pageSize,
+  };
+
+  const conditions = ["1=1"];
+  if (opts.status) {
+    conditions.push("status = @status");
+    params.status = opts.status;
+  }
+  if (opts.stalled === "stalled") {
+    conditions.push("claimed_minutes_ago > @thresholdMinutes");
+  } else if (opts.stalled === "active") {
+    conditions.push("(claimed_minutes_ago IS NULL OR claimed_minutes_ago <= @thresholdMinutes)");
+  }
+
+  let orderBy = "claimed_at ASC";
+  if (opts.sort === "age-asc") {
+    orderBy =
+      "CASE WHEN claimed_minutes_ago IS NULL THEN 1 ELSE 0 END ASC, claimed_minutes_ago ASC, id ASC";
+  } else if (opts.sort === "artifact") {
+    orderBy = "id ASC";
+  } else {
+    orderBy =
+      "CASE WHEN claimed_minutes_ago IS NULL THEN 1 ELSE 0 END ASC, claimed_minutes_ago DESC, id ASC";
+  }
+
+  const baseSql = `
+    WITH session_rows AS (
+      SELECT
+        id,
+        path,
+        module,
+        role,
+        status,
+        claimed_by,
+        claimed_at,
+        CASE
+          WHEN claimed_at IS NOT NULL
+          THEN CAST(ROUND((julianday('now') - julianday(claimed_at)) * 1440) AS INTEGER)
+          ELSE NULL
+        END AS claimed_minutes_ago
+      FROM artifacts
+      WHERE status = 'in-progress'
+    )
+  `;
+  const whereSql = `WHERE ${conditions.join(" AND ")}`;
+  const total = (
+    db
+      .prepare(
+        `${baseSql}
+         SELECT COUNT(*) AS total
+         FROM session_rows
+         ${whereSql}`,
+      )
+      .get(params) as { total: number }
+  ).total;
+  const rows = db
+    .prepare(
+      `${baseSql}
+       SELECT
+         id,
+         path,
+         module,
+         role,
+         status,
+         claimed_by,
+         claimed_at,
+         claimed_minutes_ago,
+         CASE
+           WHEN claimed_minutes_ago IS NOT NULL AND claimed_minutes_ago > @thresholdMinutes
+           THEN 1
+           ELSE 0
+         END AS stalled
+       FROM session_rows
+       ${whereSql}
+       ORDER BY ${orderBy}
+       LIMIT @limit OFFSET @offset`,
+    )
+    .all(params) as Array<Omit<ApiSessionRow, "stalled"> & { stalled: number }>;
+
+  return buildPageResult(
+    rows.map((row) => ({
+      ...row,
+      stalled: row.stalled === 1,
+    })),
+    total,
+    page,
+    pageSize,
+    {
+      statuses: distinctStrings(
+        db,
+        `
+          SELECT DISTINCT status AS value
+          FROM artifacts
+          WHERE status = 'in-progress'
+          ORDER BY status
+        `,
+      ) as ApiSessionFilters["statuses"],
+    },
+  );
+}
+
 // ── /api/blockers ───────────────────────────────────────────────────────────
 
 /** Returns all currently open blockers (not yet unblocked). */
@@ -625,6 +799,79 @@ export function queryOpenBlockers(db: Database.Database): ApiBlockerRow[] {
   `,
     )
     .all() as ApiBlockerRow[];
+}
+
+export function queryOpenBlockersPage(
+  db: Database.Database,
+  opts: {
+    q?: string;
+    sort?: "oldest" | "newest" | "artifact";
+    page?: number;
+    pageSize?: number;
+  } = {},
+): ApiPagedResponse<ApiBlockerRow> {
+  const page = normalizePositiveInt(opts.page, 1);
+  const pageSize = normalizePositiveInt(opts.pageSize, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+  const params: Record<string, string | number> = {
+    limit: pageSize,
+    offset: (page - 1) * pageSize,
+  };
+  const conditions = ["1=1"];
+
+  if (opts.q?.trim()) {
+    conditions.push(
+      "LOWER(artifact_id || ' ' || COALESCE(blocker_id, '') || ' ' || summary) LIKE @query",
+    );
+    params.query = `%${opts.q.trim().toLowerCase()}%`;
+  }
+
+  const orderBy =
+    opts.sort === "artifact"
+      ? "artifact_id ASC, since ASC"
+      : opts.sort === "newest"
+        ? "since DESC, artifact_id ASC"
+        : "since ASC, artifact_id ASC";
+  const baseSql = `
+    WITH blocker_rows AS (
+      SELECT
+        e.artifact_id,
+        json_extract(e.event_data, '$.blocker_id') AS blocker_id,
+        e.summary,
+        e.ts AS since
+      FROM events e
+      WHERE e.type = 'blocked'
+        AND NOT EXISTS (
+          SELECT 1 FROM events u
+          WHERE u.artifact_id = e.artifact_id
+            AND u.type = 'unblocked'
+            AND json_extract(u.event_data, '$.blocker_id')
+                = json_extract(e.event_data, '$.blocker_id')
+        )
+    )
+  `;
+  const whereSql = `WHERE ${conditions.join(" AND ")}`;
+  const total = (
+    db
+      .prepare(
+        `${baseSql}
+         SELECT COUNT(*) AS total
+         FROM blocker_rows
+         ${whereSql}`,
+      )
+      .get(params) as { total: number }
+  ).total;
+  const rows = db
+    .prepare(
+      `${baseSql}
+       SELECT artifact_id, blocker_id, summary, since
+       FROM blocker_rows
+       ${whereSql}
+       ORDER BY ${orderBy}
+       LIMIT @limit OFFSET @offset`,
+    )
+    .all(params) as ApiBlockerRow[];
+
+  return buildPageResult(rows, total, page, pageSize);
 }
 
 // ── /api/issues ─────────────────────────────────────────────────────────────
@@ -655,6 +902,124 @@ export function queryOpenIssues(db: Database.Database): ApiIssueRow[] {
     .all() as ApiIssueRow[];
 }
 
+export function queryOpenIssuesPage(
+  db: Database.Database,
+  opts: {
+    severity?: string;
+    category?: string;
+    sort?: "severity" | "latest" | "artifact";
+    page?: number;
+    pageSize?: number;
+  } = {},
+): ApiPagedResponse<ApiIssueRow, ApiIssueFilters> {
+  const page = normalizePositiveInt(opts.page, 1);
+  const pageSize = normalizePositiveInt(opts.pageSize, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+  const params: Record<string, string | number> = {
+    limit: pageSize,
+    offset: (page - 1) * pageSize,
+  };
+  const conditions = ["1=1"];
+
+  if (opts.severity) {
+    conditions.push("severity = @severity");
+    params.severity = opts.severity;
+  }
+  if (opts.category) {
+    conditions.push("category = @category");
+    params.category = opts.category;
+  }
+
+  const orderBy =
+    opts.sort === "latest"
+      ? "ts DESC, artifact_id ASC"
+      : opts.sort === "artifact"
+        ? "artifact_id ASC, ts ASC"
+        : "COALESCE(severity, '') ASC, COALESCE(category, '') ASC, artifact_id ASC";
+  const baseSql = `
+    WITH issue_rows AS (
+      SELECT
+        e.artifact_id,
+        json_extract(e.event_data, '$.issue_id') AS issue_id,
+        json_extract(e.event_data, '$.severity') AS severity,
+        json_extract(e.event_data, '$.category') AS category,
+        e.summary,
+        e.ts
+      FROM events e
+      WHERE e.type = 'issue-opened'
+        AND NOT EXISTS (
+          SELECT 1 FROM events r
+          WHERE r.type = 'issue-resolved'
+            AND json_extract(r.event_data, '$.issue_id')
+                = json_extract(e.event_data, '$.issue_id')
+        )
+    )
+  `;
+  const whereSql = `WHERE ${conditions.join(" AND ")}`;
+  const total = (
+    db
+      .prepare(
+        `${baseSql}
+         SELECT COUNT(*) AS total
+         FROM issue_rows
+         ${whereSql}`,
+      )
+      .get(params) as { total: number }
+  ).total;
+  const rows = db
+    .prepare(
+      `${baseSql}
+       SELECT artifact_id, issue_id, severity, category, summary, ts
+       FROM issue_rows
+       ${whereSql}
+       ORDER BY ${orderBy}
+       LIMIT @limit OFFSET @offset`,
+    )
+    .all(params) as ApiIssueRow[];
+
+  return buildPageResult(rows, total, page, pageSize, {
+    severities: distinctStrings(
+      db,
+      `
+        WITH issue_rows AS (
+          SELECT json_extract(e.event_data, '$.severity') AS value
+          FROM events e
+          WHERE e.type = 'issue-opened'
+            AND NOT EXISTS (
+              SELECT 1 FROM events r
+              WHERE r.type = 'issue-resolved'
+                AND json_extract(r.event_data, '$.issue_id')
+                    = json_extract(e.event_data, '$.issue_id')
+            )
+        )
+        SELECT DISTINCT value
+        FROM issue_rows
+        WHERE value IS NOT NULL
+        ORDER BY value
+      `,
+    ),
+    categories: distinctStrings(
+      db,
+      `
+        WITH issue_rows AS (
+          SELECT json_extract(e.event_data, '$.category') AS value
+          FROM events e
+          WHERE e.type = 'issue-opened'
+            AND NOT EXISTS (
+              SELECT 1 FROM events r
+              WHERE r.type = 'issue-resolved'
+                AND json_extract(r.event_data, '$.issue_id')
+                    = json_extract(e.event_data, '$.issue_id')
+            )
+        )
+        SELECT DISTINCT value
+        FROM issue_rows
+        WHERE value IS NOT NULL
+        ORDER BY value
+      `,
+    ),
+  });
+}
+
 // ── /api/runs ───────────────────────────────────────────────────────────────
 
 /** Returns agent run history, optionally filtered by agent or status. */
@@ -681,6 +1046,108 @@ export function queryRunHistory(
     LIMIT ?
   `;
   return db.prepare(sql).all(...params) as ApiRunRow[];
+}
+
+export function queryRunHistoryPage(
+  db: Database.Database,
+  opts: {
+    agent?: string;
+    status?: string;
+    model?: string;
+    sort?: "newest" | "oldest" | "agent" | "duration";
+    page?: number;
+    pageSize?: number;
+  } = {},
+): ApiPagedResponse<ApiRunRow, ApiRunFilters> {
+  const page = normalizePositiveInt(opts.page, 1);
+  const pageSize = normalizePositiveInt(opts.pageSize, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+  const params: Record<string, string | number> = {
+    limit: pageSize,
+    offset: (page - 1) * pageSize,
+  };
+  const conditions = ["1=1"];
+
+  if (opts.agent) {
+    conditions.push("agent = @agent");
+    params.agent = opts.agent;
+  }
+  if (opts.status) {
+    conditions.push("status = @status");
+    params.status = opts.status;
+  }
+  if (opts.model) {
+    conditions.push("model = @model");
+    params.model = opts.model;
+  }
+
+  const orderBy =
+    opts.sort === "oldest"
+      ? "started_at ASC, run_id ASC"
+      : opts.sort === "agent"
+        ? "agent ASC, started_at DESC, run_id ASC"
+        : opts.sort === "duration"
+          ? `
+            CASE
+              WHEN finished_at IS NULL THEN 9223372036854775807
+              ELSE CAST((julianday(finished_at) - julianday(started_at)) * 86400000 AS INTEGER)
+            END DESC,
+            started_at DESC,
+            run_id ASC
+          `
+          : "started_at DESC, run_id ASC";
+  const whereSql = `WHERE ${conditions.join(" AND ")}`;
+  const total = (
+    db
+      .prepare(
+        `
+          SELECT COUNT(*) AS total
+          FROM runs
+          ${whereSql}
+        `,
+      )
+      .get(params) as { total: number }
+  ).total;
+  const rows = db
+    .prepare(
+      `
+        SELECT run_id, agent, model, status, started_at, finished_at, exit_code, log_file
+        FROM runs
+        ${whereSql}
+        ORDER BY ${orderBy}
+        LIMIT @limit OFFSET @offset
+      `,
+    )
+    .all(params) as ApiRunRow[];
+
+  return buildPageResult(rows, total, page, pageSize, {
+    agents: distinctStrings(
+      db,
+      `
+        SELECT DISTINCT agent AS value
+        FROM runs
+        WHERE agent IS NOT NULL
+        ORDER BY agent
+      `,
+    ),
+    statuses: distinctStrings(
+      db,
+      `
+        SELECT DISTINCT status AS value
+        FROM runs
+        WHERE status IS NOT NULL
+        ORDER BY status
+      `,
+    ),
+    models: distinctStrings(
+      db,
+      `
+        SELECT DISTINCT model AS value
+        FROM runs
+        WHERE model IS NOT NULL
+        ORDER BY model
+      `,
+    ),
+  });
 }
 
 // ── /api/runs/:id/log ───────────────────────────────────────────────────────

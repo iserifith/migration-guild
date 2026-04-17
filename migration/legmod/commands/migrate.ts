@@ -14,6 +14,7 @@ import {
   getClaimabilityStats,
   getStatusCounts,
   printCompletionReason,
+  printMigrationScopeSummary,
   printPoolSummary,
   printQueueSnapshot,
   printResolvedRuntime,
@@ -298,6 +299,7 @@ export async function runMigrate(
     printWavePlan(db);
     const finalCounts = getStatusCounts(db, opts.wave);
     printCompletionReason("Migration outcome", finalCounts, ["migrated", "reviewed", "completed", "skipped"]);
+    printMigrationScopeSummary(db, opts.wave);
 
     if (hasMigrationRemaining(db, opts.wave)) {
       const followUp = getMigrationFollowUp(db, opts.wave, hadFailures);

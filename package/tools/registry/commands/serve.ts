@@ -8,9 +8,13 @@ import {
   queryWavePlanForUI,
   queryEventsForUI,
   queryStalledSessions,
+  queryStalledSessionsPage,
   queryOpenBlockers,
+  queryOpenBlockersPage,
   queryOpenIssues,
+  queryOpenIssuesPage,
   queryRunHistory,
+  queryRunHistoryPage,
   queryEvaluationSummary,
   queryCostSummary,
 } from "./queries";
@@ -39,6 +43,18 @@ function json(res: http.ServerResponse, data: unknown) {
   const body = JSON.stringify(data);
   res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
   res.end(body);
+}
+
+function numberParam(
+  value: string | null,
+  fallback: number | undefined,
+): number | undefined {
+  if (value == null) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 export function startServer(db: Database.Database, port = 3322) {
@@ -81,23 +97,79 @@ export function startServer(db: Database.Database, port = 3322) {
     // return full data; slices only need to add filtering / UI.
 
     if (p === "/api/sessions") {
-      const threshold = Number(url.searchParams.get("stall_minutes") ?? 60);
-      return json(res, queryStalledSessions(db, threshold));
+      const threshold = numberParam(url.searchParams.get("stall_minutes"), 60) ?? 60;
+      const shouldPage =
+        url.searchParams.has("page") ||
+        url.searchParams.has("page_size") ||
+        url.searchParams.has("status") ||
+        url.searchParams.has("stalled") ||
+        url.searchParams.has("sort");
+
+      if (!shouldPage) {
+        return json(res, queryStalledSessions(db, threshold));
+      }
+
+      return json(res, queryStalledSessionsPage(db, {
+        thresholdMinutes: threshold,
+        status: url.searchParams.get("status") ?? undefined,
+        stalled: (url.searchParams.get("stalled") as "all" | "stalled" | "active" | null) ?? undefined,
+        sort: (url.searchParams.get("sort") as "age-desc" | "age-asc" | "artifact" | null) ?? undefined,
+        page: numberParam(url.searchParams.get("page"), 1),
+        pageSize: numberParam(url.searchParams.get("page_size"), 25),
+      }));
     }
 
     if (p === "/api/blockers") {
-      return json(res, queryOpenBlockers(db));
+      const shouldPage = url.searchParams.toString() !== "";
+      if (!shouldPage) {
+        return json(res, queryOpenBlockers(db));
+      }
+
+      return json(res, queryOpenBlockersPage(db, {
+        q: url.searchParams.get("q") ?? undefined,
+        sort: (url.searchParams.get("sort") as "oldest" | "newest" | "artifact" | null) ?? undefined,
+        page: numberParam(url.searchParams.get("page"), 1),
+        pageSize: numberParam(url.searchParams.get("page_size"), 25),
+      }));
     }
 
     if (p === "/api/issues") {
-      return json(res, queryOpenIssues(db));
+      const shouldPage = url.searchParams.toString() !== "";
+      if (!shouldPage) {
+        return json(res, queryOpenIssues(db));
+      }
+
+      return json(res, queryOpenIssuesPage(db, {
+        severity: url.searchParams.get("severity") ?? undefined,
+        category: url.searchParams.get("category") ?? undefined,
+        sort: (url.searchParams.get("sort") as "severity" | "latest" | "artifact" | null) ?? undefined,
+        page: numberParam(url.searchParams.get("page"), 1),
+        pageSize: numberParam(url.searchParams.get("page_size"), 25),
+      }));
     }
 
     if (p === "/api/runs") {
+      const shouldPage =
+        url.searchParams.has("page") ||
+        url.searchParams.has("page_size") ||
+        url.searchParams.has("model") ||
+        url.searchParams.has("sort");
+
+      if (shouldPage) {
+        return json(res, queryRunHistoryPage(db, {
+          agent: url.searchParams.get("agent") ?? undefined,
+          status: url.searchParams.get("status") ?? undefined,
+          model: url.searchParams.get("model") ?? undefined,
+          sort: (url.searchParams.get("sort") as "newest" | "oldest" | "agent" | "duration" | null) ?? undefined,
+          page: numberParam(url.searchParams.get("page"), 1),
+          pageSize: numberParam(url.searchParams.get("page_size"), 25),
+        }));
+      }
+
       return json(res, queryRunHistory(db, {
         agent:  url.searchParams.get("agent")  ?? undefined,
         status: url.searchParams.get("status") ?? undefined,
-        limit:  Number(url.searchParams.get("limit") ?? 100),
+        limit:  numberParam(url.searchParams.get("limit"), 100) ?? 100,
       }));
     }
 
