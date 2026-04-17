@@ -6,6 +6,16 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### April 17, 2026
+
+- Added a remediation execution phase to the migration runtime with a dedicated `remediate` command, `run remediate` support, prompt construction for targeted/global remediation loops, timeout/model overrides, and remediation summary reporting.
+- Added migration completion scope output (`Migration Summary`) after Phase 4 to show first-class progress and remaining planned/analyzed/tests-written/in-progress counts.
+- Added paginated registry API query support for sessions, blockers, issues, and runs (including filter metadata), and wired corresponding pagination/filter query handling in the migration and packaged registry HTTP servers.
+- Expanded the registry inspector UI into operational monitoring slices (`Sessions`, `Blockers`, `Runs`, `Quality`, `Cost`) with server-backed filters/sorting/pagination, run-log inspection, UTC/local timestamp toggles, and reusable loading/empty/error state components.
+- Refactored UI data access into per-slice hooks plus shared async loader utilities, updated API clients and DTOs for paged endpoint shapes, and added formatting helpers for timestamps/durations/currency.
+- Added/updated UI and runtime tests covering remediation command behavior, paged API normalization, operational view interactions, wave-plan rendering, and hook concurrency/reload behavior.
+- Updated the UI TypeScript project setup to use build mode (`tsc -b`) with `tsconfig.app.json` project references.
+
 ### April 13, 2026
 
 - Added lease-backed artifact claims with opaque claim IDs/tokens, heartbeat renewal, stale-claim reconciliation, and explicit claim lifecycle events (`claim-heartbeat`, `claim-completed`, `claim-released`, `claim-expired`).
