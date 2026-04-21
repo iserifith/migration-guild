@@ -112,6 +112,101 @@ function writeLogLine(stream: fs.WriteStream | undefined, line: string): void {
   stream?.write(`[${new Date().toISOString().slice(11, 23)}] ${line}\n`);
 }
 
+function formatLogTimestamp(ms: number): string {
+  return new Date(ms)
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "Z")
+    .replace("T", "-");
+}
+
+function formatLogFileName(agent: string, startedMs: number, runId: string, phase?: PhaseKey): string {
+  const phasePart = phase ? `-${phase}` : "";
+  return `${agent}${phasePart}-${formatLogTimestamp(startedMs)}-${runId}.log`;
+}
+
+function getRunClaimLines(db: Database.Database, runId: string): string[] {
+  try {
+    const rows = db
+      .prepare(
+        `
+        SELECT c.claim_id, c.state, c.from_status, a.id AS artifact_id, a.path AS artifact_path, a.status AS artifact_status
+        FROM artifact_claims c
+        LEFT JOIN artifacts a ON a.id = c.artifact_id
+        WHERE c.run_id = ?
+        ORDER BY c.claimed_at ASC
+        `,
+      )
+      .all(runId) as Array<{
+      claim_id: string;
+      state: string;
+      from_status: string;
+      artifact_id: string | null;
+      artifact_path: string | null;
+      artifact_status: string | null;
+    }>;
+
+    if (rows.length === 0) {
+      return ["Claims: (none)"];
+    }
+
+    const lines = [`Claims (${rows.length}):`];
+    for (const row of rows.slice(0, 5)) {
+      const claimShort = row.claim_id.slice(0, 8);
+      const artifact = row.artifact_id ?? "unknown-artifact";
+      const status = row.artifact_status ?? "unknown";
+      const artifactPath = row.artifact_path ?? "unknown-path";
+      lines.push(
+        `  claim=${claimShort} state=${row.state} from=${row.from_status} artifact=${artifact} artifactStatus=${status} path=${artifactPath}`,
+      );
+    }
+    if (rows.length > 5) {
+      lines.push(`  ... +${rows.length - 5} more`);
+    }
+    return lines;
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return [`Claims: (unavailable: ${msg})`];
+  }
+}
+
+function getRunClaimIntroLine(db: Database.Database, runId: string): string | null {
+  try {
+    const row = db
+      .prepare(
+        `
+        SELECT c.from_status, a.id AS artifact_id, a.path AS artifact_path, a.kind AS artifact_kind, a.wave AS artifact_wave
+        FROM artifact_claims c
+        LEFT JOIN artifacts a ON a.id = c.artifact_id
+        WHERE c.run_id = ?
+        ORDER BY c.claimed_at ASC
+        LIMIT 1
+        `,
+      )
+      .get(runId) as
+      | {
+          from_status: string;
+          artifact_id: string | null;
+          artifact_path: string | null;
+          artifact_kind: string | null;
+          artifact_wave: number | null;
+        }
+      | undefined;
+
+    if (!row) {
+      return null;
+    }
+
+    const artifact = row.artifact_id ?? "unknown-artifact";
+    const artifactPath = row.artifact_path ?? "unknown-path";
+    const artifactKind = row.artifact_kind ?? "unknown-kind";
+    const wave = row.artifact_wave == null ? "n/a" : String(row.artifact_wave);
+    return `[legmod] Working on ${artifactPath} (${artifactKind}, wave=${wave}, claimed from ${row.from_status}, artifact=${artifact})`;
+  } catch {
+    return null;
+  }
+}
+
 export function summarizeRunFailures(results: AgentRunResult[]): string | null {
   const failed = results.filter((result) => result.exitCode !== 0);
   if (failed.length === 0) return null;
@@ -135,9 +230,12 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
   const claimOwner = opts.claimOwner ?? `${agent}:${randomUUID()}`;
   const runId = randomUUID().replace(/-/g, "").slice(0, 16);
   const startMs = Date.now();
+  const startedIso = new Date(startMs).toISOString();
+  const projectRoot = path.resolve(__dirname, "..", "..", "..");
+  const beforeFiles = snapshotChangedFiles(projectRoot);
 
   const logFile = opts.logDir
-    ? path.join(opts.logDir, `${agent}-${Date.now()}-${randomUUID()}.log`)
+    ? path.join(opts.logDir, formatLogFileName(agent, startMs, runId, opts.phase))
     : undefined;
 
   if (logFile) {
@@ -149,27 +247,7 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
     ? fs.createWriteStream(logFile, { flags: "a" })
     : undefined;
 
-  if (logStream) {
-    const promptPreview =
-      prompt.length > 300 ? prompt.slice(0, 300) + "…" : prompt;
-    logStream.write(
-      [
-        LOG_SEP,
-        `Agent:   ${agent}`,
-        `Model:   ${model}`,
-        `Started: ${new Date(startMs).toISOString()}`,
-        `Prompt:  ${promptPreview}`,
-        LOG_SEP,
-        "",
-      ].join("\n"),
-    );
-  }
-
   const args = ["--agent", agent, "--model", model, "--yolo", "-p", prompt];
-  // Always run from the project root (my-migration/) so agent shell commands
-  // like `node migration/registry/dist/cli.js ...` resolve correctly.
-  const projectRoot = path.resolve(__dirname, "..", "..", "..");
-  const beforeFiles = snapshotChangedFiles(projectRoot);
   const run = startRun(db, {
     runId,
     agent,
@@ -180,6 +258,31 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
     logFile,
     pid: null,
   });
+
+  if (logStream) {
+    const promptPreview =
+      prompt.length > 300 ? prompt.slice(0, 300) + "..." : prompt;
+    logStream.write(
+      [
+        LOG_SEP,
+        "LogVersion: 2",
+        `RunId:      ${run.run_id}`,
+        `Agent:      ${agent}`,
+        `Owner:      ${claimOwner}`,
+        `Phase:      ${opts.phase ?? "none"}`,
+        `Model:      ${model}`,
+        `Started:    ${startedIso}`,
+        `Cwd:        ${projectRoot}`,
+        `Command:    ${getCopilotCommand()} --agent ${agent} --model ${model} --yolo -p <prompt:${prompt.length} chars>`,
+        `Prompt:     ${promptPreview}`,
+        LOG_SEP,
+        "",
+      ].join("\n"),
+    );
+  }
+
+  // Always run from the project root (my-migration/) so agent shell commands
+  // like `node migration/registry/dist/cli.js ...` resolve correctly.
   const proc = spawn(getCopilotCommand(), args, {
     cwd: projectRoot,
     env: {
@@ -202,12 +305,32 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
     let timedOut = false;
     let timeoutHandle: NodeJS.Timeout | undefined;
     let killHandle: NodeJS.Timeout | undefined;
+    let claimWatchHandle: NodeJS.Timeout | undefined;
+    let claimIntroWritten = false;
+
+    if (logStream) {
+      claimWatchHandle = setInterval(() => {
+        if (settled || claimIntroWritten) {
+          if (claimWatchHandle) clearInterval(claimWatchHandle);
+          return;
+        }
+        const intro = getRunClaimIntroLine(db, run.run_id);
+        if (!intro) {
+          return;
+        }
+        claimIntroWritten = true;
+        writeLogLine(logStream, intro);
+        if (claimWatchHandle) clearInterval(claimWatchHandle);
+      }, 250);
+      claimWatchHandle.unref?.();
+    }
 
     const finalize = (exitCode: number) => {
       if (settled) return;
       settled = true;
       if (timeoutHandle) clearTimeout(timeoutHandle);
       if (killHandle) clearTimeout(killHandle);
+      if (claimWatchHandle) clearInterval(claimWatchHandle);
       let finalExitCode = exitCode;
       try {
         if (exitCode === 0) {
@@ -276,6 +399,7 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
           written.length > 0
             ? [`Files written (${written.length}):`, ...written.map((f) => `  ${f}`)]
             : ["Files written: (none)"];
+        const claimBlock = getRunClaimLines(db, run.run_id);
         logStream.end(
           [
             "",
@@ -284,6 +408,7 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
             `Exit:     ${finalExitCode}`,
             `Elapsed:  ${elapsedS}s`,
             `Finished: ${new Date().toISOString()}`,
+            ...claimBlock,
             ...filesBlock,
             LOG_SEP,
             "",

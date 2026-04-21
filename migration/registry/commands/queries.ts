@@ -1,13 +1,6 @@
 import type Database from "better-sqlite3";
 import { RegistryError, validateId } from "../types";
-import type {
-  Artifact,
-  ArtifactTier,
-  EventType,
-  Kind,
-  Status,
-  Tag,
-} from "../types";
+import type { Artifact, ArtifactTier, EventType, Kind, Status, Tag } from "../types";
 
 export function getArtifactById(db: Database.Database, id: string): Artifact {
   validateId(id);
@@ -96,15 +89,10 @@ export function getEventsQuery(
     params["limit"] = limit;
   }
 
-  const rows = db.prepare(sql).all(params) as Array<
-    Record<string, unknown> & { event_data?: string | null }
-  >;
+  const rows = db.prepare(sql).all(params) as Array<Record<string, unknown> & { event_data?: string | null }>;
   return rows.map((row) => ({
     ...row,
-    event_data:
-      typeof row.event_data === "string"
-        ? JSON.parse(row.event_data)
-        : (row.event_data ?? null),
+    event_data: typeof row.event_data === "string" ? JSON.parse(row.event_data) : row.event_data ?? null,
   }));
 }
 
@@ -309,9 +297,7 @@ export function showInProgress(db: Database.Database): {
   claimed_at: string | null;
   claimed_minutes_ago: number | null;
 }[] {
-  return db
-    .prepare(
-      `
+  return db.prepare(`
     SELECT
       id, path, module, role,
       claimed_by,
@@ -324,9 +310,7 @@ export function showInProgress(db: Database.Database): {
     FROM artifacts
     WHERE status = 'in-progress'
     ORDER BY claimed_at ASC
-  `,
-    )
-    .all() as ReturnType<typeof showInProgress>;
+  `).all() as ReturnType<typeof showInProgress>;
 }
 
 /** Returns all planned first-class artifacts whose dependencies are all done — ready to claim now. */
@@ -337,8 +321,8 @@ export function listReadyToMigrate(
 ): Artifact[] {
   const params: Record<string, string | number> = {};
   let waveClause = "";
-  let tierClause = "AND a.tier = 'first-class'";
-  let dependencyTierClause = "AND dep.tier = 'first-class'";
+  let tierClause = "";
+  let dependencyTierClause = "";
   if (wave !== undefined) {
     waveClause = "AND a.wave = @wave";
     params["wave"] = wave;
@@ -347,17 +331,17 @@ export function listReadyToMigrate(
     tierClause = "AND a.tier = @tier";
     params["tier"] = tier;
     dependencyTierClause = tier === "first-class" ? "AND dep.tier = 'first-class'" : "";
+  } else {
+    tierClause = "AND a.tier = 'first-class'";
+    dependencyTierClause = "AND dep.tier = 'first-class'";
   }
 
-  return db
-    .prepare(
-      `
+  return db.prepare(`
     SELECT a.*
     FROM artifacts a
-    WHERE 1 = 1
-      ${tierClause}
-      AND a.status = 'planned'
+    WHERE a.status = 'planned'
       ${waveClause}
+      ${tierClause}
       AND NOT EXISTS (
         SELECT 1
         FROM dependencies d
@@ -367,9 +351,7 @@ export function listReadyToMigrate(
           AND dep.status NOT IN ('migrated', 'reviewed', 'completed', 'skipped')
       )
     ORDER BY a.wave ASC, a.created_at ASC
-  `,
-    )
-    .all(params) as Artifact[];
+  `).all(params) as Artifact[];
 }
 
 /** Returns a wave summary for first-class artifacts only. */
@@ -378,23 +360,16 @@ export function wavePlan(db: Database.Database): {
   total: number;
   by_status: Record<string, number>;
 }[] {
-  const rows = db
-    .prepare(
-      `
+  const rows = db.prepare(`
     SELECT wave, status, COUNT(*) AS count
     FROM artifacts
     WHERE wave IS NOT NULL
       AND tier = 'first-class'
     GROUP BY wave, status
     ORDER BY wave ASC
-  `,
-    )
-    .all() as { wave: number; status: string; count: number }[];
+  `).all() as { wave: number; status: string; count: number }[];
 
-  const waves: Record<
-    number,
-    { total: number; by_status: Record<string, number> }
-  > = {};
+  const waves: Record<number, { total: number; by_status: Record<string, number> }> = {};
   for (const row of rows) {
     if (!waves[row.wave]) waves[row.wave] = { total: 0, by_status: {} };
     waves[row.wave].by_status[row.status] = row.count;
@@ -471,9 +446,7 @@ function buildPageResult<T, TFilters = never>(
     page,
     page_size: pageSize,
     total_pages: Math.max(1, Math.ceil(total / pageSize)),
-    ...(availableFilters === undefined
-      ? {}
-      : { available_filters: availableFilters }),
+    ...(availableFilters === undefined ? {} : { available_filters: availableFilters }),
   };
 }
 
@@ -482,9 +455,7 @@ function distinctStrings(
   sql: string,
   params: Record<string, string | number> = {},
 ): string[] {
-  return (
-    db.prepare(sql).all(params) as Array<{ value: string | null }>
-  )
+  return (db.prepare(sql).all(params) as Array<{ value: string | null }>)
     .map((row) => row.value)
     .filter((value): value is string => Boolean(value))
     .sort((left, right) => left.localeCompare(right));
@@ -499,22 +470,10 @@ export function queryArtifactsForUI(
 ): ApiArtifactRow[] {
   const conditions: string[] = ["1=1"];
   const params: string[] = [];
-  if (opts.status) {
-    conditions.push("status = ?");
-    params.push(opts.status);
-  }
-  if (opts.module) {
-    conditions.push("module = ?");
-    params.push(opts.module);
-  }
-  if (opts.kind) {
-    conditions.push("kind = ?");
-    params.push(opts.kind);
-  }
-  if (opts.tier) {
-    conditions.push("tier = ?");
-    params.push(opts.tier);
-  }
+  if (opts.status) { conditions.push("status = ?"); params.push(opts.status); }
+  if (opts.module) { conditions.push("module = ?"); params.push(opts.module); }
+  if (opts.kind)   { conditions.push("kind = ?");   params.push(opts.kind);   }
+  if (opts.tier)   { conditions.push("tier = ?");   params.push(opts.tier);   }
   const sql = `
     SELECT * FROM artifacts
     WHERE ${conditions.join(" AND ")}
@@ -533,20 +492,17 @@ export function queryArtifactsForUI(
  * returned null.  This helper uses the correct key.
  */
 export function queryStatusSummary(db: Database.Database): ApiStatusResponse {
-  const rows = db
-    .prepare("SELECT status, COUNT(*) AS n FROM artifacts GROUP BY status")
-    .all() as { status: string; n: number }[];
+  const rows = db.prepare(
+    "SELECT status, COUNT(*) AS n FROM artifacts GROUP BY status",
+  ).all() as { status: string; n: number }[];
 
   const by_status: Record<string, number> = {};
-  let total = 0,
-    in_progress = 0,
-    completed = 0,
-    pending = 0;
+  let total = 0, in_progress = 0, completed = 0, pending = 0;
   for (const r of rows) {
     by_status[r.status] = r.n;
     total += r.n;
-    if (r.status === "in-progress") in_progress = r.n;
-    if (r.status === "pending") pending = r.n;
+    if (r.status === "in-progress")  in_progress = r.n;
+    if (r.status === "pending")      pending     = r.n;
     if (["migrated", "reviewed", "completed", "skipped"].includes(r.status)) {
       completed += r.n;
     }
@@ -562,9 +518,9 @@ export function queryStatusSummary(db: Database.Database): ApiStatusResponse {
   return {
     files: { total, completed, in_progress, pending, by_status },
     current_focus: stateVal("current_focus"),
-    next: stateVal("next"), // ← correct key (was "next_action")
+    next:          stateVal("next"),            // ← correct key (was "next_action")
     open_blockers: queryOpenBlockers(db),
-    open_issues: queryOpenIssues(db),
+    open_issues:   queryOpenIssues(db),
   };
 }
 
@@ -589,9 +545,7 @@ export function queryEventsForUI(
   limit = 50,
 ): ApiEventRow[] {
   type RawRow = Omit<ApiEventRow, "event_data"> & { event_data: string | null };
-  const rows = db
-    .prepare(
-      `
+  const rows = db.prepare(`
     SELECT
       event_id  AS id,
       type      AS event_type,
@@ -604,9 +558,7 @@ export function queryEventsForUI(
     WHERE artifact_id = ?
     ORDER BY ts DESC
     LIMIT ?
-  `,
-    )
-    .all(artifactId, limit) as RawRow[];
+  `).all(artifactId, limit) as RawRow[];
 
   return rows.map((row) => ({
     ...row,
@@ -627,12 +579,8 @@ export function queryStalledSessions(
   db: Database.Database,
   thresholdMinutes = 60,
 ): ApiSessionRow[] {
-  type RawRow = Omit<ApiSessionRow, "stalled"> & {
-    claimed_minutes_ago: number | null;
-  };
-  const rows = db
-    .prepare(
-      `
+  type RawRow = Omit<ApiSessionRow, "stalled"> & { claimed_minutes_ago: number | null };
+  const rows = db.prepare(`
     SELECT
       id, path, module, role, status,
       claimed_by,
@@ -645,14 +593,13 @@ export function queryStalledSessions(
     FROM artifacts
     WHERE status = 'in-progress'
     ORDER BY claimed_at ASC
-  `,
-    )
-    .all() as RawRow[];
+  `).all() as RawRow[];
 
   return rows.map((r) => ({
     ...r,
     stalled:
-      r.claimed_minutes_ago != null && r.claimed_minutes_ago > thresholdMinutes,
+      r.claimed_minutes_ago != null &&
+      r.claimed_minutes_ago > thresholdMinutes,
   }));
 }
 
@@ -675,8 +622,8 @@ export function queryStalledSessionsPage(
     limit: pageSize,
     offset: (page - 1) * pageSize,
   };
-
   const conditions = ["1=1"];
+
   if (opts.status) {
     conditions.push("status = @status");
     params.status = opts.status;
@@ -689,13 +636,11 @@ export function queryStalledSessionsPage(
 
   let orderBy = "claimed_at ASC";
   if (opts.sort === "age-asc") {
-    orderBy =
-      "CASE WHEN claimed_minutes_ago IS NULL THEN 1 ELSE 0 END ASC, claimed_minutes_ago ASC, id ASC";
+    orderBy = "CASE WHEN claimed_minutes_ago IS NULL THEN 1 ELSE 0 END ASC, claimed_minutes_ago ASC, id ASC";
   } else if (opts.sort === "artifact") {
     orderBy = "id ASC";
   } else {
-    orderBy =
-      "CASE WHEN claimed_minutes_ago IS NULL THEN 1 ELSE 0 END ASC, claimed_minutes_ago DESC, id ASC";
+    orderBy = "CASE WHEN claimed_minutes_ago IS NULL THEN 1 ELSE 0 END ASC, claimed_minutes_ago DESC, id ASC";
   }
 
   const baseSql = `
@@ -718,69 +663,52 @@ export function queryStalledSessionsPage(
     )
   `;
   const whereSql = `WHERE ${conditions.join(" AND ")}`;
-  const total = (
-    db
-      .prepare(
-        `${baseSql}
-         SELECT COUNT(*) AS total
-         FROM session_rows
-         ${whereSql}`,
-      )
-      .get(params) as { total: number }
-  ).total;
-  const rows = db
-    .prepare(
-      `${baseSql}
-       SELECT
-         id,
-         path,
-         module,
-         role,
-         status,
-         claimed_by,
-         claimed_at,
-         claimed_minutes_ago,
-         CASE
-           WHEN claimed_minutes_ago IS NOT NULL AND claimed_minutes_ago > @thresholdMinutes
-           THEN 1
-           ELSE 0
-         END AS stalled
-       FROM session_rows
-       ${whereSql}
-       ORDER BY ${orderBy}
-       LIMIT @limit OFFSET @offset`,
-    )
-    .all(params) as Array<Omit<ApiSessionRow, "stalled"> & { stalled: number }>;
+  const total = (db.prepare(
+    `${baseSql}
+     SELECT COUNT(*) AS total
+     FROM session_rows
+     ${whereSql}`,
+  ).get(params) as { total: number }).total;
+  const rows = db.prepare(
+    `${baseSql}
+     SELECT
+       id,
+       path,
+       module,
+       role,
+       status,
+       claimed_by,
+       claimed_at,
+       claimed_minutes_ago,
+       CASE
+         WHEN claimed_minutes_ago IS NOT NULL AND claimed_minutes_ago > @thresholdMinutes
+         THEN 1
+         ELSE 0
+       END AS stalled
+     FROM session_rows
+     ${whereSql}
+     ORDER BY ${orderBy}
+     LIMIT @limit OFFSET @offset`,
+  ).all(params) as Array<Omit<ApiSessionRow, "stalled"> & { stalled: number }>;
 
-  return buildPageResult(
-    rows.map((row) => ({
-      ...row,
-      stalled: row.stalled === 1,
-    })),
-    total,
-    page,
-    pageSize,
-    {
-      statuses: distinctStrings(
-        db,
-        `
-          SELECT DISTINCT status AS value
-          FROM artifacts
-          WHERE status = 'in-progress'
-          ORDER BY status
-        `,
-      ) as ApiSessionFilters["statuses"],
-    },
-  );
+  return buildPageResult(rows.map((row) => ({ ...row, stalled: row.stalled === 1 })), total, page, pageSize, {
+    statuses: distinctStrings(
+      db,
+      `
+        SELECT DISTINCT status AS value
+        FROM artifacts
+        WHERE status = 'in-progress'
+        ORDER BY status
+      `,
+    ) as ApiSessionFilters["statuses"],
+  });
 }
 
 // ── /api/blockers ───────────────────────────────────────────────────────────
 
 /** Returns all currently open blockers (not yet unblocked). */
 export function queryOpenBlockers(db: Database.Database): ApiBlockerRow[] {
-  return db
-    .prepare(
-      `
+  return db.prepare(`
     SELECT
       e.artifact_id,
       json_extract(e.event_data, '$.blocker_id') AS blocker_id,
@@ -796,9 +724,7 @@ export function queryOpenBlockers(db: Database.Database): ApiBlockerRow[] {
               = json_extract(e.event_data, '$.blocker_id')
       )
     ORDER BY e.ts ASC
-  `,
-    )
-    .all() as ApiBlockerRow[];
+  `).all() as ApiBlockerRow[];
 }
 
 export function queryOpenBlockersPage(
@@ -819,9 +745,7 @@ export function queryOpenBlockersPage(
   const conditions = ["1=1"];
 
   if (opts.q?.trim()) {
-    conditions.push(
-      "LOWER(artifact_id || ' ' || COALESCE(blocker_id, '') || ' ' || summary) LIKE @query",
-    );
+    conditions.push("LOWER(artifact_id || ' ' || COALESCE(blocker_id, '') || ' ' || summary) LIKE @query");
     params.query = `%${opts.q.trim().toLowerCase()}%`;
   }
 
@@ -850,26 +774,20 @@ export function queryOpenBlockersPage(
     )
   `;
   const whereSql = `WHERE ${conditions.join(" AND ")}`;
-  const total = (
-    db
-      .prepare(
-        `${baseSql}
-         SELECT COUNT(*) AS total
-         FROM blocker_rows
-         ${whereSql}`,
-      )
-      .get(params) as { total: number }
-  ).total;
-  const rows = db
-    .prepare(
-      `${baseSql}
-       SELECT artifact_id, blocker_id, summary, since
-       FROM blocker_rows
-       ${whereSql}
-       ORDER BY ${orderBy}
-       LIMIT @limit OFFSET @offset`,
-    )
-    .all(params) as ApiBlockerRow[];
+  const total = (db.prepare(
+    `${baseSql}
+     SELECT COUNT(*) AS total
+     FROM blocker_rows
+     ${whereSql}`,
+  ).get(params) as { total: number }).total;
+  const rows = db.prepare(
+    `${baseSql}
+     SELECT artifact_id, blocker_id, summary, since
+     FROM blocker_rows
+     ${whereSql}
+     ORDER BY ${orderBy}
+     LIMIT @limit OFFSET @offset`,
+  ).all(params) as ApiBlockerRow[];
 
   return buildPageResult(rows, total, page, pageSize);
 }
@@ -878,9 +796,7 @@ export function queryOpenBlockersPage(
 
 /** Returns all currently open issues (not yet resolved). */
 export function queryOpenIssues(db: Database.Database): ApiIssueRow[] {
-  return db
-    .prepare(
-      `
+  return db.prepare(`
     SELECT
       e.artifact_id,
       json_extract(e.event_data, '$.issue_id')  AS issue_id,
@@ -897,9 +813,7 @@ export function queryOpenIssues(db: Database.Database): ApiIssueRow[] {
               = json_extract(e.event_data, '$.issue_id')
       )
     ORDER BY e.ts ASC
-  `,
-    )
-    .all() as ApiIssueRow[];
+  `).all() as ApiIssueRow[];
 }
 
 export function queryOpenIssuesPage(
@@ -955,26 +869,20 @@ export function queryOpenIssuesPage(
     )
   `;
   const whereSql = `WHERE ${conditions.join(" AND ")}`;
-  const total = (
-    db
-      .prepare(
-        `${baseSql}
-         SELECT COUNT(*) AS total
-         FROM issue_rows
-         ${whereSql}`,
-      )
-      .get(params) as { total: number }
-  ).total;
-  const rows = db
-    .prepare(
-      `${baseSql}
-       SELECT artifact_id, issue_id, severity, category, summary, ts
-       FROM issue_rows
-       ${whereSql}
-       ORDER BY ${orderBy}
-       LIMIT @limit OFFSET @offset`,
-    )
-    .all(params) as ApiIssueRow[];
+  const total = (db.prepare(
+    `${baseSql}
+     SELECT COUNT(*) AS total
+     FROM issue_rows
+     ${whereSql}`,
+  ).get(params) as { total: number }).total;
+  const rows = db.prepare(
+    `${baseSql}
+     SELECT artifact_id, issue_id, severity, category, summary, ts
+     FROM issue_rows
+     ${whereSql}
+     ORDER BY ${orderBy}
+     LIMIT @limit OFFSET @offset`,
+  ).all(params) as ApiIssueRow[];
 
   return buildPageResult(rows, total, page, pageSize, {
     severities: distinctStrings(
@@ -1029,14 +937,8 @@ export function queryRunHistory(
 ): ApiRunRow[] {
   const conditions: string[] = ["1=1"];
   const params: (string | number)[] = [];
-  if (opts.agent) {
-    conditions.push("agent = ?");
-    params.push(opts.agent);
-  }
-  if (opts.status) {
-    conditions.push("status = ?");
-    params.push(opts.status);
-  }
+  if (opts.agent)  { conditions.push("agent = ?");  params.push(opts.agent);  }
+  if (opts.status) { conditions.push("status = ?"); params.push(opts.status); }
   params.push(opts.limit ?? 100);
   const sql = `
     SELECT run_id, agent, model, status, started_at, finished_at, exit_code, log_file
@@ -1096,28 +998,18 @@ export function queryRunHistoryPage(
           `
           : "started_at DESC, run_id ASC";
   const whereSql = `WHERE ${conditions.join(" AND ")}`;
-  const total = (
-    db
-      .prepare(
-        `
-          SELECT COUNT(*) AS total
-          FROM runs
-          ${whereSql}
-        `,
-      )
-      .get(params) as { total: number }
-  ).total;
-  const rows = db
-    .prepare(
-      `
-        SELECT run_id, agent, model, status, started_at, finished_at, exit_code, log_file
-        FROM runs
-        ${whereSql}
-        ORDER BY ${orderBy}
-        LIMIT @limit OFFSET @offset
-      `,
-    )
-    .all(params) as ApiRunRow[];
+  const total = (db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM runs
+    ${whereSql}
+  `).get(params) as { total: number }).total;
+  const rows = db.prepare(`
+    SELECT run_id, agent, model, status, started_at, finished_at, exit_code, log_file
+    FROM runs
+    ${whereSql}
+    ORDER BY ${orderBy}
+    LIMIT @limit OFFSET @offset
+  `).all(params) as ApiRunRow[];
 
   return buildPageResult(rows, total, page, pageSize, {
     agents: distinctStrings(
@@ -1148,19 +1040,6 @@ export function queryRunHistoryPage(
       `,
     ),
   });
-}
-
-// ── /api/runs/:id/log ───────────────────────────────────────────────────────
-
-/** Returns the log_file path for a given run_id, or null if not found. */
-export function queryRunLogFile(
-  db: Database.Database,
-  runId: string,
-): string | null {
-  const row = db
-    .prepare(`SELECT log_file FROM runs WHERE run_id = ?`)
-    .get(runId) as { log_file: string | null } | undefined;
-  return row?.log_file ?? null;
 }
 
 // ── /api/evaluations ────────────────────────────────────────────────────────
@@ -1199,27 +1078,21 @@ export function queryEvaluationSummary(
 
 /** Returns token-usage and cost totals, broken down by model. */
 export function queryCostSummary(db: Database.Database): ApiCostSummary {
-  const totals = db
-    .prepare(
-      `
+  const totals = db.prepare(`
     SELECT
       COALESCE(SUM(tokens_in),  0) AS total_tokens_in,
       COALESCE(SUM(tokens_out), 0) AS total_tokens_out,
       COALESCE(SUM(cost_usd),   0) AS total_cost_usd,
       COUNT(*)                     AS total_calls
     FROM traces
-  `,
-    )
-    .get() as {
+  `).get() as {
     total_tokens_in: number;
     total_tokens_out: number;
     total_cost_usd: number;
     total_calls: number;
   };
 
-  const by_model = db
-    .prepare(
-      `
+  const by_model = db.prepare(`
     SELECT
       COALESCE(model, '(unknown)') AS model,
       COUNT(*)                     AS calls,
@@ -1229,9 +1102,7 @@ export function queryCostSummary(db: Database.Database): ApiCostSummary {
     FROM traces
     GROUP BY model
     ORDER BY cost_usd DESC
-  `,
-    )
-    .all() as ApiCostByModel[];
+  `).all() as ApiCostByModel[];
 
   return { ...totals, by_model };
 }

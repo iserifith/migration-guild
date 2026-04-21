@@ -10,6 +10,7 @@ import { getDb } from "../registry/db/connection";
 import { assertDbExists } from "./util";
 import { runInventory } from "./commands/inventory";
 import { runPlan } from "./commands/plan";
+import { runBootstrap } from "./commands/bootstrap";
 import { runMigrate } from "./commands/migrate";
 import { runReview } from "./commands/review";
 import { runStatus, printNextSteps } from "./commands/status";
@@ -60,11 +61,21 @@ program
     await runPlan(db());
   });
 
+// ─── bootstrap ────────────────────────────────────────────────────────────────
+
+program
+  .command("bootstrap")
+  .description("Phase 3: Scaffold the minimal target module in modern/")
+  .action(async () => {
+    assertDbExists(dbPath());
+    await runBootstrap(db());
+  });
+
 // ─── migrate ──────────────────────────────────────────────────────────────────
 
 program
   .command("migrate")
-  .description("Phase 3: Migrate planned artifacts (TDD: tests first, then production code)")
+  .description("Phase 4: Migrate planned artifacts (TDD: tests first, then production code)")
   .option("-p, --parallel <n>", "Number of parallel migration sessions", parseInt)
   .option("-w, --wave <n>", "Only migrate artifacts in this wave number", parseInt)
   .action(async (opts) => {
@@ -76,7 +87,7 @@ program
 
 program
   .command("review")
-  .description("Phase 4: Review migrated files for correctness and flag rework")
+  .description("Phase 5: Review migrated files for correctness and flag rework")
   .option("-p, --parallel <n>", "Number of parallel review sessions", parseInt)
   .action(async (opts) => {
     assertDbExists(dbPath());
@@ -140,7 +151,7 @@ program
 
 program
   .command("run [phase]")
-  .description("Run a phase: inventory | plan | migrate | review | remediate. No phase = show what to run next.")
+  .description("Run a phase: inventory | plan | bootstrap | migrate | review | remediate. No phase = show what to run next.")
   .option("-p, --parallel <n>", "Number of parallel sessions (migrate / review)", parseInt)
   .option("-w, --wave <n>", "Only migrate artifacts in this wave number (migrate only)", parseInt)
   .action(async (phase: string | undefined, opts) => {
@@ -151,6 +162,10 @@ program
       case "plan":
         assertDbExists(dbPath());
         await runPlan(db());
+        break;
+      case "bootstrap":
+        assertDbExists(dbPath());
+        await runBootstrap(db());
         break;
       case "migrate":
         assertDbExists(dbPath());
@@ -168,7 +183,7 @@ program
         printNextSteps(db());
         break;
       default:
-        process.stderr.write(`\n  ✗ Unknown phase: "${phase}". Valid: inventory, plan, migrate, review, remediate\n\n`);
+        process.stderr.write(`\n  ✗ Unknown phase: "${phase}". Valid: inventory, plan, bootstrap, migrate, review, remediate\n\n`);
         process.exit(1);
     }
   });

@@ -33,13 +33,26 @@ You are a Java migration engineer in a split migration pipeline. Your sole respo
    Exit code 2 = nothing left. Stop.
    Save `claim_id` and `claim_token` from the JSON output.
 
-2. Read the legacy source file from `legacy/`.
+2. Read the analyze context for the claimed artifact first:
+  ```bash
+  node migration/registry/dist/cli.js get-context-path --id "<id>" --agent analyze-agent
+  ```
+  Treat that context as the high-level behavioral summary of the artifact.
 
-3. Read the test file already written to `modern/src/test/java/...` — use it as the authoritative specification for the production class's public API and behavior.
+3. Read the legacy source file from `legacy/`.
 
-4. Do **not** run `search-similar` using shell expansion and do **not** browse unrelated queue items. If you need a convention reference, read at most one directly relevant migrated file by explicit path.
+4. Read the test file already written to `modern/src/test/java/...` — use it as the authoritative specification for the production class's public API and behavior.
 
-5. Write the complete production file to `modern/src/main/java/...`:
+5. Before doing further work, write a brief progress update in chat that states what you are working on based on the analyze context and the tests.
+  The update must be 1-2 sentences and should include:
+  - the claimed file or class
+  - the responsibility or behavior being implemented
+  - the main implementation focus implied by the tests or analyzed context
+  Example shape: `Working on Order.java, a value object whose contract is to preserve the constructor-supplied amount and return it unchanged. I’m implementing the minimal production class needed to satisfy the tests for constructor/getter behavior.`
+
+6. Do **not** run `search-similar` using shell expansion and do **not** browse unrelated queue items. If you need a convention reference, read at most one directly relevant migrated file by explicit path.
+
+7. Write the complete production file to `modern/src/main/java/...`:
     - The implementation must make every test in the test file pass
     - Apply the correct target framework based on artifact kind:
       - Web controller → Spring Boot 3.x `@RestController` / `@Controller`
@@ -49,7 +62,7 @@ You are a Java migration engineer in a split migration pipeline. Your sole respo
    - Externalize all configuration via `@Value` or `@ConfigurationProperties`
    - No stubs, no TODO placeholders
 
-6. Renew the claim lease before finalizing:
+8. Renew the claim lease before finalizing:
    ```bash
    node migration/registry/dist/cli.js heartbeat-claim \
      --claim-id "<claim_id>" \
@@ -57,7 +70,7 @@ You are a Java migration engineer in a split migration pipeline. Your sole respo
      --agent code-writer-agent
    ```
 
-7. Update registry:
+9. Update registry:
    ```bash
    node migration/registry/dist/cli.js set-artifact-status \
      --id "<id>" \
@@ -67,11 +80,11 @@ You are a Java migration engineer in a split migration pipeline. Your sole respo
      --claim-token "<claim_token>"
    ```
 
-8. **Trigger automated evaluation** (if Foundry eval is configured):
+10. **Trigger automated evaluation** (if Foundry eval is configured):
    ```bash
    node migration/registry/dist/cli.js evaluate-artifact --id "<id>" --auto-advance
    ```
     - Exit code 0 → artifact auto-advanced to `completed` or `needs-rework`. Skip manual review queue.
     - Exit code non-zero or command not found → artifact remains in `migrated` state for manual review.
 
-9. Stop. One run processes one claimed artifact.
+11. Stop. One run processes one claimed artifact.

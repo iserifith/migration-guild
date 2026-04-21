@@ -10,7 +10,6 @@ const DIM = "\x1b[2m";
 const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
 const RED = "\x1b[31m";
-const CYAN = "\x1b[36m";
 
 export const STALL_MINUTES = parseInt(process.env["LEGMOD_STALL_MINS"] ?? "10", 10);
 
@@ -250,7 +249,7 @@ export function printPoolSummary(opts: {
   }
 
   if (issues.length > 0) {
-    console.log(`  Run issues:`);
+    console.log("  Run issues:");
     for (const issue of issues.slice(0, 5)) {
       const exitNote = issue.exitCode !== 0 ? `exit=${issue.exitCode}  ` : "";
       const logNote = issue.logFile ? `  log=${issue.logFile}` : "";

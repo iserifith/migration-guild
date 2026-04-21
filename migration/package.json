@@ -12,13 +12,21 @@
     "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "better-sqlite3": "^12.8.0",
-    "commander": "^12.1.0",
-    "dotenv": "^17.4.0"
+    "better-sqlite3": "12.8.0",
+    "commander": "12.1.0",
+    "dotenv": "17.4.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^25.5.0",
-    "tsx": "^4.7.0"
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "25.5.0",
+    "tsx": "4.7.0"
+  },
+  "overrides": {
+    "better-sqlite3": "12.8.0",
+    "commander": "12.1.0",
+    "dotenv": "17.4.0",
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "25.5.0",
+    "tsx": "4.7.0"
   }
 }

@@ -20,7 +20,9 @@ export function buildInventoryBatchInput(
   db: Database.Database,
   cfg: FoundryConfig,
   wave?: number,
+  modelOverride?: string,
 ): string {
+  const model = modelOverride ?? cfg.chatModel;
   const artifacts =
     wave !== undefined
       ? (db
@@ -38,23 +40,23 @@ export function buildInventoryBatchInput(
     if (content === null) continue;
 
     lines.push(
-      JSON.stringify({
-        custom_id: artifact.id,
-        method: "POST",
-        url: "/chat/completions",
-        body: {
-          model: cfg.chatModel,
-          messages: [
-            { role: "system", content: "You are a Java code analyzer." },
-            {
-              role: "user",
-              content: `Analyze this Java file. Return JSON: {framework, role, dependencies: string[]}.\n\n${content}`,
-            },
-          ],
-          max_completion_tokens: resolveTokenLimit(cfg.chatModel, cfg),
-        },
-      }),
-    );
+        JSON.stringify({
+          custom_id: artifact.id,
+          method: "POST",
+          url: "/chat/completions",
+          body: {
+            model,
+            messages: [
+              { role: "system", content: "You are a Java code analyzer." },
+              {
+                role: "user",
+                content: `Analyze this Java file. Return JSON: {framework, role, dependencies: string[]}.\n\n${content}`,
+              },
+            ],
+            max_completion_tokens: resolveTokenLimit(model, cfg),
+          },
+        }),
+      );
   }
 
   return lines.join("\n");
@@ -75,7 +77,10 @@ export function buildInventoryBatchInput(
 export function buildEmbedBatchInput(
   db: Database.Database,
   cfg: FoundryConfig,
+  _statusFilter?: string,
+  modelOverride?: string,
 ): string {
+  const model = modelOverride ?? cfg.embeddingModel;
   const artifacts = db
     .prepare(
       `SELECT * FROM artifacts
@@ -98,7 +103,7 @@ export function buildEmbedBatchInput(
         method: "POST",
         url: "/embeddings",
         body: {
-          model: cfg.embeddingModel,
+          model,
           input: content.slice(0, 8000),
         },
       }),
@@ -108,6 +113,71 @@ export function buildEmbedBatchInput(
   return lines.join("\n");
 }
 
+type BatchValidationClient = Pick<FoundryClient, "uploadFile" | "submitBatchJob" | "cancelBatchJob">;
+
+function buildValidationJsonl(type: Exclude<BatchJobType, "evaluate">, model: string): string {
+  if (type === "embed") {
+    return JSON.stringify({
+      custom_id: "__legmod_batch_preflight__",
+      method: "POST",
+      url: "/embeddings",
+      body: {
+        model,
+        input: "legmod batch preflight",
+      },
+    });
+  }
+
+  return JSON.stringify({
+    custom_id: "__legmod_batch_preflight__",
+    method: "POST",
+    url: "/chat/completions",
+    body: {
+      model,
+      messages: [
+        { role: "system", content: "You validate batch deployment compatibility." },
+        { role: "user", content: "Reply with JSON: {ok:true}." },
+      ],
+      max_completion_tokens: 32,
+    },
+  });
+}
+
+export async function validateBatchSupport(
+  client: BatchValidationClient,
+  cfg: FoundryConfig,
+  type: Exclude<BatchJobType, "evaluate">,
+  modelOverride?: string,
+): Promise<void> {
+  const model = type === "embed"
+    ? (modelOverride ?? cfg.embeddingModel)
+    : (modelOverride ?? cfg.chatModel);
+
+  try {
+    const { id: inputFileId } = await client.uploadFile(
+      buildValidationJsonl(type, model),
+      `batch-preflight-${type}.jsonl`,
+    );
+    const job = await client.submitBatchJob({
+      input_file_id: inputFileId,
+      endpoint: type === "embed" ? "/embeddings" : "/chat/completions",
+      completion_window: "24h",
+      metadata: { legmod: "batch-preflight", type, model },
+    });
+    await client.cancelBatchJob(job.id);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("invalid_deployment_type")) {
+      throw new Error(
+        `[legmod] Foundry batch preflight failed for model "${model}". ` +
+          "This deployment is not batch-capable. Use a deployment with a supported batch SKU " +
+          "(for example globalbatch or datazonebatch), disable batch for this phase, or switch the phase provider to copilot."
+      );
+    }
+    throw err;
+  }
+}
+
 export async function submitBatch(
   db: Database.Database,
   client: FoundryClient,
@@ -115,6 +185,7 @@ export async function submitBatch(
   type: BatchJobType,
   wave?: number,
   artifactIds?: string[],
+  modelOverride?: string,
 ): Promise<BatchJob> {
   if (type === "evaluate") {
     throw new Error("[batch] 'evaluate' batch type must be handled separately");
@@ -126,8 +197,8 @@ export async function submitBatch(
 
   let jsonl =
     type === "embed"
-      ? buildEmbedBatchInput(db, cfg)
-      : buildInventoryBatchInput(db, cfg, wave);
+      ? buildEmbedBatchInput(db, cfg, undefined, modelOverride)
+      : buildInventoryBatchInput(db, cfg, wave, modelOverride);
 
   // Filter to requested artifact IDs if specified
   if (artifactIds && artifactIds.length > 0) {

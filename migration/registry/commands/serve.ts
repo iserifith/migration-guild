@@ -15,18 +15,17 @@ import {
   queryOpenIssuesPage,
   queryRunHistory,
   queryRunHistoryPage,
-  queryRunLogFile,
   queryEvaluationSummary,
   queryCostSummary,
 } from "./queries";
 
 const MIME: Record<string, string> = {
   ".html": "text/html",
-  ".js": "application/javascript",
-  ".css": "text/css",
-  ".svg": "image/svg+xml",
-  ".ico": "image/x-icon",
-  ".map": "application/json",
+  ".js":   "application/javascript",
+  ".css":  "text/css",
+  ".svg":  "image/svg+xml",
+  ".ico":  "image/x-icon",
+  ".map":  "application/json",
 };
 
 // ui-dist is one level up from registry/dist/ → migration/ui-dist/
@@ -35,19 +34,14 @@ const UI_DIR = path.join(__dirname, "..", "..", "ui-dist");
 function serveStatic(res: http.ServerResponse, filePath: string) {
   if (!fs.existsSync(filePath)) return false;
   const ext = path.extname(filePath);
-  res.writeHead(200, {
-    "Content-Type": MIME[ext] ?? "application/octet-stream",
-  });
+  res.writeHead(200, { "Content-Type": MIME[ext] ?? "application/octet-stream" });
   fs.createReadStream(filePath).pipe(res);
   return true;
 }
 
 function json(res: http.ServerResponse, data: unknown) {
   const body = JSON.stringify(data);
-  res.writeHead(200, {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-  });
+  res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
   res.end(body);
 }
 
@@ -74,15 +68,12 @@ export function startServer(db: Database.Database, port = 3322) {
     // This file is intentionally a thin HTTP dispatcher — no raw SQL here.
 
     if (p === "/api/artifacts") {
-      return json(
-        res,
-        queryArtifactsForUI(db, {
-          status: url.searchParams.get("status") ?? undefined,
-          module: url.searchParams.get("module") ?? undefined,
-          kind: url.searchParams.get("kind") ?? undefined,
-          tier: url.searchParams.get("tier") ?? undefined,
-        }),
-      );
+      return json(res, queryArtifactsForUI(db, {
+        status: url.searchParams.get("status") ?? undefined,
+        module: url.searchParams.get("module") ?? undefined,
+        kind:   url.searchParams.get("kind")   ?? undefined,
+        tier:   url.searchParams.get("tier")   ?? undefined,
+      }));
     }
 
     if (p === "/api/status") {
@@ -94,7 +85,7 @@ export function startServer(db: Database.Database, port = 3322) {
     }
 
     if (p === "/api/events") {
-      const id = url.searchParams.get("id");
+      const id    = url.searchParams.get("id");
       const limit = Number(url.searchParams.get("limit") ?? 50);
       if (!id) return json(res, []);
       return json(res, queryEventsForUI(db, id, limit));
@@ -118,24 +109,14 @@ export function startServer(db: Database.Database, port = 3322) {
         return json(res, queryStalledSessions(db, threshold));
       }
 
-      return json(
-        res,
-        queryStalledSessionsPage(db, {
-          thresholdMinutes: threshold,
-          status: url.searchParams.get("status") ?? undefined,
-          stalled:
-            (url.searchParams.get("stalled") as "all" | "stalled" | "active" | null) ??
-            undefined,
-          sort:
-            (url.searchParams.get("sort") as
-              | "age-desc"
-              | "age-asc"
-              | "artifact"
-              | null) ?? undefined,
-          page: numberParam(url.searchParams.get("page"), 1),
-          pageSize: numberParam(url.searchParams.get("page_size"), 25),
-        }),
-      );
+      return json(res, queryStalledSessionsPage(db, {
+        thresholdMinutes: threshold,
+        status: url.searchParams.get("status") ?? undefined,
+        stalled: (url.searchParams.get("stalled") as "all" | "stalled" | "active" | null) ?? undefined,
+        sort: (url.searchParams.get("sort") as "age-desc" | "age-asc" | "artifact" | null) ?? undefined,
+        page: numberParam(url.searchParams.get("page"), 1),
+        pageSize: numberParam(url.searchParams.get("page_size"), 25),
+      }));
     }
 
     if (p === "/api/blockers") {
@@ -144,17 +125,12 @@ export function startServer(db: Database.Database, port = 3322) {
         return json(res, queryOpenBlockers(db));
       }
 
-      return json(
-        res,
-        queryOpenBlockersPage(db, {
-          q: url.searchParams.get("q") ?? undefined,
-          sort:
-            (url.searchParams.get("sort") as "oldest" | "newest" | "artifact" | null) ??
-            undefined,
-          page: numberParam(url.searchParams.get("page"), 1),
-          pageSize: numberParam(url.searchParams.get("page_size"), 25),
-        }),
-      );
+      return json(res, queryOpenBlockersPage(db, {
+        q: url.searchParams.get("q") ?? undefined,
+        sort: (url.searchParams.get("sort") as "oldest" | "newest" | "artifact" | null) ?? undefined,
+        page: numberParam(url.searchParams.get("page"), 1),
+        pageSize: numberParam(url.searchParams.get("page_size"), 25),
+      }));
     }
 
     if (p === "/api/issues") {
@@ -163,18 +139,13 @@ export function startServer(db: Database.Database, port = 3322) {
         return json(res, queryOpenIssues(db));
       }
 
-      return json(
-        res,
-        queryOpenIssuesPage(db, {
-          severity: url.searchParams.get("severity") ?? undefined,
-          category: url.searchParams.get("category") ?? undefined,
-          sort:
-            (url.searchParams.get("sort") as "severity" | "latest" | "artifact" | null) ??
-            undefined,
-          page: numberParam(url.searchParams.get("page"), 1),
-          pageSize: numberParam(url.searchParams.get("page_size"), 25),
-        }),
-      );
+      return json(res, queryOpenIssuesPage(db, {
+        severity: url.searchParams.get("severity") ?? undefined,
+        category: url.searchParams.get("category") ?? undefined,
+        sort: (url.searchParams.get("sort") as "severity" | "latest" | "artifact" | null) ?? undefined,
+        page: numberParam(url.searchParams.get("page"), 1),
+        pageSize: numberParam(url.searchParams.get("page_size"), 25),
+      }));
     }
 
     if (p === "/api/runs") {
@@ -185,56 +156,21 @@ export function startServer(db: Database.Database, port = 3322) {
         url.searchParams.has("sort");
 
       if (shouldPage) {
-        return json(
-          res,
-          queryRunHistoryPage(db, {
-            agent: url.searchParams.get("agent") ?? undefined,
-            status: url.searchParams.get("status") ?? undefined,
-            model: url.searchParams.get("model") ?? undefined,
-            sort:
-              (url.searchParams.get("sort") as
-                | "newest"
-                | "oldest"
-                | "agent"
-                | "duration"
-                | null) ?? undefined,
-            page: numberParam(url.searchParams.get("page"), 1),
-            pageSize: numberParam(url.searchParams.get("page_size"), 25),
-          }),
-        );
-      }
-
-      return json(
-        res,
-        queryRunHistory(db, {
+        return json(res, queryRunHistoryPage(db, {
           agent: url.searchParams.get("agent") ?? undefined,
           status: url.searchParams.get("status") ?? undefined,
-          limit: numberParam(url.searchParams.get("limit"), 100) ?? 100,
-        }),
-      );
-    }
+          model: url.searchParams.get("model") ?? undefined,
+          sort: (url.searchParams.get("sort") as "newest" | "oldest" | "agent" | "duration" | null) ?? undefined,
+          page: numberParam(url.searchParams.get("page"), 1),
+          pageSize: numberParam(url.searchParams.get("page_size"), 25),
+        }));
+      }
 
-    const runLogMatch = /^\/api\/runs\/([^/]+)\/log$/.exec(p);
-    if (runLogMatch) {
-      const runId = decodeURIComponent(runLogMatch[1]!);
-      const logFile = queryRunLogFile(db, runId);
-      if (!logFile) {
-        res.writeHead(404, { "Content-Type": "text/plain" });
-        res.end("Run not found or no log recorded");
-        return;
-      }
-      if (!fs.existsSync(logFile)) {
-        res.writeHead(404, { "Content-Type": "text/plain" });
-        res.end(`Log file not found on disk: ${logFile}`);
-        return;
-      }
-      res.writeHead(200, {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Access-Control-Allow-Origin": "*",
-        "X-Log-File": logFile,
-      });
-      fs.createReadStream(logFile).pipe(res);
-      return;
+      return json(res, queryRunHistory(db, {
+        agent:  url.searchParams.get("agent")  ?? undefined,
+        status: url.searchParams.get("status") ?? undefined,
+        limit:  numberParam(url.searchParams.get("limit"), 100) ?? 100,
+      }));
     }
 
     if (p === "/api/evaluations") {
@@ -250,8 +186,7 @@ export function startServer(db: Database.Database, port = 3322) {
     if (p === "/" || p === "/index.html") {
       const index = path.join(UI_DIR, "index.html");
       if (!serveStatic(res, index)) {
-        res.writeHead(404);
-        res.end("UI not built. Run: npm run build:ui");
+        res.writeHead(404); res.end("UI not built. Run: npm run build:ui");
       }
       return;
     }
@@ -260,10 +195,7 @@ export function startServer(db: Database.Database, port = 3322) {
     if (!serveStatic(res, file)) {
       // SPA fallback
       const index = path.join(UI_DIR, "index.html");
-      if (!serveStatic(res, index)) {
-        res.writeHead(404);
-        res.end("Not found");
-      }
+      if (!serveStatic(res, index)) { res.writeHead(404); res.end("Not found"); }
     }
   });
 
@@ -271,17 +203,9 @@ export function startServer(db: Database.Database, port = 3322) {
     const url = `http://localhost:${port}`;
     console.log(`\n  legmod registry inspector\n  ${url}\n`);
     // Try to open browser
-    const open =
-      process.platform === "darwin"
-        ? "open"
-        : process.platform === "win32"
-          ? "start"
-          : "xdg-open";
+    const open = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
     require("child_process").exec(`${open} ${url}`);
   });
 
-  process.on("SIGINT", () => {
-    server.close();
-    process.exit(0);
-  });
+  process.on("SIGINT", () => { server.close(); process.exit(0); });
 }

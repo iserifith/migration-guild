@@ -333,15 +333,6 @@ export function reconcileStaleClaims(
   });
 }
 
-/**
- * Atomically claims the next available artifact for a specific phase.
- *
- * An artifact is claimable when:
- *   1. Its status matches `fromStatus`
- *   2. All artifacts it depends on have status "migrated", "reviewed", "completed", or "skipped"
- *
- * Returns the claimed artifact plus active claim metadata.
- */
 export function claimNextTask(
   db: Database.Database,
   agent: string,

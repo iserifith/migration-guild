@@ -16,6 +16,7 @@ import { runReview } from "./commands/review";
 import { runStatus, printNextSteps } from "./commands/status";
 import { runWatch } from "./commands/watch";
 import { runRelease } from "./commands/release";
+import { runRemediate } from "./commands/remediate";
 import { loadConfig, requireFoundryConfig } from "../foundry/config";
 import { FoundryClient } from "../foundry/foundry-client";
 import { registerTracingCommands } from "../foundry/tracing/commands";
@@ -60,7 +61,7 @@ program
     await runPlan(db());
   });
 
-// ─── migrate ──────────────────────────────────────────────────────────────────
+// ─── bootstrap ────────────────────────────────────────────────────────────────
 
 program
   .command("bootstrap")
@@ -127,11 +128,30 @@ program
     await runRelease(db(), opts);
   });
 
+// ─── remediate ───────────────────────────────────────────────────────────────
+
+program
+  .command("remediate")
+  .description("Spawn remediation-agent to diagnose one exception and apply one safe registry-only recovery action")
+  .option("--id <id>", "Target a specific artifact ID")
+  .option("--timeout-mins <n>", "Remediation timeout in minutes", parseInt)
+  .option("--model <name>", "Override model for remediation-agent")
+  .option("--prompt <text>", "Override remediation prompt")
+  .action(async (opts) => {
+    assertDbExists(dbPath());
+    await runRemediate(db(), {
+      id: opts.id,
+      timeoutMins: opts.timeoutMins,
+      model: opts.model,
+      prompt: opts.prompt,
+    });
+  });
+
 // ─── run ──────────────────────────────────────────────────────────────────────
 
 program
   .command("run [phase]")
-  .description("Run a phase: inventory | plan | bootstrap | migrate | review. No phase = show what to run next.")
+  .description("Run a phase: inventory | plan | bootstrap | migrate | review | remediate. No phase = show what to run next.")
   .option("-p, --parallel <n>", "Number of parallel sessions (migrate / review)", parseInt)
   .option("-w, --wave <n>", "Only migrate artifacts in this wave number (migrate only)", parseInt)
   .action(async (phase: string | undefined, opts) => {
@@ -155,11 +175,15 @@ program
         assertDbExists(dbPath());
         await runReview(db(), { parallel: opts.parallel });
         break;
+      case "remediate":
+        assertDbExists(dbPath());
+        await runRemediate(db());
+        break;
       case undefined:
         printNextSteps(db());
         break;
       default:
-        process.stderr.write(`\n  ✗ Unknown phase: "${phase}". Valid: inventory, plan, bootstrap, migrate, review\n\n`);
+        process.stderr.write(`\n  ✗ Unknown phase: "${phase}". Valid: inventory, plan, bootstrap, migrate, review, remediate\n\n`);
         process.exit(1);
     }
   });
