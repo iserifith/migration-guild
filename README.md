@@ -4,11 +4,11 @@
 
 The target framework is chosen based on what the legacy code actually is — not assumed upfront:
 
-| Legacy project type | Target |
-| --- | --- |
-| Web apps (JAX-RS, servlets, `web.xml`) | Spring Boot 3.x + `spring-boot-starter-web` |
-| Services, batch jobs, CLI tools, queue consumers | Spring Boot 3.x + `spring-boot-starter` (no embedded server) |
-| Libraries and utilities (no `main()`, published as JAR) | Plain Java 17+ with JUnit 5 |
+| Legacy project type                                     | Target                                                       |
+| ------------------------------------------------------- | ------------------------------------------------------------ |
+| Web apps (JAX-RS, servlets, `web.xml`)                  | Spring Boot 3.x + `spring-boot-starter-web`                  |
+| Services, batch jobs, CLI tools, queue consumers        | Spring Boot 3.x + `spring-boot-starter` (no embedded server) |
+| Libraries and utilities (no `main()`, published as JAR) | Plain Java 17+ with JUnit 5                                  |
 
 ---
 
@@ -73,7 +73,7 @@ migration/       ← registry CLI and database
 The `legmod` CLI is a one-command orchestrator that drives the full pipeline for you. It spawns Copilot under the hood with the right agent, model, and flags — no manual wiring needed.
 
 ```bash
-# Run the full pipeline (inventory → plan → migrate → review)
+# Run the full pipeline (inventory → plan → bootstrap? → migrate → review)
 node migration/legmod/dist/cli.js run
 
 # Run with 3 parallel migration + review sessions
@@ -85,12 +85,14 @@ node migration/legmod/dist/cli.js plan
 node migration/legmod/dist/cli.js bootstrap
 node migration/legmod/dist/cli.js migrate --parallel 3
 node migration/legmod/dist/cli.js review --parallel 2
+node migration/legmod/dist/cli.js remediate --id <artifact-id>
 
 # Check current status
 node migration/legmod/dist/cli.js status
 ```
 
 **What legmod handles automatically:**
+
 - Selects the right agent and model per phase
 - Passes `--yolo` so agents can run registry commands without interruption
 - Runs a pre-plan JVM compatibility audit and stores the findings in the registry
@@ -109,8 +111,6 @@ node migration/legmod/dist/cli.js status
 ## Manual Copilot invocation (advanced)
 
 The steps below describe the same workflow using raw `copilot` CLI commands. Use these when you need fine-grained control, want to target a specific file, or the legmod CLI doesn't cover your use case.
-
-
 
 Open Copilot in your workspace and run the inventory phase. This scans every Java file in `legacy/`, classifies it, and registers it in the registry.
 
@@ -279,7 +279,7 @@ If a file needs rework, run migration again for that file:
 
 ---
 
-## 6. Remediation (exception path)
+## 7. Remediation (exception path)
 
 When a background worker fails, a claim stalls, or review sends an artifact back, use the dedicated remediation agent instead of folding recovery policy into the orchestrator.
 
@@ -297,7 +297,7 @@ Remediate the next blocked or stalled artifact
 
 ---
 
-## 7. Inspect progress
+## 8. Inspect progress
 
 **Terminal dashboard:**
 
@@ -359,12 +359,12 @@ cd migration && npm install && cd ..
 
 ## Recommended models
 
-| Phase     | Agent             | Model               |
-| --------- | ----------------- | ------------------- |
-| Inventory | `context-agent`   | `gpt-5-mini`        |
-| Planning  | `planner-agent`   | `claude-sonnet-4.6` |
-| Migration | `migration-agent` | `gpt-5-mini`        |
-| Review    | `review-agent`    | `claude-sonnet-4.6` |
+| Phase       | Agent               | Model               |
+| ----------- | ------------------- | ------------------- |
+| Inventory   | `context-agent`     | `gpt-5-mini`        |
+| Planning    | `planner-agent`     | `claude-sonnet-4.6` |
+| Migration   | `migration-agent`   | `gpt-5-mini`        |
+| Review      | `review-agent`      | `claude-sonnet-4.6` |
 | Remediation | `remediation-agent` | `claude-sonnet-4.6` |
 
 ---
@@ -393,6 +393,7 @@ All planned artifacts are either in-progress or waiting on dependencies. Check `
 
 **Agent crashed mid-task**
 An artifact left `in-progress` by a crashed agent blocks that slot. Release it so another session can pick it up:
+
 ```bash
 node migration/registry/dist/cli.js release --id "<id>" --agent "operator" --reason "agent crashed"
 ```
