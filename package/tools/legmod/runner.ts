@@ -3,7 +3,6 @@ import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import { Transform } from "stream";
-import * as readline from "readline";
 import type Database from "better-sqlite3";
 import { releaseClaimedArtifactsForOwner } from "../registry/commands/artifacts";
 import { releaseClaimsForRun } from "../registry/commands/claim";
@@ -109,83 +108,121 @@ function getNewlyWrittenFiles(root: string, before: Set<string>): string[] {
   return [...after].filter((f) => !before.has(f)).sort();
 }
 
-
 function writeLogLine(stream: fs.WriteStream | undefined, line: string): void {
   stream?.write(`[${new Date().toISOString().slice(11, 23)}] ${line}\n`);
 }
 
-/**
- * Analyze recent log lines to determine if a process is stuck.
- * Returns { isStuck: boolean, reason?: string }
- */
-async function analyzeProcessHealth(logFile: string | undefined): Promise<{ isStuck: boolean; reason?: string }> {
-  if (!logFile || !fs.existsSync(logFile)) {
-    return { isStuck: false };
-  }
+function formatLogTimestamp(ms: number): string {
+  return new Date(ms)
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "Z")
+    .replace("T", "-");
+}
 
+function formatLogFileName(agent: string, startedMs: number, runId: string, phase?: PhaseKey): string {
+  const phasePart = phase ? `-${phase}` : "";
+  return `${agent}${phasePart}-${formatLogTimestamp(startedMs)}-${runId}.log`;
+}
+
+function getRunClaimLines(db: Database.Database, runId: string): string[] {
   try {
-    // Read last 50 lines from the log file
-    const lines: string[] = [];
-    const stream = readline.createInterface({
-      input: fs.createReadStream(logFile),
-      crlfDelay: Infinity,
-    });
+    const rows = db
+      .prepare(
+        `
+        SELECT c.claim_id, c.state, c.from_status, a.id AS artifact_id, a.path AS artifact_path, a.status AS artifact_status
+        FROM artifact_claims c
+        LEFT JOIN artifacts a ON a.id = c.artifact_id
+        WHERE c.run_id = ?
+        ORDER BY c.claimed_at ASC
+        `,
+      )
+      .all(runId) as Array<{
+      claim_id: string;
+      state: string;
+      from_status: string;
+      artifact_id: string | null;
+      artifact_path: string | null;
+      artifact_status: string | null;
+    }>;
 
-    for await (const line of stream) {
-      lines.push(line);
-      if (lines.length > 50) {
-        lines.shift();
-      }
+    if (rows.length === 0) {
+      return ["Claims: (none)"];
     }
 
-    if (lines.length === 0) {
-      return { isStuck: true, reason: "No log output detected" };
+    const lines = [`Claims (${rows.length}):`];
+    for (const row of rows.slice(0, 5)) {
+      const claimShort = row.claim_id.slice(0, 8);
+      const artifact = row.artifact_id ?? "unknown-artifact";
+      const status = row.artifact_status ?? "unknown";
+      const artifactPath = row.artifact_path ?? "unknown-path";
+      lines.push(
+        `  claim=${claimShort} state=${row.state} from=${row.from_status} artifact=${artifact} artifactStatus=${status} path=${artifactPath}`,
+      );
     }
-
-    // Extract timestamps from lines like "[HH:MM:SS.mmm]"
-    const timestampRegex = /\[(\d{2}):(\d{2}):(\d{2}\.\d{3})\]/;
-    const lastLine = lines[lines.length - 1];
-    const lastMatch = lastLine.match(timestampRegex);
-
-    if (!lastMatch) {
-      return { isStuck: false };
+    if (rows.length > 5) {
+      lines.push(`  ... +${rows.length - 5} more`);
     }
-
-    // Check for error indicators
-    const errorIndicators = [
-      "Error:",
-      "TIMEOUT",
-      "deadlock",
-      "crash",
-      "fatal",
-      "infinite loop",
-      "stuck",
-      "retry exceeded",
-    ];
-
-    const recentErrors = lines
-      .slice(-10)
-      .some((line) => errorIndicators.some((err) => line.toLowerCase().includes(err.toLowerCase())));
-
-    if (recentErrors) {
-      return { isStuck: true, reason: "Error patterns detected in recent output" };
-    }
-
-    // Check if output is just repeating (no progress)
-    const uniqueLines = new Set(lines.slice(-20).map((l) => l.toLowerCase()));
-    const repetitionRatio = 1 - uniqueLines.size / Math.max(1, lines.slice(-20).length);
-
-    if (repetitionRatio > 0.7) {
-      return { isStuck: true, reason: "Output appears to be repeating with no new progress" };
-    }
-
-    // If we have output and no obvious errors, assume it's working (not stuck)
-    return { isStuck: false };
+    return lines;
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    console.error(`[legmod] Failed to analyze log: ${msg}`);
-    return { isStuck: false };
+    return [`Claims: (unavailable: ${msg})`];
   }
+}
+
+function getRunClaimIntroLine(db: Database.Database, runId: string): string | null {
+  try {
+    const row = db
+      .prepare(
+        `
+        SELECT c.from_status, a.id AS artifact_id, a.path AS artifact_path, a.kind AS artifact_kind, a.wave AS artifact_wave
+        FROM artifact_claims c
+        LEFT JOIN artifacts a ON a.id = c.artifact_id
+        WHERE c.run_id = ?
+        ORDER BY c.claimed_at ASC
+        LIMIT 1
+        `,
+      )
+      .get(runId) as
+      | {
+          from_status: string;
+          artifact_id: string | null;
+          artifact_path: string | null;
+          artifact_kind: string | null;
+          artifact_wave: number | null;
+        }
+      | undefined;
+
+    if (!row) {
+      return null;
+    }
+
+    const artifact = row.artifact_id ?? "unknown-artifact";
+    const artifactPath = row.artifact_path ?? "unknown-path";
+    const artifactKind = row.artifact_kind ?? "unknown-kind";
+    const wave = row.artifact_wave == null ? "n/a" : String(row.artifact_wave);
+    return `[legmod] Working on ${artifactPath} (${artifactKind}, wave=${wave}, claimed from ${row.from_status}, artifact=${artifact})`;
+  } catch {
+    return null;
+  }
+}
+
+export function summarizeRunFailures(results: AgentRunResult[]): string | null {
+  const failed = results.filter((result) => result.exitCode !== 0);
+  if (failed.length === 0) return null;
+
+  const sample = failed
+    .slice(0, 3)
+    .map((result) => {
+      const logNote = result.logFile
+        ? ` log=${path.relative(process.cwd(), result.logFile) || result.logFile}`
+        : "";
+      return `${result.agent} exit=${result.exitCode}${logNote}`;
+    })
+    .join("; ");
+
+  const extra = failed.length > 3 ? ` (+${failed.length - 3} more)` : "";
+  return `${failed.length} agent run(s) failed: ${sample}${extra}`;
 }
 
 export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
@@ -193,9 +230,12 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
   const claimOwner = opts.claimOwner ?? `${agent}:${randomUUID()}`;
   const runId = randomUUID().replace(/-/g, "").slice(0, 16);
   const startMs = Date.now();
+  const startedIso = new Date(startMs).toISOString();
+  const projectRoot = path.resolve(__dirname, "..", "..", "..");
+  const beforeFiles = snapshotChangedFiles(projectRoot);
 
   const logFile = opts.logDir
-    ? path.join(opts.logDir, `${agent}-${Date.now()}-${randomUUID()}.log`)
+    ? path.join(opts.logDir, formatLogFileName(agent, startMs, runId, opts.phase))
     : undefined;
 
   if (logFile) {
@@ -207,27 +247,7 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
     ? fs.createWriteStream(logFile, { flags: "a" })
     : undefined;
 
-  if (logStream) {
-    const promptPreview =
-      prompt.length > 300 ? prompt.slice(0, 300) + "…" : prompt;
-    logStream.write(
-      [
-        LOG_SEP,
-        `Agent:   ${agent}`,
-        `Model:   ${model}`,
-        `Started: ${new Date(startMs).toISOString()}`,
-        `Prompt:  ${promptPreview}`,
-        LOG_SEP,
-        "",
-      ].join("\n"),
-    );
-  }
-
   const args = ["--agent", agent, "--model", model, "--yolo", "-p", prompt];
-  // Always run from the project root (my-migration/) so agent shell commands
-  // like `node migration/registry/dist/cli.js ...` resolve correctly.
-  const projectRoot = path.resolve(__dirname, "..", "..", "..");
-  const beforeFiles = snapshotChangedFiles(projectRoot);
   const run = startRun(db, {
     runId,
     agent,
@@ -238,6 +258,31 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
     logFile,
     pid: null,
   });
+
+  if (logStream) {
+    const promptPreview =
+      prompt.length > 300 ? prompt.slice(0, 300) + "..." : prompt;
+    logStream.write(
+      [
+        LOG_SEP,
+        "LogVersion: 2",
+        `RunId:      ${run.run_id}`,
+        `Agent:      ${agent}`,
+        `Owner:      ${claimOwner}`,
+        `Phase:      ${opts.phase ?? "none"}`,
+        `Model:      ${model}`,
+        `Started:    ${startedIso}`,
+        `Cwd:        ${projectRoot}`,
+        `Command:    ${getCopilotCommand()} --agent ${agent} --model ${model} --yolo -p <prompt:${prompt.length} chars>`,
+        `Prompt:     ${promptPreview}`,
+        LOG_SEP,
+        "",
+      ].join("\n"),
+    );
+  }
+
+  // Always run from the project root (my-migration/) so agent shell commands
+  // like `node migration/registry/dist/cli.js ...` resolve correctly.
   const proc = spawn(getCopilotCommand(), args, {
     cwd: projectRoot,
     env: {
@@ -260,12 +305,32 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
     let timedOut = false;
     let timeoutHandle: NodeJS.Timeout | undefined;
     let killHandle: NodeJS.Timeout | undefined;
+    let claimWatchHandle: NodeJS.Timeout | undefined;
+    let claimIntroWritten = false;
+
+    if (logStream) {
+      claimWatchHandle = setInterval(() => {
+        if (settled || claimIntroWritten) {
+          if (claimWatchHandle) clearInterval(claimWatchHandle);
+          return;
+        }
+        const intro = getRunClaimIntroLine(db, run.run_id);
+        if (!intro) {
+          return;
+        }
+        claimIntroWritten = true;
+        writeLogLine(logStream, intro);
+        if (claimWatchHandle) clearInterval(claimWatchHandle);
+      }, 250);
+      claimWatchHandle.unref?.();
+    }
 
     const finalize = (exitCode: number) => {
       if (settled) return;
       settled = true;
       if (timeoutHandle) clearTimeout(timeoutHandle);
       if (killHandle) clearTimeout(killHandle);
+      if (claimWatchHandle) clearInterval(claimWatchHandle);
       let finalExitCode = exitCode;
       try {
         if (exitCode === 0) {
@@ -334,6 +399,7 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
           written.length > 0
             ? [`Files written (${written.length}):`, ...written.map((f) => `  ${f}`)]
             : ["Files written: (none)"];
+        const claimBlock = getRunClaimLines(db, run.run_id);
         logStream.end(
           [
             "",
@@ -342,6 +408,7 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
             `Exit:     ${finalExitCode}`,
             `Elapsed:  ${elapsedS}s`,
             `Finished: ${new Date().toISOString()}`,
+            ...claimBlock,
             ...filesBlock,
             LOG_SEP,
             "",
@@ -360,97 +427,27 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
     };
 
     if ((opts.timeoutMs ?? 0) > 0) {
-      timeoutHandle = setTimeout(async () => {
+      timeoutHandle = setTimeout(() => {
+        timedOut = true;
         const timeoutMins = Math.round((opts.timeoutMs ?? 0) / 60000);
-        const healthCheck = await analyzeProcessHealth(logFile);
-
-        if (healthCheck.isStuck) {
-          if (settled) return; // Already finalized
-          
-          timedOut = true;
-          settled = true;
-          if (killHandle) clearTimeout(killHandle);
-
-          const msg = `[legmod] ${agent} appears to be stuck after ${timeoutMins}m (${healthCheck.reason}). Process pid ${proc.pid ?? "unknown"} will be kept alive for manual review.`;
-          process.stderr.write(msg + "\n");
-          writeLogLine(logStream, msg);
-          writeLogLine(logStream, `User action required: Review logs and manually manage pid ${proc.pid}.`);
-          
-          // Print helpful user guidance
-          const runId = run.run_id;
-          console.error(`\n${"=".repeat(72)}`);
-          console.error(`⚠️  ${agent} STUCK after ${timeoutMins}m`);
-          console.error(`${"=".repeat(72)}`);
-          console.error(`📋 Reason: ${healthCheck.reason}`);
-          console.error(`📄 Log:    ${logFile}`);
-          console.error(`🔍 PID:    ${proc.pid}\n`);
-          
-          console.error(`Suggested Actions:\n`);
-          console.error(`1. Review the log to diagnose the issue:`);
-          console.error(`   tail -f ${logFile}\n`);
-          
-          console.error(`2. If process is truly stuck, terminate it:`);
-          console.error(`   kill ${proc.pid}\n`);
-          
-          console.error(`3. Release any claimed artifacts (if terminating):`);
-          console.error(`   node migration/registry/dist/cli.js release`);
-          console.error(`   # or by run ID:`);
-          console.error(`   node migration/registry/dist/cli.js release --run-id ${runId}\n`);
-          
-          console.error(`4. Check the run status:`);
-          console.error(`   node migration/registry/dist/cli.js list-runs --limit 5\n`);
-          
-          console.error(`5. If process is actually working, it will complete on its own.`);
-          console.error(`   (Process will continue running indefinitely.)\n`);
-          console.error(`${"=".repeat(72)}\n`);
-          
-          // Mark run as failed with special reason, but don't kill the process
-          const finalMsg = `stuck-pending-review: ${healthCheck.reason}`;
-          finishRun(db, {
-            runId: run.run_id,
-            exitCode: 1,
-            reason: finalMsg,
-          });
-
-          if (logStream) {
-            const elapsedS = ((Date.now() - startMs) / 1000).toFixed(1);
-            const written = getNewlyWrittenFiles(projectRoot, beforeFiles);
-            const filesBlock =
-              written.length > 0
-                ? [`Files written (${written.length}):`, ...written.map((f) => `  ${f}`)]
-                : ["Files written: (none)"];
-            logStream.end(
-              [
-                "",
-                LOG_SEP,
-                "Status:  STUCK_PENDING_REVIEW",
-                `Elapsed: ${elapsedS}s`,
-                `PID:     ${proc.pid ?? "unknown"}`,
-                `Run ID:  ${runId}`,
-                ...filesBlock,
-                LOG_SEP,
-                "",
-              ].join("\n"),
-            );
-          }
-
-          resolve({
-            runId: run.run_id,
-            agent,
-            model,
-            prompt,
-            logFile,
-            exitCode: 1,
-          });
-          // Don't kill proc here - let it continue and user can decide
-        } else {
-          // Process appears to be making progress, just log and continue
-          const msg = `[legmod] ${agent} hit timeout after ${timeoutMins}m but appears to be making progress. Allowing to continue...`;
-          process.stderr.write(msg + "\n");
-          writeLogLine(logStream, msg);
-          // Clear the timeout and let process continue (no time limit)
-          // This effectively extends the deadline indefinitely
+        const msg = `[legmod] ${agent} timed out after ${timeoutMins}m; terminating pid ${proc.pid ?? "unknown"}`;
+        process.stderr.write(msg + "\n");
+        writeLogLine(logStream, msg);
+        try {
+          proc.kill("SIGTERM");
+        } catch {
+          finalize(124);
+          return;
         }
+        killHandle = setTimeout(() => {
+          if (settled) return;
+          try {
+            proc.kill("SIGKILL");
+          } catch {
+            finalize(124);
+          }
+        }, 5000);
+        killHandle.unref?.();
       }, opts.timeoutMs);
       timeoutHandle.unref?.();
     }

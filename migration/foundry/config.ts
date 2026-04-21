@@ -211,10 +211,10 @@ export function getConfigPath(workspaceRoot?: string): string {
 // ─── Env interpolation ────────────────────────────────────────────────────────
 
 /** Replace ${VAR_NAME} placeholders with environment variable values. */
-function interpolateEnv(value: string): string {
+function interpolateEnv(value: string, warnOnMissing = true): string {
   return value.replace(/\$\{([^}]+)\}/g, (_, name: string) => {
     const v = process.env[name];
-    if (v === undefined) {
+    if (v === undefined && warnOnMissing) {
       process.stderr.write(
         `[legmod] Warning: environment variable ${name} is not set\n`
       );
@@ -223,13 +223,13 @@ function interpolateEnv(value: string): string {
   });
 }
 
-function interpolateFoundry(cfg: FoundryConfig): FoundryConfig {
+function interpolateFoundry(cfg: FoundryConfig, warnOnMissingEnv = true): FoundryConfig {
   return {
     ...cfg,
-    openaiEndpoint: interpolateEnv(cfg.openaiEndpoint),
-    embedEndpoint: cfg.embedEndpoint ? interpolateEnv(cfg.embedEndpoint) : undefined,
-    projectEndpoint: interpolateEnv(cfg.projectEndpoint),
-    apiKey: interpolateEnv(cfg.apiKey),
+    openaiEndpoint: interpolateEnv(cfg.openaiEndpoint, warnOnMissingEnv),
+    embedEndpoint: cfg.embedEndpoint ? interpolateEnv(cfg.embedEndpoint, warnOnMissingEnv) : undefined,
+    projectEndpoint: interpolateEnv(cfg.projectEndpoint, warnOnMissingEnv),
+    apiKey: interpolateEnv(cfg.apiKey, warnOnMissingEnv),
     phaseModels: cfg.phaseModels,
     phaseProviders: cfg.phaseProviders,
   };
@@ -268,6 +268,9 @@ export function loadConfig(workspaceRoot?: string): LegmodConfig {
     const f = partial.foundry;
     const phaseModels = validatePhaseOverrideMap<string>("phaseModels", f.phaseModels);
     const phaseProviders = validatePhaseOverrideMap<LLMProvider>("phaseProviders", f.phaseProviders);
+    const shouldWarnOnMissingEnv =
+      partial.llmProvider === "foundry"
+      || Object.values(phaseProviders ?? {}).includes("foundry");
     config.foundry = interpolateFoundry({
       openaiEndpoint: f.openaiEndpoint ?? "",
       embedEndpoint: f.embedEndpoint,
@@ -280,7 +283,7 @@ export function loadConfig(workspaceRoot?: string): LegmodConfig {
       modelTokenLimits: f.modelTokenLimits,
       phaseModels,
       phaseProviders,
-    });
+    }, shouldWarnOnMissingEnv);
   }
 
   if (partial.eval) {

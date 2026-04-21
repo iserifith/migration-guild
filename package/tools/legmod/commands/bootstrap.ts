@@ -23,6 +23,17 @@ export interface BootstrapResult {
 }
 
 function getAssetsDir(workspaceRoot: string): string {
+  const packagedAssetsDir = path.join(
+    workspaceRoot,
+    "package",
+    "skills",
+    "target-module-bootstrap",
+    "assets",
+  );
+  if (fs.existsSync(packagedAssetsDir)) {
+    return packagedAssetsDir;
+  }
+
   return path.join(
     workspaceRoot,
     ".github",
@@ -221,19 +232,37 @@ export function bootstrapTargetModule(
   );
 
   if (projectType !== "library") {
-    const appTemplate = fs.readFileSync(path.join(assetsDir, "Application.java.template"), "utf-8");
     maybeWriteFile(
-      path.join(modernRoot, "src", "main", "java", packagePath, "Application.java"),
-      applyTemplate(appTemplate, { "package com.example.migrated;": `package ${basePackage};` }),
+      path.join(modernRoot, "src", "main", "resources", "application.yml"),
+      "spring:\n  application:\n    name: " + appName + "\n",
       workspaceRoot,
       created,
       skipped,
     );
+  }
 
-    const yamlTemplate = fs.readFileSync(path.join(assetsDir, "application.yml.template"), "utf-8");
+  const appClassName = `${appName
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join("")}Application`;
+  const appFile = path.join(modernRoot, "src", "main", "java", packagePath, `${appClassName}.java`);
+
+  if (projectType !== "library") {
     maybeWriteFile(
-      path.join(modernRoot, "src", "main", "resources", "application.yml"),
-      applyTemplate(yamlTemplate, { "name: migrated-app": `name: ${appName}` }),
+      appFile,
+      `package ${basePackage};
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class ${appClassName} {
+
+    public static void main(String[] args) {
+        SpringApplication.run(${appClassName}.class, args);
+    }
+}
+`,
       workspaceRoot,
       created,
       skipped,
@@ -243,7 +272,7 @@ export function bootstrapTargetModule(
   return {
     projectType,
     template,
-    moduleRoot: path.relative(workspaceRoot, modernRoot) || modernRoot,
+    moduleRoot: modernRoot,
     basePackage,
     appName,
     created,
@@ -251,35 +280,46 @@ export function bootstrapTargetModule(
   };
 }
 
-export async function runBootstrap(db: Database.Database): Promise<void> {
-  const workspaceRoot = process.cwd();
-  const artifacts = listFirstClassArtifacts(db);
-  if (artifacts.length === 0) {
-    process.stderr.write("\n  ✗ Bootstrap requires planned or registered artifacts. Run inventory and planning first.\n\n");
-    process.exit(1);
-  }
-
-  const projectType = detectBootstrapProjectType(artifacts);
+export async function runBootstrap(
+  db: Database.Database,
+  workspaceRoot = process.cwd(),
+): Promise<BootstrapResult> {
   printPhaseHeader("Phase 3 · Bootstrap");
+  const artifacts = listFirstClassArtifacts(db);
+  const projectType = detectBootstrapProjectType(artifacts);
 
-  if (isBootstrapComplete(workspaceRoot, projectType)) {
-    console.log("  ↷ Target module already scaffolded — skipping\n");
-    return;
+  if (!needsBootstrap(db, workspaceRoot)) {
+    const modernRoot = path.join(workspaceRoot, "modern");
+    const result: BootstrapResult = {
+      projectType,
+      template: templateNameFor(projectType),
+      moduleRoot: modernRoot,
+      basePackage: deriveBootstrapBasePackage(artifacts),
+      appName: deriveAppName(deriveBootstrapBasePackage(artifacts)),
+      created: [],
+      skipped: ["modern/ (already scaffolded)"],
+    };
+    console.log("  Target module already looks bootstrapped — skipping.\n");
+    return result;
   }
 
   const result = bootstrapTargetModule(workspaceRoot, artifacts);
   console.log(`  Project type: ${result.projectType}`);
-  console.log(`  Template: ${result.template}`);
-  console.log(`  Module root: ${result.moduleRoot}`);
   console.log(`  Base package: ${result.basePackage}`);
-  console.log(`  App name: ${result.appName}`);
+  console.log(`  App name:     ${result.appName}\n`);
+
   if (result.created.length > 0) {
-    console.log("\n  Created:");
-    for (const entry of result.created) console.log(`    + ${entry}`);
+    console.log("  Created:");
+    for (const file of result.created) console.log(`    + ${file}`);
+    console.log();
   }
+
   if (result.skipped.length > 0) {
-    console.log("\n  Kept existing:");
-    for (const entry of result.skipped) console.log(`    ↷ ${entry}`);
+    console.log("  Skipped:");
+    for (const file of result.skipped) console.log(`    - ${file}`);
+    console.log();
   }
-  console.log("\n  ✓ Bootstrap complete\n");
+
+  console.log("  ✓ Bootstrap complete\n");
+  return result;
 }

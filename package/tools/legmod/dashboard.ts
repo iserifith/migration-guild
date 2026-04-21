@@ -1,7 +1,6 @@
 import * as path from "path";
 import type Database from "better-sqlite3";
 import type { RegistryEvent } from "./poller";
-import { STALL_MINUTES } from "./monitoring";
 
 // ─── ANSI helpers ─────────────────────────────────────────────────────────────
 const R = "\x1b[0m";
@@ -116,10 +115,7 @@ export function printInProgress(db: Database.Database): void {
       ? Math.round((Date.now() - new Date(row.claimed_at + "Z").getTime()) / 1000)
       : 0;
     const ageStr = age > 60 ? `${Math.round(age / 60)}m` : `${age}s`;
-    const stalled = age >= STALL_MINUTES * 60;
     const file = path.basename(row.path);
-    const ageColor = stalled ? RED : DIM;
-    const stallFlag = stalled ? `  ${RED}⚠ stalled${R}` : "";
-    console.log(`  ${YELLOW}${row.claimed_by.padEnd(18)}${R}  ${file}  ${ageColor}${ageStr}${R}${stallFlag}`);
+    console.log(`  ${YELLOW}${row.claimed_by.padEnd(18)}${R}  ${file}  ${DIM}${ageStr}${R}`);
   }
 }

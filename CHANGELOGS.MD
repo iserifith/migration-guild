@@ -6,6 +6,20 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### April 21, 2026
+
+- Added/remapped phase entry points so migration/runtime CLIs recognize `bootstrap` and `remediate` in `run <phase>`, and aligned phase messaging/ordering across status and review output.
+- Added a dedicated packaged remediation command implementation with targeted/global prompt construction, timeout/model overrides, polling integration, and status-delta summary output.
+- Changed bootstrap scaffolding to prefer packaged skill assets, emit deterministic Spring app/resource files for non-library modules, return structured bootstrap results, and treat already-scaffolded targets as an explicit skip result.
+- Changed runner execution logging to use stable timestamped log naming plus richer run headers/footers (owner, phase, command, claim summaries, and written-file snapshots).
+- Changed timeout handling to terminate timed-out agent processes (SIGTERM then SIGKILL) instead of leaving them alive for manual stuck-process triage.
+- Added Foundry batch input model overrides and batch preflight validation plumbing in migration runtime, plus Foundry env interpolation warning behavior that only warns when Foundry is actually selected by provider/phase.
+- Changed registry query/API surface by removing run-log-file endpoint plumbing and simplifying several SQL/query helpers while preserving paged monitoring query contracts.
+- Changed the migration inspector UI back to a lighter Artifacts/Wave Plan experience, removing the extended multi-tab monitoring surfaces and shared async state wrappers.
+- Changed tool dependency policy in both migration and packaged runtime manifests to fully pinned versions plus explicit `overrides`, with corresponding lockfile refreshes.
+- Updated shipped code/test-writer agent instructions to require a short progress update in chat and to prioritize analyze-context intake before implementation.
+- Added regression coverage for CLI phase aliases, pipeline failure short-circuiting, remediation command behavior, registry API query contracts, status-next-step gating, and status-reason event metadata; removed obsolete preflight/bootstrap-focused tests.
+
 ### April 20, 2026
 
 - Added a pre-plan JVM compatibility audit refresh that persists per-artifact findings in the registry, blocks planning on critical findings, and records operator-facing readiness guidance.
