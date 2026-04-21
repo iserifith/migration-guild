@@ -19,15 +19,15 @@ The registry is the source of truth. Agents are disposable workers.
 
 ## Workspace layout
 
-| Path | Purpose |
-|---|---|
-| `legacy/` | Read-only source code being migrated |
-| `modern/` | Write target for migrated tests and production code |
-| `migration/legmod/` | Orchestrator CLI that runs phases |
-| `migration/registry/` | Registry CLI and state-management logic |
+| Path                    | Purpose                                                            |
+| ----------------------- | ------------------------------------------------------------------ |
+| `legacy/`               | Read-only source code being migrated                               |
+| `modern/`               | Write target for migrated tests and production code                |
+| `migration/legmod/`     | Orchestrator CLI that runs phases                                  |
+| `migration/registry/`   | Registry CLI and state-management logic                            |
 | `migration/registry.db` | SQLite database tracking artifacts, events, dependencies, and runs |
-| `.github/agents/` | Agent definitions used by Copilot CLI |
-| `.github/instructions/` | File-level constraints applied during migration |
+| `.github/agents/`       | Agent definitions used by Copilot CLI                              |
+| `.github/instructions/` | File-level constraints applied during migration                    |
 
 ---
 
@@ -41,9 +41,11 @@ This is the operator-facing orchestrator. It:
 
 - loads `.env` from the workspace root automatically
 - opens the registry database
-- runs pipeline phases (`inventory`, `plan`, `migrate`, `review`)
+- runs pipeline phases (`inventory`, `plan`, `bootstrap`, `migrate`, `review`, `remediate`)
 - spawns Copilot CLI subprocesses
 - prints dashboards, progress, and operator guidance
+
+`run` with no phase prints the next recommended phase. In normal operation, bootstrap is optional because migration auto-runs bootstrap when `modern/` is not scaffolded.
 
 ### `registry`
 
@@ -125,7 +127,20 @@ node migration/registry/dist/cli.js list-dependency-findings --unresolved-only
 node migration/registry/dist/cli.js approve-dependency-strategy --finding-id <id> --strategy replace --target-dependency <coord> --approved-by <name> --rationale <text>
 ```
 
-## 3. Migration
+## 3. Bootstrap (optional explicit phase)
+
+Implemented in `migration/legmod/commands/bootstrap.ts`.
+
+Bootstrap scaffolds the minimal target module in `modern/` using the packaged target-module assets. It is safe to run explicitly, and migration also runs it automatically when required.
+
+Current behavior:
+
+1. Detect target type (`web`, `service`, or `library`) from first-class artifacts
+2. Scaffold or keep existing Gradle/module files as needed
+3. For non-library targets, create deterministic Spring app/resource files (`<AppName>Application.java`, `application.yml`)
+4. Return a structured created/skipped result and treat an already-scaffolded module as a skip, not an error
+
+## 4. Migration
 
 Implemented in `migration/legmod/commands/migrate.ts`.
 
@@ -139,7 +154,7 @@ Each pool is executed by spawning multiple Copilot CLI subprocesses in parallel.
 
 Important detail: legmod itself does **not** migrate files directly. It starts workers, then watches registry state and event output.
 
-## 4. Review
+## 5. Review
 
 Implemented in `migration/legmod/commands/review.ts`.
 
@@ -257,6 +272,8 @@ For each spawned worker, legmod:
 5. optionally writes stdout/stderr to a log file
 6. records final exit code when the process exits
 
+Run logging now uses deterministic timestamped filenames and richer metadata blocks, including run owner/phase/model context, claim summaries, and written-file snapshots.
+
 Each run stores:
 
 - `agent`
@@ -286,6 +303,8 @@ This is the most important operational behavior.
 - review makes no registry progress while migrated files remain
 - migration ends with first-class artifacts still not advanced
 
+On timeout, worker processes are terminated (`SIGTERM`, then `SIGKILL` fallback) and the run is recorded as failed.
+
 ### How this is surfaced
 
 - run rows are marked `failed`
@@ -299,10 +318,10 @@ This is the most important operational behavior.
 
 There are two related but different concepts:
 
-| Concept | Detected from | Meaning |
-|---|---|---|
-| **failed run** | `runs` table / dead process / non-zero exit | the worker process itself ended badly |
-| **stuck artifact** | artifact still `in-progress` for too long | work was claimed but not advanced |
+| Concept            | Detected from                               | Meaning                               |
+| ------------------ | ------------------------------------------- | ------------------------------------- |
+| **failed run**     | `runs` table / dead process / non-zero exit | the worker process itself ended badly |
+| **stuck artifact** | artifact still `in-progress` for too long   | work was claimed but not advanced     |
 
 Commands involved:
 
