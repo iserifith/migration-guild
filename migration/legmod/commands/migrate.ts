@@ -21,7 +21,9 @@ import {
   printStaleSessionWarnings,
 } from "../monitoring";
 import { reconcileStaleClaims } from "../../registry/commands/claim";
+import { setNext } from "../../registry/commands/operator";
 import { needsBootstrap, runBootstrap } from "./bootstrap";
+import { evaluateMigrationReadiness, formatMigrationBlockMessage } from "../readiness";
 
 const ANALYZE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["LEGMOD_ANALYZE_TIMEOUT_MINS"] ?? "10", 10));
 const TEST_WRITE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["LEGMOD_TEST_TIMEOUT_MINS"] ?? "15", 10));
@@ -112,6 +114,17 @@ export async function runMigrate(
   opts: MigrateOpts = {},
   deps: MigrateDeps = {},
 ): Promise<void> {
+  const migrationReadiness = evaluateMigrationReadiness(db, opts.wave);
+  const migrationBlock = formatMigrationBlockMessage(migrationReadiness.unresolvedDependencyFindings);
+  if (migrationBlock) {
+    setNext(db, {
+      summary: "Migration blocked by dependency modernization gate.",
+      reason: migrationBlock,
+      recommendedCommand: "node migration/registry/dist/cli.js list-dependency-findings --unresolved-only",
+    });
+    throw new Error(migrationBlock);
+  }
+
   const bootstrapNeeded = deps.needsBootstrap ?? needsBootstrap;
   const bootstrapRunner = deps.runBootstrap ?? runBootstrap;
 

@@ -93,6 +93,8 @@ node migration/legmod/dist/cli.js status
 **What legmod handles automatically:**
 - Selects the right agent and model per phase
 - Passes `--yolo` so agents can run registry commands without interruption
+- Runs a pre-plan JVM compatibility audit and stores the findings in the registry
+- Blocks planning on critical JVM findings and blocks unsafe dependency advancement until strategies are approved
 - Prompts you to confirm framework mappings before planning proceeds
 - Spawns N parallel sessions for migration and review
 - Polls `registry.db` for live progress via SQLite triggers (no agent cooperation needed)
@@ -153,7 +155,28 @@ Or use the built-in prompt:
 #analyze-and-plan
 ```
 
-**What happens:** The planner reads all `pending` artifacts, detects which files depend on which, assigns dependencies, and groups files into waves. Wave 1 has no dependencies and can be migrated immediately. Wave 2 depends on Wave 1 being done, and so on.
+**What happens:**
+
+1. legmod refreshes the pre-plan audit and writes JVM/dependency findings to the registry
+2. critical JVM findings block planning until the risky API usage is remediated
+3. stack advisor proposes legacy-to-target framework mappings
+4. risky dependencies must have an approved upgrade or replacement strategy before wave assignment starts
+5. the planner reads the safe-to-advance artifacts, detects dependencies, and groups files into waves
+
+Wave 1 has no dependencies and can be migrated immediately. Wave 2 depends on Wave 1 being done, and so on.
+
+**Useful gate commands:**
+
+```bash
+node migration/registry/dist/cli.js list-jvm-findings --severity critical
+node migration/registry/dist/cli.js list-dependency-findings --unresolved-only
+node migration/registry/dist/cli.js approve-dependency-strategy \
+  --finding-id <id> \
+  --strategy replace \
+  --target-dependency jakarta.servlet:jakarta.servlet-api \
+  --approved-by <name> \
+  --rationale "Required for Spring Boot 3 / Java 17 target"
+```
 
 **Check the wave plan:**
 
@@ -376,8 +399,48 @@ node migration/registry/dist/cli.js release --id "<id>" --agent "operator" --rea
 
 If the failure mode is unclear or the artifact already moved to `needs-rework` / `blocked`, run `remediation-agent` instead of guessing the next state.
 
+**Planning is blocked before waves are assigned**
+Check the new gate state directly:
+
+```bash
+node migration/registry/dist/cli.js show-modernization-gates
+node migration/registry/dist/cli.js list-jvm-findings
+node migration/registry/dist/cli.js list-dependency-findings --unresolved-only
+```
+
+- Critical JVM findings block planning immediately.
+- Warning-only JVM findings stay visible but do not block planning.
+- Dependency findings without approved strategies block both planning and migration.
+
+**Per-artifact gate detail**
+Export one artifact to inspect its findings, events, and approved dependency strategy together:
+
+```bash
+node migration/registry/dist/cli.js export --id "legacy-source:com.example:MyService"
+```
+
 **`legacy/` changed unexpectedly**
 Stop and restore `legacy/` from version control or a fresh copy before continuing. The legacy tree is read-only; remediation should only change registry state, then send the artifact back through the normal migration or review flow.
+
+---
+
+## Minimal CI and optional deployment plan
+
+This release only adds the summary plan, not a full CI/CD or deployment implementation.
+
+### Minimal CI validation path
+
+1. build the migrated output
+2. run migrated and retained tests
+3. run the static checks that already exist in the target workspace
+4. enforce dependency policy against the registry findings and approved modernization strategies
+
+### Optional deployment modernization path
+
+1. establish a supported Java 17+ container/runtime baseline
+2. externalize runtime configuration
+3. add readiness and liveness health checks
+4. verify the deployed artifact uses the approved modernized dependency set
 
 **Agent doesn't run shell commands**
 Ensure you pass `--yolo` (or `--allow-all-tools`) when starting Copilot. Without it, the agent can't run `node migration/registry/dist/cli.js`.

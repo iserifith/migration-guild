@@ -65,10 +65,11 @@ This is the lower-level state API. Agents use it to:
 
 Implemented in `migration/legmod/commands/inventory.ts`.
 
-Inventory has two parts:
+Inventory has three parts:
 
 1. **Local file scan**: legmod walks `legacy/` itself and registers every `.java` file in the registry.
 2. **Classification**: each registered artifact is classified with role/framework metadata.
+3. **Pre-plan audit refresh**: legmod scans each source artifact for JVM compatibility and risky dependency usage, then persists the findings in the registry.
 
 Classification can happen in two modes:
 
@@ -84,22 +85,45 @@ After inventory, artifacts usually have:
 - `framework`
 - `status = pending`
 
+The audit refresh writes:
+
+- `jvm_audit_findings`
+- `dependency_findings`
+- `operator_state.pre_plan_audit`
+
+That makes the planning gate state queryable per artifact before waves are assigned.
+
 ## 2. Planning
 
 Implemented in `migration/legmod/commands/plan.ts`.
 
-Planning is split into two sub-phases:
+Planning is split into three sub-steps:
 
-1. **Stack advisor** proposes legacy-to-target framework mappings
-2. **Planner** assigns dependencies and wave numbers
+1. **Planning readiness gate** refreshes audit state and checks for blockers
+2. **Stack advisor** proposes legacy-to-target framework mappings
+3. **Planner** assigns dependencies and wave numbers
 
-There is a human confirmation gate between them. Unconfirmed framework mappings must be confirmed or edited before planning proceeds.
+There are now three gates inside planning:
+
+1. **Critical JVM audit gate** — blocks planning when internal, removed, or otherwise critical JVM API findings remain open
+2. **Framework mapping confirmation gate** — unconfirmed framework mappings must be confirmed or edited before planning proceeds
+3. **Dependency modernization gate** — risky dependency findings must have an approved upgrade/replacement strategy before wave assignment starts
+
+Warning-only JVM findings stay visible but do not block planning.
 
 After planning, first-class artifacts should have:
 
 - dependency edges in `dependencies`
 - a `wave`
 - `status = planned`
+
+Useful operator commands:
+
+```bash
+node migration/registry/dist/cli.js list-jvm-findings --severity critical
+node migration/registry/dist/cli.js list-dependency-findings --unresolved-only
+node migration/registry/dist/cli.js approve-dependency-strategy --finding-id <id> --strategy replace --target-dependency <coord> --approved-by <name> --rationale <text>
+```
 
 ## 3. Migration
 
@@ -333,6 +357,12 @@ node migration/legmod/dist/cli.js release --id "<artifact-id>"
 
 Because the registry is persistent and claims are explicit, recovery is usually a matter of correcting state and rerunning workers, not starting over.
 
+The modernization gates are also explicit operator-visible failures:
+
+- planning stops on critical JVM findings with a remediation command
+- planning stops on unresolved dependency modernization strategies with an approval command
+- migration refuses to start when unresolved dependency strategies still exist in planned work
+
 ---
 
 ## Optional Foundry features
@@ -370,3 +400,23 @@ legmod is built around a few core ideas:
 5. **The legacy tree stays untouched** — migration always writes into `modern/`
 
 That is the core architecture: a local, restartable migration pipeline whose control plane is SQLite and whose execution plane is spawned AI workers.
+
+---
+
+## Minimal CI and optional deployment follow-up
+
+This repository change only documents the follow-up plan; it does not implement CI/CD or deployment modernization yet.
+
+### Minimal CI validation path
+
+- build the migrated output
+- run migrated and retained tests
+- run the target workspace static checks that already exist
+- fail CI if dependency policy checks disagree with the approved modernization strategy state in the registry
+
+### Optional deployment modernization path
+
+- start from a supported Java 17+ runtime/container baseline
+- move runtime configuration out of source defaults
+- add health checks suitable for the target workload
+- verify the deployed artifact uses only the approved modernized dependency set

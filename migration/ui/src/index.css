@@ -190,6 +190,22 @@ tr.clickable:hover td { background: #1a1a1a; }
   color: #d4d4d4; font-size: 12px; margin: 0; max-height: 360px;
   overflow: auto; white-space: pre-wrap; line-height: 1.45;
 }
+.log-output.no-wrap { white-space: pre; }
+.log-line {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 8px;
+}
+.log-line-number {
+  color: #666;
+  text-align: right;
+  font-family: monospace;
+  user-select: none;
+}
+.log-line-text {
+  white-space: inherit;
+  word-break: break-word;
+}
 
 /* Empty */
 .empty { color: #444; text-align: center; padding: 48px; }

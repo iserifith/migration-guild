@@ -21,7 +21,7 @@ export interface CompletedEntry {
   artifactIds: string[];
 }
 
-function upsertState(db: Database.Database, key: string, value: unknown): void {
+export function setOperatorState(db: Database.Database, key: string, value: unknown): void {
   db.prepare(
     `
     INSERT INTO operator_state (key, value, updated_at)
@@ -33,7 +33,7 @@ function upsertState(db: Database.Database, key: string, value: unknown): void {
   ).run({ key, value: JSON.stringify(value) });
 }
 
-function readState<T>(db: Database.Database, key: string): T | null {
+export function getOperatorState<T>(db: Database.Database, key: string): T | null {
   const row = db
     .prepare("SELECT value FROM operator_state WHERE key = ?")
     .get(key) as { value: string } | undefined;
@@ -41,18 +41,18 @@ function readState<T>(db: Database.Database, key: string): T | null {
 }
 
 export function setFocus(db: Database.Database, focus: FocusState): void {
-  upsertState(db, "current_focus", focus);
+  setOperatorState(db, "current_focus", focus);
 }
 
 export function setNext(db: Database.Database, next: NextState): void {
-  upsertState(db, "next", next);
+  setOperatorState(db, "next", next);
 }
 
 export function addCompleted(
   db: Database.Database,
   entry: CompletedEntry,
 ): void {
-  const existing = readState<CompletedEntry[]>(db, "completed") ?? [];
+  const existing = getOperatorState<CompletedEntry[]>(db, "completed") ?? [];
   existing.push(entry);
-  upsertState(db, "completed", existing);
+  setOperatorState(db, "completed", existing);
 }

@@ -25,6 +25,7 @@ const VALID_EVENT_TYPES: readonly EventType[] = [
   "tag-removed",
   "context-written",
   "status-changed",
+  "dependency-strategy-set",
 ];
 
 export interface AppendEventOptions {

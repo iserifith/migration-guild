@@ -118,8 +118,9 @@ CREATE TABLE IF NOT EXISTS events (
                      'auto-rework',
                      'batch-submitted',
                      'batch-applied',
-                     'thread-created'
-                 )),
+                      'thread-created',
+                      'dependency-strategy-set'
+                  )),
     agent        TEXT NOT NULL,
     model        TEXT,
     summary      TEXT NOT NULL,
@@ -236,6 +237,60 @@ CREATE TABLE IF NOT EXISTS stack_mappings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_stack_mappings_confirmed ON stack_mappings(confirmed);
+
+-- ─── JVM Compatibility Audit Findings ─────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS jvm_audit_findings (
+    finding_id   TEXT PRIMARY KEY,
+    artifact_id  TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    tool         TEXT NOT NULL,
+    category     TEXT NOT NULL CHECK (category IN (
+                     'internal-api',
+                     'removed-api',
+                     'deprecated-api'
+                 )),
+    severity     TEXT NOT NULL CHECK (severity IN ('critical', 'warning')),
+    symbol       TEXT,
+    summary      TEXT NOT NULL,
+    evidence     TEXT,
+    remediation  TEXT NOT NULL,
+    detected_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_jvm_audit_artifact ON jvm_audit_findings(artifact_id);
+CREATE INDEX IF NOT EXISTS idx_jvm_audit_severity ON jvm_audit_findings(severity);
+
+-- ─── Dependency Modernization Findings ────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS dependency_findings (
+    finding_id       TEXT PRIMARY KEY,
+    artifact_id      TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    dependency_name  TEXT NOT NULL,
+    current_version  TEXT,
+    target_hint      TEXT,
+    category         TEXT NOT NULL CHECK (category IN ('outdated', 'eol', 'incompatible')),
+    severity         TEXT NOT NULL CHECK (severity IN ('critical', 'warning')),
+    summary          TEXT NOT NULL,
+    details          TEXT,
+    remediation      TEXT NOT NULL,
+    detected_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_dependency_findings_artifact ON dependency_findings(artifact_id);
+CREATE INDEX IF NOT EXISTS idx_dependency_findings_severity ON dependency_findings(severity);
+
+CREATE TABLE IF NOT EXISTS dependency_strategies (
+    finding_id         TEXT PRIMARY KEY REFERENCES dependency_findings(finding_id) ON DELETE CASCADE,
+    strategy           TEXT NOT NULL CHECK (strategy IN ('upgrade', 'replace', 'remove')),
+    target_dependency  TEXT,
+    target_version     TEXT,
+    rationale          TEXT NOT NULL,
+    approved_by        TEXT NOT NULL,
+    approved_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_dependency_strategies_approved_by ON dependency_strategies(approved_by);
 
 -- ─── Triggers ────────────────────────────────────────────────────────────────
 -- Auto-write a status-changed event whenever any agent (at any depth) updates

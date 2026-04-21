@@ -16,7 +16,10 @@ import { submitBatch } from "../../foundry/batch/submit";
 import { waitForBatch } from "../../foundry/batch/poll";
 import { applyInventoryResults } from "../../foundry/batch/apply";
 import { registerArtifact } from "../../registry/commands/artifacts";
+import { setNext } from "../../registry/commands/operator";
 import { applySchema } from "../../registry/db/schema";
+import { refreshCompatibilityAudits } from "../audit";
+import { evaluatePlanningReadiness, formatPlanningBlockMessage } from "../readiness";
 
 // ─── File scanner ────────────────────────────────────────────────────────────
 
@@ -168,6 +171,20 @@ export async function runInventory(db: Database.Database): Promise<void> {
   }
 
   stopPolling();
+  const auditSummary = refreshCompatibilityAudits(db, projectRoot);
+  const readiness = evaluatePlanningReadiness(db);
+  const blockMessage = formatPlanningBlockMessage(readiness);
+  console.log(`  Pre-plan audit: ${auditSummary.jvm.critical} critical JVM  ${auditSummary.jvm.warnings} warning JVM  ${auditSummary.dependencies.total} dependency findings\n`);
+  if (blockMessage) {
+    setNext(db, {
+      summary: blockMessage.summary,
+      reason: blockMessage.reason,
+      recommendedCommand: blockMessage.command,
+    });
+    console.log(`  ⚠ ${blockMessage.summary}`);
+    console.log(`    ${blockMessage.reason}`);
+    console.log(`    Run: ${blockMessage.command}\n`);
+  }
   printStatusSummary(db);
   console.log("\n  ✓ Inventory complete\n");
 }
