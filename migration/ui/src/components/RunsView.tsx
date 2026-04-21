@@ -3,6 +3,7 @@ import { useRunLog } from "../hooks";
 import type { RunEntry, RunFilters, RunQuery, TimeDisplayMode } from "../types";
 import { formatDuration, formatTimestamp } from "../format";
 import { EmptyState, ErrorState, LoadingState } from "./ViewState";
+import RunLogViewer from "./RunLogViewer";
 
 export default function RunsView({
   runs,
@@ -32,6 +33,10 @@ export default function RunsView({
   timeMode: TimeDisplayMode;
 }) {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const selectedRun =
+    selectedRunId == null
+      ? null
+      : runs.find((run) => run.run_id === selectedRunId) ?? null;
   const {
     log,
     loading: logLoading,
@@ -230,25 +235,14 @@ export default function RunsView({
 
       <section>
         <h2 style={{ marginTop: 0 }}>Run log</h2>
-        {selectedRunId == null ? (
-          <EmptyState compact title="Select a run to view its log." />
-        ) : logLoading ? (
-          <LoadingState compact resource="run log" />
-        ) : logError ? (
-          <ErrorState compact resource="run log" error={logError} onRetry={reloadLog} />
-        ) : !log?.trim() ? (
-          <EmptyState compact title="No log output captured for this run." />
-        ) : (
-          <div className="log-shell">
-            <div className="log-toolbar">
-              <span className="filter-meta">Selected run: {selectedRunId}</span>
-              <button className="state-button" onClick={reloadLog} type="button">
-                Reload log
-              </button>
-            </div>
-            <pre className="log-output">{log}</pre>
-          </div>
-        )}
+        <RunLogViewer
+          selectedRunId={selectedRunId}
+          selectedRunLogFile={selectedRun?.log_file ?? null}
+          log={log}
+          loading={logLoading}
+          error={logError}
+          onRetry={reloadLog}
+        />
       </section>
     </div>
   );

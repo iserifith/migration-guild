@@ -76,7 +76,8 @@ export type EventType =
   | "auto-rework"
   | "batch-submitted"
   | "batch-applied"
-  | "thread-created";
+  | "thread-created"
+  | "dependency-strategy-set";
 
 export type Agent =
   | "context-agent"
@@ -211,6 +212,58 @@ export interface Changelog {
 export interface OperatorState {
   key: string;
   value: string;
+  updated_at: string;
+}
+
+export type FindingSeverity = "critical" | "warning";
+
+export type JvmAuditCategory =
+  | "internal-api"
+  | "removed-api"
+  | "deprecated-api";
+
+export interface JvmAuditFinding {
+  finding_id: string;
+  artifact_id: string;
+  tool: string;
+  category: JvmAuditCategory;
+  severity: FindingSeverity;
+  symbol: string | null;
+  summary: string;
+  evidence: string | null;
+  remediation: string;
+  detected_at: string;
+}
+
+export type DependencyRiskCategory =
+  | "outdated"
+  | "eol"
+  | "incompatible";
+
+export interface DependencyFinding {
+  finding_id: string;
+  artifact_id: string;
+  dependency_name: string;
+  current_version: string | null;
+  target_hint: string | null;
+  category: DependencyRiskCategory;
+  severity: FindingSeverity;
+  summary: string;
+  details: string | null;
+  remediation: string;
+  detected_at: string;
+}
+
+export type DependencyStrategyKind = "upgrade" | "replace" | "remove";
+
+export interface DependencyStrategyDecision {
+  finding_id: string;
+  strategy: DependencyStrategyKind;
+  target_dependency: string | null;
+  target_version: string | null;
+  rationale: string;
+  approved_by: string;
+  approved_at: string;
   updated_at: string;
 }
 

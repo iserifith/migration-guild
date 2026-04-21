@@ -14,13 +14,16 @@ import {
   getClaimabilityStats,
   getStatusCounts,
   printCompletionReason,
+  printMigrationScopeSummary,
   printPoolSummary,
   printQueueSnapshot,
   printResolvedRuntime,
   printStaleSessionWarnings,
 } from "../monitoring";
 import { reconcileStaleClaims } from "../../registry/commands/claim";
+import { setNext } from "../../registry/commands/operator";
 import { needsBootstrap, runBootstrap } from "./bootstrap";
+import { evaluateMigrationReadiness, formatMigrationBlockMessage } from "../readiness";
 
 const ANALYZE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["LEGMOD_ANALYZE_TIMEOUT_MINS"] ?? "10", 10));
 const TEST_WRITE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["LEGMOD_TEST_TIMEOUT_MINS"] ?? "15", 10));
@@ -50,6 +53,14 @@ export interface MigrateOpts {
   testParallel?: number;
   codeParallel?: number;
   wave?: number;
+}
+
+interface MigrateDeps {
+  spawnAgent?: typeof spawnAgent;
+  startPolling?: typeof startPolling;
+  getLogDir?: typeof getLogDir;
+  needsBootstrap?: typeof needsBootstrap;
+  runBootstrap?: typeof runBootstrap;
 }
 
 export function getMigrationFollowUp(
@@ -98,10 +109,28 @@ export function getMigrationFollowUp(
   };
 }
 
-export async function runMigrate(db: Database.Database, opts: MigrateOpts = {}): Promise<void> {
-  if (needsBootstrap(db)) {
+export async function runMigrate(
+  db: Database.Database,
+  opts: MigrateOpts = {},
+  deps: MigrateDeps = {},
+): Promise<void> {
+  const migrationReadiness = evaluateMigrationReadiness(db, opts.wave);
+  const migrationBlock = formatMigrationBlockMessage(migrationReadiness.unresolvedDependencyFindings);
+  if (migrationBlock) {
+    setNext(db, {
+      summary: "Migration blocked by dependency modernization gate.",
+      reason: migrationBlock,
+      recommendedCommand: "node migration/registry/dist/cli.js list-dependency-findings --unresolved-only",
+    });
+    throw new Error(migrationBlock);
+  }
+
+  const bootstrapNeeded = deps.needsBootstrap ?? needsBootstrap;
+  const bootstrapRunner = deps.runBootstrap ?? runBootstrap;
+
+  if (bootstrapNeeded(db)) {
     console.log("  ↷ Target module not scaffolded — running bootstrap first.\n");
-    await runBootstrap(db);
+    await bootstrapRunner(db);
   }
 
   const analyzeParallel = Math.max(1, opts.testParallel ?? opts.parallel ?? 1);
@@ -115,6 +144,9 @@ export async function runMigrate(db: Database.Database, opts: MigrateOpts = {}):
   const analyzeProvider = resolvePhaseProvider("analysis", cfg.foundry);
   const testProvider = resolvePhaseProvider("test-writing", cfg.foundry);
   const codeProvider = resolvePhaseProvider("code-writing", cfg.foundry);
+  const runAgent = deps.spawnAgent ?? spawnAgent;
+  const poll = deps.startPolling ?? startPolling;
+  const logDir = (deps.getLogDir ?? getLogDir)();
   if (analyzeProvider === "foundry") requirePhaseFoundryConfig("analysis", cfg);
   if (testProvider === "foundry") requirePhaseFoundryConfig("test-writing", cfg);
   if (codeProvider === "foundry") requirePhaseFoundryConfig("code-writing", cfg);
@@ -154,7 +186,7 @@ export async function runMigrate(db: Database.Database, opts: MigrateOpts = {}):
   printWavePlan(db);
   console.log();
 
-  const stopPolling = startPolling(db, (events) => {
+  const stopPolling = poll(db, (events) => {
     for (const e of events) printEvent(e);
   });
 
@@ -170,96 +202,127 @@ export async function runMigrate(db: Database.Database, opts: MigrateOpts = {}):
   let pass = 1;
   let hadFailures = false;
 
-  reconcileStaleClaims(db, "legmod");
-  while (hasMigrationRemaining(db, opts.wave)) {
-    console.log(`\n  Pass ${pass}`);
-
-    process.stdout.write(`\n  [Pool 0] Spawning ${analyzeParallel} analyzer session(s)\n`);
-    const analyzeQueueBefore = getClaimabilityStats(db, "planned", opts.wave);
-    printQueueSnapshot("Analyze queue", analyzeQueueBefore);
-    const beforeAnalyze = getStatusCounts(db, opts.wave);
-    const analyzeResults = analyzeQueueBefore.total === 0
-      ? []
-      : await Promise.all(Array.from({ length: analyzeParallel }, () =>
-          spawnAgent({ agent: "analyze-agent", model: analyzeModel, prompt: analyzePrompt, db, logDir: getLogDir(), phase: "analysis", timeoutMs: ANALYZE_TIMEOUT_MINUTES * 60_000, releaseClaimsOnFailure: true })
-        ));
-    hadFailures ||= analyzeResults.some((result) => result.exitCode !== 0);
-    const afterAnalyze = getStatusCounts(db, opts.wave);
-    printPoolSummary({
-      label: "Analyzers",
-      results: analyzeResults,
-      before: beforeAnalyze,
-      after: afterAnalyze,
-      advancedStatus: "analyzed",
-      claimability: getClaimabilityStats(db, "planned", opts.wave),
-    });
+  try {
     reconcileStaleClaims(db, "legmod");
-    printStaleSessionWarnings(db);
+    while (hasMigrationRemaining(db, opts.wave)) {
+      console.log(`\n  Pass ${pass}`);
 
-    process.stdout.write(`\n  [Pool 1] Spawning ${testParallel} test-writer session(s)\n`);
-    const testQueueBefore = getClaimabilityStats(db, "analyzed", opts.wave);
-    printQueueSnapshot("Test queue", testQueueBefore);
-    const beforeTests = getStatusCounts(db, opts.wave);
-    const testResults = testQueueBefore.total === 0
-      ? []
-      : await Promise.all(Array.from({ length: testParallel }, () =>
-          spawnAgent({ agent: "test-writer-agent", model: testModel, prompt: testPrompt, db, logDir: getLogDir(), phase: "test-writing", timeoutMs: TEST_WRITE_TIMEOUT_MINUTES * 60_000, releaseClaimsOnFailure: true })
-        ));
-    hadFailures ||= testResults.some((result) => result.exitCode !== 0);
-    const afterTests = getStatusCounts(db, opts.wave);
-    printPoolSummary({
-      label: "Test writers",
-      results: testResults,
-      before: beforeTests,
-      after: afterTests,
-      advancedStatus: "tests-written",
-      claimability: getClaimabilityStats(db, "analyzed", opts.wave),
-    });
-    reconcileStaleClaims(db, "legmod");
-    printStaleSessionWarnings(db);
+      process.stdout.write(`\n  [Pool 0] Spawning ${analyzeParallel} analyzer session(s)\n`);
+      const analyzeQueueBefore = getClaimabilityStats(db, "planned", opts.wave);
+      printQueueSnapshot("Analyze queue", analyzeQueueBefore);
+      const beforeAnalyze = getStatusCounts(db, opts.wave);
+      const analyzeResults = analyzeQueueBefore.total === 0
+        ? []
+        : await Promise.all(Array.from({ length: analyzeParallel }, () =>
+            runAgent({
+              agent: "analyze-agent",
+              model: analyzeModel,
+              prompt: analyzePrompt,
+              db,
+              logDir,
+              phase: "analysis",
+              timeoutMs: ANALYZE_TIMEOUT_MINUTES * 60_000,
+              releaseClaimsOnFailure: true,
+            })
+          ));
+      hadFailures ||= analyzeResults.some((result) => result.exitCode !== 0);
+      const afterAnalyze = getStatusCounts(db, opts.wave);
+      printPoolSummary({
+        label: "Analyzers",
+        results: analyzeResults,
+        before: beforeAnalyze,
+        after: afterAnalyze,
+        advancedStatus: "analyzed",
+        claimability: getClaimabilityStats(db, "planned", opts.wave),
+      });
+      reconcileStaleClaims(db, "legmod");
+      printStaleSessionWarnings(db);
 
-    process.stdout.write(`\n  [Pool 2] Spawning ${codeParallel} code-writer session(s)\n`);
-    const codeQueueBefore = getClaimabilityStats(db, "tests-written", opts.wave);
-    printQueueSnapshot("Code queue", codeQueueBefore);
-    const beforeCode = getStatusCounts(db, opts.wave);
-    const codeResults = codeQueueBefore.total === 0
-      ? []
-      : await Promise.all(Array.from({ length: codeParallel }, () =>
-          spawnAgent({ agent: "code-writer-agent", model: codeModel, prompt: codePrompt, db, logDir: getLogDir(), phase: "code-writing", timeoutMs: CODE_WRITE_TIMEOUT_MINUTES * 60_000, releaseClaimsOnFailure: true })
-        ));
-    hadFailures ||= codeResults.some((result) => result.exitCode !== 0);
-    const afterCode = getStatusCounts(db, opts.wave);
-    printPoolSummary({
-      label: "Code writers",
-      results: codeResults,
-      before: beforeCode,
-      after: afterCode,
-      advancedStatus: "migrated",
-      claimability: getClaimabilityStats(db, "tests-written", opts.wave),
-    });
-    reconcileStaleClaims(db, "legmod");
-    printStaleSessionWarnings(db);
+      process.stdout.write(`\n  [Pool 1] Spawning ${testParallel} test-writer session(s)\n`);
+      const testQueueBefore = getClaimabilityStats(db, "analyzed", opts.wave);
+      printQueueSnapshot("Test queue", testQueueBefore);
+      const beforeTests = getStatusCounts(db, opts.wave);
+      const testResults = testQueueBefore.total === 0
+        ? []
+        : await Promise.all(Array.from({ length: testParallel }, () =>
+            runAgent({
+              agent: "test-writer-agent",
+              model: testModel,
+              prompt: testPrompt,
+              db,
+              logDir,
+              phase: "test-writing",
+              timeoutMs: TEST_WRITE_TIMEOUT_MINUTES * 60_000,
+              releaseClaimsOnFailure: true,
+            })
+          ));
+      hadFailures ||= testResults.some((result) => result.exitCode !== 0);
+      const afterTests = getStatusCounts(db, opts.wave);
+      printPoolSummary({
+        label: "Test writers",
+        results: testResults,
+        before: beforeTests,
+        after: afterTests,
+        advancedStatus: "tests-written",
+        claimability: getClaimabilityStats(db, "analyzed", opts.wave),
+      });
+      reconcileStaleClaims(db, "legmod");
+      printStaleSessionWarnings(db);
 
-    const progressMade = statusCountsChanged(beforeAnalyze, afterCode);
-    if (!progressMade) {
-      console.log("\n  No further migration progress detected in this pass.");
-      break;
+      process.stdout.write(`\n  [Pool 2] Spawning ${codeParallel} code-writer session(s)\n`);
+      const codeQueueBefore = getClaimabilityStats(db, "tests-written", opts.wave);
+      printQueueSnapshot("Code queue", codeQueueBefore);
+      const beforeCode = getStatusCounts(db, opts.wave);
+      const codeResults = codeQueueBefore.total === 0
+        ? []
+        : await Promise.all(Array.from({ length: codeParallel }, () =>
+            runAgent({
+              agent: "code-writer-agent",
+              model: codeModel,
+              prompt: codePrompt,
+              db,
+              logDir,
+              phase: "code-writing",
+              timeoutMs: CODE_WRITE_TIMEOUT_MINUTES * 60_000,
+              releaseClaimsOnFailure: true,
+            })
+          ));
+      hadFailures ||= codeResults.some((result) => result.exitCode !== 0);
+      const afterCode = getStatusCounts(db, opts.wave);
+      printPoolSummary({
+        label: "Code writers",
+        results: codeResults,
+        before: beforeCode,
+        after: afterCode,
+        advancedStatus: "migrated",
+        claimability: getClaimabilityStats(db, "tests-written", opts.wave),
+      });
+      reconcileStaleClaims(db, "legmod");
+      printStaleSessionWarnings(db);
+
+      const progressMade = statusCountsChanged(beforeAnalyze, afterCode);
+      if (!progressMade) {
+        console.log("\n  No further migration progress detected in this pass.");
+        break;
+      }
+
+      pass += 1;
     }
 
-    pass += 1;
-  }
+    printWavePlan(db);
+    const finalCounts = getStatusCounts(db, opts.wave);
+    printCompletionReason("Migration outcome", finalCounts, ["migrated", "reviewed", "completed", "skipped"]);
+    printMigrationScopeSummary(db, opts.wave);
 
-  stopPolling();
-  printWavePlan(db);
-  const finalCounts = getStatusCounts(db, opts.wave);
-  printCompletionReason("Migration outcome", finalCounts, ["migrated", "reviewed", "completed", "skipped"]);
-
-  if (hasMigrationRemaining(db, opts.wave)) {
-    const followUp = getMigrationFollowUp(db, opts.wave, hadFailures);
-    process.stderr.write(`\n  ⚠ Some tasks still remain — migration did not finish all first-class artifacts.\n`);
-    process.stderr.write(`    ${followUp.summary}\n`);
-    process.stderr.write(`    Run: ${followUp.command}\n\n`);
-  } else {
-    console.log("\n  ✓ Migration complete\n");
+    if (hasMigrationRemaining(db, opts.wave)) {
+      const followUp = getMigrationFollowUp(db, opts.wave, hadFailures);
+      process.stderr.write(`\n  ⚠ Some tasks still remain — migration did not finish all first-class artifacts.\n`);
+      process.stderr.write(`    ${followUp.summary}\n`);
+      process.stderr.write(`    Run: ${followUp.command}\n\n`);
+    } else {
+      console.log("\n  ✓ Migration complete\n");
+    }
+  } finally {
+    stopPolling();
   }
 }

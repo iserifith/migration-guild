@@ -66,6 +66,20 @@ describe("operational tab views", () => {
     expect(onQueryChange).toHaveBeenNthCalledWith(1, { agent: "review-agent", page: 1 });
     expect(onQueryChange).toHaveBeenNthCalledWith(2, { status: "failed", page: 1 });
     expect(screen.getByText(/2-2 of 42 total/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("run-1"));
+    expect(screen.getByText("Selected run: run-1")).toBeInTheDocument();
+    expect(screen.getByText("2 of 2 lines")).toBeInTheDocument();
+    expect(screen.getByText("first line")).toBeInTheDocument();
+    expect(screen.getByText("second line")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/run log filter/i), {
+      target: { value: "second" },
+    });
+
+    expect(screen.getByText("second line")).toBeInTheDocument();
+    expect(screen.getByText("1 of 2 lines")).toBeInTheDocument();
+    expect(screen.queryByText("first line")).not.toBeInTheDocument();
   });
 
   it("shows scoped blocker retries and issue filters", () => {

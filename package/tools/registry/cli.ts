@@ -28,10 +28,15 @@ import {
   getMappingsSummary,
   listMappings,
 } from "./commands/mappings";
+import {
+  approveDependencyStrategy,
+  listDependencyFindings,
+  listJvmAuditFindings,
+} from "./commands/modernization";
 
 import { getContextPath, writeContext } from "./commands/context";
 import { appendChangelog, getChangelogPath } from "./commands/changelog";
-import { addCompleted, setFocus, setNext } from "./commands/operator";
+import { addCompleted, getOperatorState, setFocus, setNext } from "./commands/operator";
 import {
   getArtifactById,
   getArtifactByPath,
@@ -110,6 +115,8 @@ program
       dependencies: listDependencies(db(), opts.id),
       dependents: listDependents(db(), opts.id),
       events: getEventsQuery(db(), opts.id),
+      jvm_findings: listJvmAuditFindings(db(), { artifactId: opts.id }),
+      dependency_findings: listDependencyFindings(db(), { artifactId: opts.id }),
     })),
   );
 
@@ -629,5 +636,57 @@ program
   .command("show-mapping-summary")
   .description("Show stack mapping confirmation status (used before planning)")
   .action(() => run(() => getMappingsSummary(db())));
+
+program
+  .command("list-jvm-findings")
+  .description("List JVM compatibility audit findings")
+  .option("--id <id>", "Filter to a single artifact ID")
+  .option("--severity <severity>", "critical | warning")
+  .action((opts) => run(() => listJvmAuditFindings(db(), {
+    artifactId: opts.id,
+    severity: opts.severity,
+  })));
+
+program
+  .command("list-dependency-findings")
+  .description("List dependency modernization findings and approved strategies")
+  .option("--id <id>", "Filter to a single artifact ID")
+  .option("--severity <severity>", "critical | warning")
+  .option("--unresolved-only", "Show only findings that still need an approved strategy")
+  .action((opts) => run(() => listDependencyFindings(db(), {
+    artifactId: opts.id,
+    severity: opts.severity,
+    unresolvedOnly: opts.unresolvedOnly as boolean | undefined,
+  })));
+
+program
+  .command("approve-dependency-strategy")
+  .description("Approve the upgrade or replacement strategy for a dependency finding")
+  .requiredOption("--finding-id <id>", "Dependency finding ID")
+  .requiredOption("--strategy <strategy>", "upgrade | replace | remove")
+  .requiredOption("--approved-by <name>", "Operator or approver name")
+  .requiredOption("--rationale <text>", "Why this strategy is safe")
+  .option("--target-dependency <coord>", "Replacement or upgraded target dependency")
+  .option("--target-version <version>", "Optional target version")
+  .option("--agent <agent>", "Agent recorded in the event log", "operator")
+  .option("--model <model>", "Model used when the decision was recorded")
+  .action((opts) => run(() => approveDependencyStrategy(db(), {
+    findingId: opts.findingId,
+    strategy: opts.strategy,
+    targetDependency: opts.targetDependency,
+    targetVersion: opts.targetVersion,
+    rationale: opts.rationale,
+    approvedBy: opts.approvedBy,
+    agent: opts.agent,
+    model: opts.model,
+  })));
+
+program
+  .command("show-modernization-gates")
+  .description("Show the latest pre-plan audit summary and operator guidance")
+  .action(() => run(() => ({
+    pre_plan_audit: getOperatorState(db(), "pre_plan_audit"),
+    next: getOperatorState(db(), "next"),
+  })));
 
 program.parse();

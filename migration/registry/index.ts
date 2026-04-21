@@ -16,4 +16,5 @@ export * from "./commands/events";
 export * from "./commands/context";
 export * from "./commands/changelog";
 export * from "./commands/operator";
+export * from "./commands/modernization";
 export * from "./commands/queries";

@@ -6,6 +6,14 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### April 20, 2026
+
+- Added a pre-plan JVM compatibility audit refresh that persists per-artifact findings in the registry, blocks planning on critical findings, and records operator-facing readiness guidance.
+- Added a dependency modernization hard gate with per-artifact dependency findings, explicit approved upgrade/replacement strategies, registry event traceability, and migration/planning enforcement.
+- Added registry CLI commands for querying JVM/dependency findings and approving dependency strategies, plus mirrored regression coverage in both `migration/test` and `package/tools/test`.
+- Changed Copilot runner timeout behavior to perform log-health analysis and mark runs as `STUCK_PENDING_REVIEW` (without forced process kill) when output appears stalled or error-patterned, including explicit operator recovery guidance.
+- Enhanced the runs UI log viewer with per-line rendering, filterable log text, wrap toggling, and source log-file visibility for faster triage.
+
 ### April 17, 2026
 
 - Added a remediation execution phase to the migration runtime with a dedicated `remediate` command, `run remediate` support, prompt construction for targeted/global remediation loops, timeout/model overrides, and remediation summary reporting.

@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import { Transform } from "stream";
+import * as readline from "readline";
 import type Database from "better-sqlite3";
 import { releaseClaimedArtifactsForOwner } from "../registry/commands/artifacts";
 import { releaseClaimsForRun } from "../registry/commands/claim";
@@ -111,6 +112,80 @@ function getNewlyWrittenFiles(root: string, before: Set<string>): string[] {
 
 function writeLogLine(stream: fs.WriteStream | undefined, line: string): void {
   stream?.write(`[${new Date().toISOString().slice(11, 23)}] ${line}\n`);
+}
+
+/**
+ * Analyze recent log lines to determine if a process is stuck.
+ * Returns { isStuck: boolean, reason?: string }
+ */
+async function analyzeProcessHealth(logFile: string | undefined): Promise<{ isStuck: boolean; reason?: string }> {
+  if (!logFile || !fs.existsSync(logFile)) {
+    return { isStuck: false };
+  }
+
+  try {
+    // Read last 50 lines from the log file
+    const lines: string[] = [];
+    const stream = readline.createInterface({
+      input: fs.createReadStream(logFile),
+      crlfDelay: Infinity,
+    });
+
+    for await (const line of stream) {
+      lines.push(line);
+      if (lines.length > 50) {
+        lines.shift();
+      }
+    }
+
+    if (lines.length === 0) {
+      return { isStuck: true, reason: "No log output detected" };
+    }
+
+    // Extract timestamps from lines like "[HH:MM:SS.mmm]"
+    const timestampRegex = /\[(\d{2}):(\d{2}):(\d{2}\.\d{3})\]/;
+    const lastLine = lines[lines.length - 1];
+    const lastMatch = lastLine.match(timestampRegex);
+
+    if (!lastMatch) {
+      return { isStuck: false };
+    }
+
+    // Check for error indicators
+    const errorIndicators = [
+      "Error:",
+      "TIMEOUT",
+      "deadlock",
+      "crash",
+      "fatal",
+      "infinite loop",
+      "stuck",
+      "retry exceeded",
+    ];
+
+    const recentErrors = lines
+      .slice(-10)
+      .some((line) => errorIndicators.some((err) => line.toLowerCase().includes(err.toLowerCase())));
+
+    if (recentErrors) {
+      return { isStuck: true, reason: "Error patterns detected in recent output" };
+    }
+
+    // Check if output is just repeating (no progress)
+    const uniqueLines = new Set(lines.slice(-20).map((l) => l.toLowerCase()));
+    const repetitionRatio = 1 - uniqueLines.size / Math.max(1, lines.slice(-20).length);
+
+    if (repetitionRatio > 0.7) {
+      return { isStuck: true, reason: "Output appears to be repeating with no new progress" };
+    }
+
+    // If we have output and no obvious errors, assume it's working (not stuck)
+    return { isStuck: false };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`[legmod] Failed to analyze log: ${msg}`);
+    return { isStuck: false };
+  }
 }
 
 export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
@@ -285,27 +360,97 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
     };
 
     if ((opts.timeoutMs ?? 0) > 0) {
-      timeoutHandle = setTimeout(() => {
-        timedOut = true;
+      timeoutHandle = setTimeout(async () => {
         const timeoutMins = Math.round((opts.timeoutMs ?? 0) / 60000);
-        const msg = `[legmod] ${agent} timed out after ${timeoutMins}m; terminating pid ${proc.pid ?? "unknown"}`;
-        process.stderr.write(msg + "\n");
-        writeLogLine(logStream, msg);
-        try {
-          proc.kill("SIGTERM");
-        } catch {
-          finalize(124);
-          return;
-        }
-        killHandle = setTimeout(() => {
-          if (settled) return;
-          try {
-            proc.kill("SIGKILL");
-          } catch {
-            finalize(124);
+        const healthCheck = await analyzeProcessHealth(logFile);
+
+        if (healthCheck.isStuck) {
+          if (settled) return; // Already finalized
+          
+          timedOut = true;
+          settled = true;
+          if (killHandle) clearTimeout(killHandle);
+
+          const msg = `[legmod] ${agent} appears to be stuck after ${timeoutMins}m (${healthCheck.reason}). Process pid ${proc.pid ?? "unknown"} will be kept alive for manual review.`;
+          process.stderr.write(msg + "\n");
+          writeLogLine(logStream, msg);
+          writeLogLine(logStream, `User action required: Review logs and manually manage pid ${proc.pid}.`);
+          
+          // Print helpful user guidance
+          const runId = run.run_id;
+          console.error(`\n${"=".repeat(72)}`);
+          console.error(`⚠️  ${agent} STUCK after ${timeoutMins}m`);
+          console.error(`${"=".repeat(72)}`);
+          console.error(`📋 Reason: ${healthCheck.reason}`);
+          console.error(`📄 Log:    ${logFile}`);
+          console.error(`🔍 PID:    ${proc.pid}\n`);
+          
+          console.error(`Suggested Actions:\n`);
+          console.error(`1. Review the log to diagnose the issue:`);
+          console.error(`   tail -f ${logFile}\n`);
+          
+          console.error(`2. If process is truly stuck, terminate it:`);
+          console.error(`   kill ${proc.pid}\n`);
+          
+          console.error(`3. Release any claimed artifacts (if terminating):`);
+          console.error(`   node migration/registry/dist/cli.js release`);
+          console.error(`   # or by run ID:`);
+          console.error(`   node migration/registry/dist/cli.js release --run-id ${runId}\n`);
+          
+          console.error(`4. Check the run status:`);
+          console.error(`   node migration/registry/dist/cli.js list-runs --limit 5\n`);
+          
+          console.error(`5. If process is actually working, it will complete on its own.`);
+          console.error(`   (Process will continue running indefinitely.)\n`);
+          console.error(`${"=".repeat(72)}\n`);
+          
+          // Mark run as failed with special reason, but don't kill the process
+          const finalMsg = `stuck-pending-review: ${healthCheck.reason}`;
+          finishRun(db, {
+            runId: run.run_id,
+            exitCode: 1,
+            reason: finalMsg,
+          });
+
+          if (logStream) {
+            const elapsedS = ((Date.now() - startMs) / 1000).toFixed(1);
+            const written = getNewlyWrittenFiles(projectRoot, beforeFiles);
+            const filesBlock =
+              written.length > 0
+                ? [`Files written (${written.length}):`, ...written.map((f) => `  ${f}`)]
+                : ["Files written: (none)"];
+            logStream.end(
+              [
+                "",
+                LOG_SEP,
+                "Status:  STUCK_PENDING_REVIEW",
+                `Elapsed: ${elapsedS}s`,
+                `PID:     ${proc.pid ?? "unknown"}`,
+                `Run ID:  ${runId}`,
+                ...filesBlock,
+                LOG_SEP,
+                "",
+              ].join("\n"),
+            );
           }
-        }, 5000);
-        killHandle.unref?.();
+
+          resolve({
+            runId: run.run_id,
+            agent,
+            model,
+            prompt,
+            logFile,
+            exitCode: 1,
+          });
+          // Don't kill proc here - let it continue and user can decide
+        } else {
+          // Process appears to be making progress, just log and continue
+          const msg = `[legmod] ${agent} hit timeout after ${timeoutMins}m but appears to be making progress. Allowing to continue...`;
+          process.stderr.write(msg + "\n");
+          writeLogLine(logStream, msg);
+          // Clear the timeout and let process continue (no time limit)
+          // This effectively extends the deadline indefinitely
+        }
       }, opts.timeoutMs);
       timeoutHandle.unref?.();
     }

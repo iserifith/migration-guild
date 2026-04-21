@@ -1,3 +1,4 @@
+import * as path from "path";
 import * as readline from "readline";
 import type Database from "better-sqlite3";
 import { spawnAgent } from "../runner";
@@ -5,6 +6,9 @@ import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printWavePlan } from "../dashboard";
 import { getLogDir } from "../util";
 import { loadConfig, resolvePhaseModel } from "../../foundry/config";
+import { setNext } from "../../registry/commands/operator";
+import { refreshCompatibilityAudits } from "../audit";
+import { evaluatePlanningReadiness, formatPlanningBlockMessage } from "../readiness";
 
 async function confirmMappings(
   db: Database.Database,
@@ -69,24 +73,67 @@ function getMappings(db: Database.Database) {
   }>;
 }
 
-export async function runPlan(db: Database.Database): Promise<void> {
+interface PlanDeps {
+  refreshCompatibilityAudits?: typeof refreshCompatibilityAudits;
+  spawnAgent?: typeof spawnAgent;
+  startPolling?: typeof startPolling;
+  getLogDir?: typeof getLogDir;
+}
+
+export async function runPlan(
+  db: Database.Database,
+  deps: PlanDeps = {},
+): Promise<void> {
   const cfg = loadConfig();
   const planningModel = resolvePhaseModel("planning", cfg.foundry);
+  const projectRoot = path.resolve(__dirname, "..", "..", "..");
+  const refreshAudits = deps.refreshCompatibilityAudits ?? refreshCompatibilityAudits;
+  const runAgent = deps.spawnAgent ?? spawnAgent;
+  const poll = deps.startPolling ?? startPolling;
+  const logDir = (deps.getLogDir ?? getLogDir)();
+
+  printPhaseHeader("Phase 2 · Planning readiness");
+  const auditSummary = refreshAudits(db, projectRoot);
+  const initialReadiness = evaluatePlanningReadiness(db);
+  const jvmBlock = formatPlanningBlockMessage({
+    ...initialReadiness,
+    unresolvedDependencyFindings: [],
+  });
+  console.log(`  Pre-plan audit refreshed for ${auditSummary.artifact_count} artifact(s)`);
+  console.log(`  JVM findings: critical=${auditSummary.jvm.critical}  warning=${auditSummary.jvm.warnings}`);
+  console.log(`  Dependency findings: total=${auditSummary.dependencies.total}  unresolved=${auditSummary.dependencies.unresolved}\n`);
+
+  if (jvmBlock) {
+    setNext(db, {
+      summary: jvmBlock.summary,
+      reason: jvmBlock.reason,
+      recommendedCommand: jvmBlock.command,
+    });
+    process.stderr.write(`  ✗ ${jvmBlock.summary}\n`);
+    process.stderr.write(`    ${jvmBlock.reason}\n`);
+    process.stderr.write(`    Run: ${jvmBlock.command}\n\n`);
+    process.exit(1);
+  }
+
+  if (initialReadiness.warningJvmFindings.length > 0) {
+    console.log(`  ⚠ Warning-only JVM findings remain on ${new Set(initialReadiness.warningJvmFindings.map((finding) => finding.artifact_id)).size} artifact(s).`);
+    console.log("    Planning may continue, but operators should record remediation notes before migration.\n");
+  }
 
   // ── Stack advisor ───────────────────────────────────────────────────────────
   printPhaseHeader("Phase 2a · Stack Advisor");
   console.log(`  Agent: stack-advisor   Model: ${planningModel}\n`);
 
-  let stopPolling = startPolling(db, (events) => {
+  let stopPolling = poll(db, (events) => {
     for (const e of events) printEvent(e);
   });
 
-  let result = await spawnAgent({
+  let result = await runAgent({
     agent: "stack-advisor",
     model: planningModel,
     prompt: "Analyze all registered artifacts and propose a legacy→target framework mapping table.",
     db,
-    logDir: getLogDir(),
+    logDir,
     phase: "planning",
   });
 
@@ -112,20 +159,39 @@ export async function runPlan(db: Database.Database): Promise<void> {
     }
   }
 
+  const readiness = evaluatePlanningReadiness(db);
+  const dependencyBlock = formatPlanningBlockMessage({
+    ...readiness,
+    blockingJvmFindings: [],
+  });
+  if (dependencyBlock) {
+    setNext(db, {
+      summary: dependencyBlock.summary,
+      reason: dependencyBlock.reason,
+      recommendedCommand: dependencyBlock.command,
+    });
+    process.stderr.write(`  ✗ ${dependencyBlock.summary}\n`);
+    process.stderr.write(`    ${dependencyBlock.reason}\n`);
+    process.stderr.write("    Approve each strategy with:\n");
+    process.stderr.write("      node migration/registry/dist/cli.js approve-dependency-strategy --finding-id <id> --strategy <upgrade|replace|remove> --target-dependency <coord> --approved-by <name> --rationale <text>\n");
+    process.stderr.write(`    Inspect open findings with: ${dependencyBlock.command}\n\n`);
+    process.exit(1);
+  }
+
   // ── Planner ─────────────────────────────────────────────────────────────────
   printPhaseHeader("Phase 2b · Planner");
   console.log(`  Agent: planner-agent   Model: ${planningModel}\n`);
 
-  stopPolling = startPolling(db, (events) => {
+  stopPolling = poll(db, (events) => {
     for (const e of events) printEvent(e);
   });
 
-  result = await spawnAgent({
+  result = await runAgent({
     agent: "planner-agent",
     model: planningModel,
     prompt: "Run planning: build the dependency graph and assign wave numbers to all pending artifacts.",
     db,
-    logDir: getLogDir(),
+    logDir,
     phase: "planning",
   });
 

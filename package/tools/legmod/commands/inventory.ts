@@ -6,26 +6,20 @@ import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printStatusSummary } from "../dashboard";
 import { getLogDir } from "../util";
 import {
-  getConfigPath,
   loadConfig,
-  requirePhaseFoundryConfig,
+  requireFoundryConfig,
   resolvePhaseModel,
   resolvePhaseProvider,
 } from "../../foundry/config";
-import type { FoundryConfig } from "../../foundry/config";
 import { FoundryClient } from "../../foundry/foundry-client";
-import { submitBatch, validateBatchSupport } from "../../foundry/batch/submit";
+import { submitBatch } from "../../foundry/batch/submit";
 import { waitForBatch } from "../../foundry/batch/poll";
 import { applyInventoryResults } from "../../foundry/batch/apply";
 import { registerArtifact } from "../../registry/commands/artifacts";
+import { setNext } from "../../registry/commands/operator";
 import { applySchema } from "../../registry/db/schema";
-import {
-  getStatusCounts,
-  printInventoryClassificationSummary,
-  printPoolSummary,
-  printResolvedRuntime,
-  printStaleSessionWarnings,
-} from "../monitoring";
+import { refreshCompatibilityAudits } from "../audit";
+import { evaluatePlanningReadiness, formatPlanningBlockMessage } from "../readiness";
 
 // ─── File scanner ────────────────────────────────────────────────────────────
 
@@ -107,14 +101,14 @@ function scanAndRegister(db: Database.Database, projectRoot: string): number {
 
 // ─── Batch path (Foundry) ────────────────────────────────────────────────────
 
-async function runInventoryBatch(db: Database.Database, foundry: FoundryConfig): Promise<void> {
+async function runInventoryBatch(db: Database.Database): Promise<void> {
   const cfg = loadConfig();
-  const inventoryModel = resolvePhaseModel("inventory", cfg.foundry);
+  const foundry = requireFoundryConfig(cfg);
   const client = new FoundryClient(foundry);
 
   process.stdout.write("  Provider: foundry (batch)\n\n");
 
-  const job = await submitBatch(db, client, foundry, "inventory", undefined, undefined, inventoryModel);
+  const job = await submitBatch(db, client, foundry, "inventory");
   process.stdout.write(`  Batch job submitted: ${job.job_id} — waiting for completion…\n`);
 
   const completed = await waitForBatch(db, client, job.job_id);
@@ -134,23 +128,6 @@ export async function runInventory(db: Database.Database): Promise<void> {
   // Ensure schema exists (idempotent)
   applySchema(db);
 
-  const cfg = loadConfig();
-  const inventoryProvider = resolvePhaseProvider("inventory", cfg.foundry);
-  const inventoryModel = resolvePhaseModel("inventory", cfg.foundry);
-  const inventoryFoundry =
-    inventoryProvider === "foundry" && cfg.foundry?.batchEnabled
-      ? requirePhaseFoundryConfig("inventory", cfg, { batch: true })
-      : undefined;
-  if (inventoryFoundry) {
-    process.stdout.write("  Preflight: validating Foundry batch deployment…\n");
-    await validateBatchSupport(
-      new FoundryClient(inventoryFoundry),
-      inventoryFoundry,
-      "inventory",
-      inventoryModel,
-    );
-  }
-
   // Always resolve project root from __dirname (migration/legmod/dist → my-migration/)
   const projectRoot = path.resolve(__dirname, "..", "..", "..");
 
@@ -162,26 +139,20 @@ export async function runInventory(db: Database.Database): Promise<void> {
   const stopPolling = startPolling(db, (events) => {
     for (const e of events) printEvent(e);
   });
-  printResolvedRuntime({
-    phase: "inventory",
-    provider: inventoryProvider,
-    model: inventoryModel,
-    configPath: getConfigPath(),
-    batchEnabled: cfg.foundry?.batchEnabled,
-    providerType: cfg.foundry?.providerType,
-    endpoint: inventoryProvider === "foundry" ? cfg.foundry?.openaiEndpoint : undefined,
-  });
 
-  if (inventoryFoundry) {
+  const cfg = loadConfig();
+  const inventoryProvider = resolvePhaseProvider("inventory", cfg.foundry);
+
+  if (inventoryProvider === "foundry" && cfg.foundry?.batchEnabled) {
     // Step 2a: Foundry batch — classify all registered artifacts
-    await runInventoryBatch(db, inventoryFoundry);
+    await runInventoryBatch(db);
   } else {
     // Step 2b: local Copilot agent — classify each artifact (role, framework, etc.)
-    console.log(`  Agent: context-agent   Model: ${inventoryModel}\n`);
-    const before = getStatusCounts(db);
+    const model = resolvePhaseModel("inventory", cfg.foundry);
+    console.log(`  Agent: context-agent   Model: ${model}\n`);
     const result = await spawnAgent({
       agent: "context-agent",
-      model: inventoryModel,
+      model,
       prompt:
         "Classify each artifact in the registry: set its role, framework, and any relevant tags. " +
         "Use `node migration/registry/dist/cli.js list-artifacts --status pending` to see what needs classifying. " +
@@ -191,14 +162,6 @@ export async function runInventory(db: Database.Database): Promise<void> {
       logDir: getLogDir(),
       phase: "inventory",
     });
-    const after = getStatusCounts(db);
-    printPoolSummary({
-      label: "Classification",
-      results: [result],
-      before,
-      after,
-    });
-    printStaleSessionWarnings(db);
 
     if (result.exitCode !== 0) {
       stopPolling();
@@ -208,7 +171,20 @@ export async function runInventory(db: Database.Database): Promise<void> {
   }
 
   stopPolling();
-  printInventoryClassificationSummary(db);
+  const auditSummary = refreshCompatibilityAudits(db, projectRoot);
+  const readiness = evaluatePlanningReadiness(db);
+  const blockMessage = formatPlanningBlockMessage(readiness);
+  console.log(`  Pre-plan audit: ${auditSummary.jvm.critical} critical JVM  ${auditSummary.jvm.warnings} warning JVM  ${auditSummary.dependencies.total} dependency findings\n`);
+  if (blockMessage) {
+    setNext(db, {
+      summary: blockMessage.summary,
+      reason: blockMessage.reason,
+      recommendedCommand: blockMessage.command,
+    });
+    console.log(`  ⚠ ${blockMessage.summary}`);
+    console.log(`    ${blockMessage.reason}`);
+    console.log(`    Run: ${blockMessage.command}\n`);
+  }
   printStatusSummary(db);
   console.log("\n  ✓ Inventory complete\n");
 }
