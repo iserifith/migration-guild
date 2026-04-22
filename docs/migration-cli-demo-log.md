@@ -1,5 +1,42 @@
 # Migration CLI Demo Log
 
+## Workspace Build & Install
+
+Command:
+
+```
+@.github/prompts/build-and-install-test-workspace.prompt.md
+
+- Test Workspace: `~/test-migration/MockTestV2`
+- Git Url/Path: `~/Happy%20Little%20Bots/package/mock
+```
+
+Key output:
+
+```
+● Completed. The kit was built and installed into the external test workspace.
+
+  ┌────────────────┬────────────────────────────────────────────────────────────────────────────┐
+  │ Item           │ Value                                                                      │
+  ├────────────────┼────────────────────────────────────────────────────────────────────────────┤
+  │ Tarball used   │ ~/Happy%20Little%20Bots/dist/legmod-kit.tar.gz                             │
+  ├────────────────┼────────────────────────────────────────────────────────────────────────────┤
+  │ Workspace path │ ~/test-migration/MockTestV2                                               │
+  ├────────────────┼────────────────────────────────────────────────────────────────────────────┤
+  │ Legacy source  │ Local path: ~/Happy%20Little%20Bots/package/mock                           │
+  ├────────────────┼────────────────────────────────────────────────────────────────────────────┤
+  │ Blocking error │ None                                                                       │
+  └────────────────┴────────────────────────────────────────────────────────────────────────────┘
+```
+
+Outcome:
+
+- Tarball built from repo source and extracted into the test workspace.
+- `legacy/` populated from the local mock source.
+- `migration/` runtime dependencies installed.
+
+---
+
 ## Current Operator State
 
 - Inventory is complete for 5 Java files.
@@ -18,6 +55,7 @@ Purpose:
 - Determine the next required phase.
 
 Key output:
+
 ```
 What to run next
 
@@ -44,6 +82,7 @@ Purpose:
 - Register legacy Java artifacts in the migration registry and run the pre-plan audit.
 
 Key output:
+
 ```
 [scan] .java files found: 5
 [scan] registered: 5 skipped (already exist): 0
@@ -78,6 +117,7 @@ Purpose:
 - Determine the next phase after successful inventory.
 
 Key output:
+
 ```
 What to run next 2. Planning (assign migration waves)
 node migration/legmod/dist/cli.js run plan
@@ -102,6 +142,7 @@ Purpose:
 - Run planning readiness checks, confirm stack mappings, and begin wave assignment.
 
 Key output:
+
 ```
 Phase 2 · Planning readiness
 Dependency findings: total=3 unresolved=2
@@ -149,6 +190,7 @@ Purpose:
 - Re-run planning after dependency strategy approvals.
 
 Key output:
+
 ```
 Phase 2 · Planning readiness
 Dependency findings: total=3 unresolved=0
