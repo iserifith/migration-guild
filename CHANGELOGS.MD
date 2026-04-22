@@ -6,6 +6,12 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### April 22, 2026
+
+- Changed migration runner log line timestamps to local clock time (`HH:MM:SS.mmm`) instead of UTC slices, and switched log filename layout to `timestamp-runId-agent[-phase].log` for easier chronological scanning.
+- Synced shipped runtime sources by adding the packaged inspector UI project mirror under `package/tools/ui` (operational views, shared API/hooks/types/utilities, tests, and Vite/Vitest/TypeScript project config).
+- Added `scripts/update-testkit.sh`, a maintainer workflow helper to rebuild migration CLI output, sync `migration/` into `package/tools/`, update an external test workspace, and optionally reset workspace registry state (`clean`, `pre-plan`, `pre-migrate`, `pre-review`).
+
 ### April 21, 2026
 
 - Added/remapped phase entry points so migration/runtime CLIs recognize `bootstrap` and `remediate` in `run <phase>`, and aligned phase messaging/ordering across status and review output.

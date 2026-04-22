@@ -42,6 +42,14 @@ function getCopilotCommand(): string {
 
 const LOG_SEP = "=".repeat(72);
 
+function formatLocalClockTime(now = new Date()): string {
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  const ss = String(now.getSeconds()).padStart(2, "0");
+  const mmm = String(now.getMilliseconds()).padStart(3, "0");
+  return `${hh}:${mm}:${ss}.${mmm}`;
+}
+
 /** Prepends an `[HH:MM:SS.mmm]` timestamp to every line written to the log. */
 function createTimestampTransform(): Transform {
   let buf = "";
@@ -51,13 +59,13 @@ function createTimestampTransform(): Transform {
       const lines = buf.split("\n");
       buf = lines.pop() ?? "";
       for (const line of lines) {
-        this.push(`[${new Date().toISOString().slice(11, 23)}] ${line}\n`);
+        this.push(`[${formatLocalClockTime()}] ${line}\n`);
       }
       cb();
     },
     flush(cb: () => void) {
       if (buf.length > 0) {
-        this.push(`[${new Date().toISOString().slice(11, 23)}] ${buf}\n`);
+        this.push(`[${formatLocalClockTime()}] ${buf}\n`);
         buf = "";
       }
       cb();
@@ -109,7 +117,7 @@ function getNewlyWrittenFiles(root: string, before: Set<string>): string[] {
 }
 
 function writeLogLine(stream: fs.WriteStream | undefined, line: string): void {
-  stream?.write(`[${new Date().toISOString().slice(11, 23)}] ${line}\n`);
+  stream?.write(`[${formatLocalClockTime()}] ${line}\n`);
 }
 
 function formatLogTimestamp(ms: number): string {
@@ -122,7 +130,7 @@ function formatLogTimestamp(ms: number): string {
 
 function formatLogFileName(agent: string, startedMs: number, runId: string, phase?: PhaseKey): string {
   const phasePart = phase ? `-${phase}` : "";
-  return `${agent}${phasePart}-${formatLogTimestamp(startedMs)}-${runId}.log`;
+  return `${formatLogTimestamp(startedMs)}-${runId}-${agent}${phasePart}.log`;
 }
 
 function getRunClaimLines(db: Database.Database, runId: string): string[] {
