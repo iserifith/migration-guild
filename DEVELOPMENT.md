@@ -16,6 +16,7 @@ The split matters because not everything in this repository ships.
 | Path | Purpose | Ships |
 | --- | --- | --- |
 | `.github/agents/` | Repo-local maintainer agents for working on the kit itself | No |
+| `.github/prompts/` | Repo-local maintainer prompt shortcuts for working on the kit itself | No |
 | `.github/copilot-instructions.md` | Repo-local Copilot context for this repository | No |
 | `package/agents/` | Agent definitions installed into migration workspaces | Yes |
 | `package/skills/` | Skill definitions and shipped skill assets installed into migration workspaces | Yes |
@@ -69,6 +70,7 @@ Use the root `.github/` tree only when you are changing how Copilot helps mainta
 Typical examples:
 
 - dev-only agents
+- repo-local prompt shortcuts
 - maintainer instructions
 
 These changes do not ship.
