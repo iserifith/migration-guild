@@ -7,15 +7,13 @@ import { execSync } from "child_process";
 const PKG_DIR = fs.existsSync(path.join(__dirname, "package"))
   ? path.join(__dirname, "package")          // setup.js at kit root (e.g. node setup.js)
   : path.join(__dirname, "..", "package");   // setup.js inside dist/ subfolder
-const CWD = process.cwd();
-const GITHUB_DIR = path.join(CWD, ".github");
 
 // ── CLI flag parsing ──────────────────────────────────────────────────────────
 // Supports non-interactive mode:
 //   --framework "Spring Boot 3.x"   skip framework prompt
 //   --legacy-url <url>               skip repo URL prompt + auto-clone
 //   --legacy-path <dir>              copy from a local directory instead
-//   --update                         update kit files only
+//   --update [workspace-path]        update kit files only; optional explicit target dir
 //   --yes                            accept all defaults (Spring Boot 3.x, no clone)
 const args = process.argv.slice(2);
 const flag = (name: string) => {
@@ -23,6 +21,15 @@ const flag = (name: string) => {
   return i !== -1 && i + 1 < args.length ? args[i + 1] : undefined;
 };
 const hasFlag = (name: string) => args.includes(name);
+
+// ── Resolve workspace target directory ────────────────────────────────────────
+// When --update is given with an explicit path argument, use it as the target.
+// Otherwise fall back to the working directory.
+const _updateArg = flag("--update");
+const CWD = (_updateArg && !_updateArg.startsWith("-") && fs.existsSync(_updateArg))
+  ? path.resolve(_updateArg)
+  : process.cwd();
+const GITHUB_DIR = path.join(CWD, ".github");
 
 const GITHUB_MAPPINGS: Record<string, string> = {
   agents:       path.join(GITHUB_DIR, "agents"),
@@ -237,6 +244,16 @@ async function runInstall() {
 }
 
 async function main() {
+  // Guard: refuse to run against the kit source repository itself.
+  // Detected by the presence of package/copilot-instructions.md inside CWD.
+  const kitRootMarker = path.join(CWD, "package", "copilot-instructions.md");
+  if (fs.existsSync(kitRootMarker)) {
+    console.error("\n✗  Cannot run setup against the legmod kit source tree.");
+    console.error("   Change into a migration workspace, or pass an explicit target path:");
+    console.error("   node setup.js --update /path/to/your/workspace\n");
+    process.exit(1);
+  }
+
   if (hasFlag("--update")) {
     await runUpdate();
   } else {
