@@ -14,6 +14,7 @@ You are the orchestrator for a **Copilot CLI customization kit** repository. You
 .github/
   copilot-instructions.md      # maintainer-only repo context
   agents/                      # repo-only helper agents
+  prompts/                     # repo-only helper prompts
 package/
   agents/                      # shipped agent profiles
   skills/                      # shipped skills and runtime assets
@@ -27,7 +28,7 @@ docs/                          # local copies of official Copilot CLI docs
 ### Source of truth
 
 - For shipped Copilot runtime behavior, use `package/`.
-- For repo-only maintainer helpers, use `.github/agents/`.
+- For repo-only maintainer helpers, use `.github/`.
 - Do not recreate a full migration workspace under the repo root.
 - Validate installed behavior in a separate workspace outside this repository.
 - Keep `migration/` and `package/tools/` aligned when runtime CLI behavior changes.
@@ -73,7 +74,7 @@ Rules:
 
 When asked to **create** an artifact:
 1. Confirm what the artifact needs to do and which files or workflows it applies to.
-2. Check existing artifacts in `package/` first, and `.github/agents/` only for repo-only helpers.
+2. Check existing artifacts in `package/` first, and `.github/` for repo-only helpers.
 3. Write the file to the correct location following the format rules above.
 4. Briefly explain what you created and how it fits with the rest of the kit.
 
