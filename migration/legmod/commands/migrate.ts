@@ -223,6 +223,7 @@ export async function runMigrate(
               phase: "analysis",
               timeoutMs: ANALYZE_TIMEOUT_MINUTES * 60_000,
               releaseClaimsOnFailure: true,
+              preClaim: { fromStatus: "planned", tier: "first-class", wave: opts.wave },
             })
           ));
       hadFailures ||= analyzeResults.some((result) => result.exitCode !== 0);
@@ -254,6 +255,7 @@ export async function runMigrate(
               phase: "test-writing",
               timeoutMs: TEST_WRITE_TIMEOUT_MINUTES * 60_000,
               releaseClaimsOnFailure: true,
+              preClaim: { fromStatus: "analyzed", tier: "first-class", wave: opts.wave },
             })
           ));
       hadFailures ||= testResults.some((result) => result.exitCode !== 0);
@@ -285,6 +287,7 @@ export async function runMigrate(
               phase: "code-writing",
               timeoutMs: CODE_WRITE_TIMEOUT_MINUTES * 60_000,
               releaseClaimsOnFailure: true,
+              preClaim: { fromStatus: "tests-written", tier: "first-class", wave: opts.wave },
             })
           ));
       hadFailures ||= codeResults.some((result) => result.exitCode !== 0);

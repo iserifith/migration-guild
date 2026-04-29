@@ -26,10 +26,35 @@ Use this skill after a migration step to review the target-side code with a stri
    - weak or missing tests
    - obvious behavior regressions
    - awkward package placement or architecture drift
-5. Return findings ordered by severity.
+5. Apply the structural checklist below.
+6. Return findings ordered by severity.
+
+## Structural Checklist
+
+Run these checks against every migrated file before closing a review.
+
+### Test fixture placement
+- No test-only class (`*TestUtil`, `*TestTransform`, `*FakeTransform`, `*ExplodingTransform`, `testdomain/**`, `*GuiceTransform`, `*BadSpec`, `*GoodTest`) should appear under `src/main/java`.
+- If found: **Critical** — move to `src/test/java`.
+
+### Stub test files
+- Every `*Test.java` under `src/test/java` must contain at least one `@Test` or `@ParameterizedTest` method.
+- Files with zero test annotations are **Warning** stubs and must be implemented or removed.
+
+### Dead code
+- A class in `src/main/java` with zero references across the entire `modern/` tree (excluding its own declaration) is **Critical** dead code.
+- Check with: `grep -r "\b<ClassName>\b" modern/src --include="*.java" | grep -v "class <ClassName>"`
+
+### Build dependency scope
+- Any library imported **only** in `src/test/java` must be `testImplementation` (Gradle) or `<scope>test</scope>` (Maven), not `implementation`/`compile`.
+- Common culprits: `guava`, `assertj`, `mockito`, `hamcrest`, `jsonassert`.
+
+### Defensive copies on mutable input
+- Methods that accept `Map`, `List`, or any mutable collection and mutate it without a defensive copy are **Critical** correctness bugs.
+- Look for `// TODO: Make copy` or direct mutation of a parameter.
 
 ## Output Rules
 
 - Findings come first.
-- Prioritize bugs, regressions, and missing tests over style.
+- Prioritize correctness bugs, misplaced fixtures, and regressions over style.
 - If there are no findings, state that explicitly and mention remaining risks or test gaps.

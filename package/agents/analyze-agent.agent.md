@@ -25,6 +25,7 @@ You are a Java code analyst. Read exactly one claimed legacy Java file and write
      --from-status planned \
      --tier first-class
    ```
+   **IMPORTANT: If `LEGMOD_RUN_ID` is not set in the environment, do NOT invent a value. Stop immediately with a non-zero exit — do not proceed with the claim.**
    Exit code 2 = nothing left. Stop.
    Save `claim_id` and `claim_token` from the JSON output.
 
