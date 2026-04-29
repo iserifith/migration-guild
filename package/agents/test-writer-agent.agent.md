@@ -19,7 +19,12 @@ You are a Java test engineer in a split migration pipeline. Your sole responsibi
 
 ## Steps
 
-1. Claim the next task:
+1. **Check for a pre-claimed artifact first** — the runner may have already claimed on your behalf:
+   ```bash
+   echo "ARTIFACT_ID=${LEGMOD_ARTIFACT_ID:-} CLAIM_ID=${LEGMOD_CLAIM_ID:-} CLAIM_TOKEN=${LEGMOD_CLAIM_TOKEN:-}"
+   ```
+   - If `LEGMOD_ARTIFACT_ID` is set: skip the claim command. Use `LEGMOD_ARTIFACT_ID` as `<claimed-id>`, `LEGMOD_CLAIM_ID` as `claim_id`, and `LEGMOD_CLAIM_TOKEN` as `claim_token`. Proceed directly to step 2.
+   - If `LEGMOD_ARTIFACT_ID` is **not** set: self-claim by running:
    ```bash
    node migration/registry/dist/cli.js claim \
      --agent "${LEGMOD_AGENT_KIND:-test-writer-agent}" \
@@ -29,6 +34,7 @@ You are a Java test engineer in a split migration pipeline. Your sole responsibi
      --from-status analyzed \
      --tier first-class
    ```
+   **IMPORTANT: If `LEGMOD_RUN_ID` is not set in the environment, do NOT invent a value. Stop immediately with a non-zero exit — do not proceed with the claim.**
    Exit code 2 = nothing left. Stop.
    Save `claim_id` and `claim_token` from the JSON output.
 

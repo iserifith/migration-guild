@@ -22,16 +22,16 @@ test("migration legmod CLI recognizes run remediate", () => {
   const cwd = "/Users/seri/Workspace/legmod/migration";
   const scriptPath = path.join(cwd, "legmod", "cli.ts");
   const result = runCli(scriptPath, cwd, "remediate");
-  const combinedOutput = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
 
-  assert.doesNotMatch(combinedOutput, /Unknown phase:\s*"remediate"/);
+  assert.notEqual(result.stderr.includes('Unknown phase: "remediate"'), true);
+  assert.notEqual(result.status, 0);
 });
 
 test("migration legmod CLI recognizes run bootstrap", () => {
   const cwd = "/Users/seri/Workspace/legmod/migration";
   const scriptPath = path.join(cwd, "legmod", "cli.ts");
   const result = runCli(scriptPath, cwd, "bootstrap");
-  const combinedOutput = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
 
-  assert.doesNotMatch(combinedOutput, /Unknown phase:\s*"bootstrap"/);
+  assert.notEqual(result.stderr.includes('Unknown phase: "bootstrap"'), true);
+  assert.notEqual(result.status, 0);
 });

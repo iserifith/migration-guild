@@ -1,4 +1,4 @@
-import { spawn, execFileSync } from "child_process";
+import { spawn, execFileSync, spawnSync } from "child_process";
 import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
@@ -25,8 +25,14 @@ export interface SpawnCopilotOpts {
   timeoutMs?: number;
   claimOwner?: string;
   releaseClaimsOnFailure?: boolean;
+  preClaim?: PreClaimOpts;
 }
 
+export interface PreClaimOpts {
+  fromStatus: string;
+  tier?: string;
+  wave?: number;
+}
 export interface AgentRunResult {
   runId: string;
   agent: string;
@@ -289,6 +295,57 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
     );
   }
 
+  // ── Pre-claim: runner atomically claims on behalf of the agent ──────────
+  // Done AFTER startRun so the run_id foreign key exists in the DB.
+  let preClaimedArtifactId: string | undefined;
+  let preClaimId: string | undefined;
+  let preClaimToken: string | undefined;
+
+  if (opts.preClaim) {
+    const claimArgs = [
+      "migration/registry/dist/cli.js",
+      "claim",
+      "--agent", agent,
+      "--owner", claimOwner,
+      "--run-id", run.run_id,
+      "--model", model,
+      "--from-status", opts.preClaim.fromStatus,
+      "--tier", opts.preClaim.tier ?? "first-class",
+    ];
+    if (opts.preClaim.wave != null) {
+      claimArgs.push("--wave", String(opts.preClaim.wave));
+    }
+    const claimResult = spawnSync("node", claimArgs, {
+      cwd: projectRoot,
+      encoding: "utf8",
+    });
+    if (claimResult.status === 2) {
+      // Nothing left to claim — finish run cleanly and return no-op.
+      finishRun(db, { runId: run.run_id, exitCode: 0 });
+      logStream?.end();
+      return Promise.resolve({ runId: run.run_id, agent, model, prompt, logFile, exitCode: 0 });
+    }
+    if (claimResult.status !== 0) {
+      const errMsg = (claimResult.stderr ?? "").trim() || (claimResult.stdout ?? "").trim();
+      process.stderr.write(`[legmod] pre-claim failed (exit ${claimResult.status}): ${errMsg}\n`);
+      writeLogLine(logStream, `[legmod] pre-claim failed (exit ${claimResult.status}): ${errMsg}`);
+      finishRun(db, { runId: run.run_id, exitCode: 1, reason: `pre-claim failed: ${errMsg}` });
+      logStream?.end();
+      return Promise.resolve({ runId: run.run_id, agent, model, prompt, logFile, exitCode: 1 });
+    }
+    try {
+      const claimed = JSON.parse(claimResult.stdout) as { id: string; claim_id: string; claim_token: string };
+      preClaimedArtifactId = claimed.id;
+      preClaimId = claimed.claim_id;
+      preClaimToken = claimed.claim_token;
+    } catch {
+      process.stderr.write(`[legmod] pre-claim: failed to parse claim JSON\n`);
+      finishRun(db, { runId: run.run_id, exitCode: 1, reason: "pre-claim: failed to parse claim JSON" });
+      logStream?.end();
+      return Promise.resolve({ runId: run.run_id, agent, model, prompt, logFile, exitCode: 1 });
+    }
+  }
+
   // Always run from the project root (my-migration/) so agent shell commands
   // like `node migration/registry/dist/cli.js ...` resolve correctly.
   const proc = spawn(getCopilotCommand(), args, {
@@ -298,6 +355,11 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
       LEGMOD_AGENT_NAME: claimOwner,
       LEGMOD_AGENT_KIND: agent,
       LEGMOD_RUN_ID: run.run_id,
+      ...(preClaimedArtifactId != null ? {
+        LEGMOD_ARTIFACT_ID: preClaimedArtifactId,
+        LEGMOD_CLAIM_ID: preClaimId!,
+        LEGMOD_CLAIM_TOKEN: preClaimToken!,
+      } : {}),
     },
     stdio: logStream ? ["ignore", "pipe", "pipe"] : "inherit",
   });
