@@ -101,19 +101,29 @@ export function printStatusSummary(db: Database.Database): void {
 
 export function printInProgress(db: Database.Database): void {
   const rows = db.prepare(`
-    SELECT id, path, claimed_by, claimed_at
-    FROM artifacts
-    WHERE status = 'in-progress' AND claimed_by IS NOT NULL
-    ORDER BY claimed_at ASC
-  `).all() as Array<{ id: string; path: string; claimed_by: string; claimed_at: string }>;
+    SELECT
+      a.id,
+      a.path,
+      c.owner_id AS claimed_by,
+      c.claimed_at,
+      CAST(ROUND((julianday('now') - julianday(c.claimed_at)) * 86400) AS INTEGER) AS age_seconds
+    FROM artifacts a
+    JOIN artifact_claims c
+      ON c.artifact_id = a.id
+     AND c.state = 'active'
+    LEFT JOIN runs r
+      ON r.run_id = c.run_id
+    WHERE a.status = 'in-progress'
+      AND c.lease_expires_at > datetime('now')
+      AND (c.run_id IS NULL OR r.status = 'running')
+    ORDER BY c.claimed_at ASC
+  `).all() as Array<{ id: string; path: string; claimed_by: string; claimed_at: string; age_seconds: number }>;
 
   if (rows.length === 0) return;
 
   console.log(`\n${BOLD}Active Sessions${R}`);
   for (const row of rows) {
-    const age = row.claimed_at
-      ? Math.round((Date.now() - new Date(row.claimed_at + "Z").getTime()) / 1000)
-      : 0;
+    const age = Math.max(0, row.age_seconds ?? 0);
     const ageStr = age > 60 ? `${Math.round(age / 60)}m` : `${age}s`;
     const file = path.basename(row.path);
     console.log(`  ${YELLOW}${row.claimed_by.padEnd(18)}${R}  ${file}  ${DIM}${ageStr}${R}`);
