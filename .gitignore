@@ -7,3 +7,4 @@ dist/
 .env
 .tmp-test-runtime/
 temp/
+docs/presentation
