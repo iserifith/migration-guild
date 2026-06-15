@@ -4,6 +4,8 @@
 
 **Goal:** Functionally rebrand the project into **Migration Guild** with public CLI command **`guildctl`**, while preserving internal contracts needed for demo stability.
 
+**Product principle:** **Evidence-first modernization.** Migration Guild accepts modernization through executable proof, not model confidence, vibes, or writer self-approval. This rebrand should surface that language where product positioning appears; full evidence-gate implementation remains a later product-foundation task unless explicitly pulled into scope.
+
 **Architecture:** This is a public/product surface rebrand. The internal runner/agent/build nervous system remains mostly intact: `LEGMOD_*`, `legmod/` path segments, `LegmodConfig`, and `registry` stay for now.
 
 **Tech Stack:** TypeScript/Node CLI, SQLite registry, React UI, npm package/bin metadata, generated `dist`/`ui-dist` artifacts.

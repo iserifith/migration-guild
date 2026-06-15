@@ -9,8 +9,10 @@ Functionally rebrand the existing `legmod` kit into **Migration Guild**.
 
 - Product/user-facing name: **Migration Guild**
 - Public CLI command identity: **`guildctl`**
-- Positioning: **a blackboard society for legacy software modernization**
+- Positioning: **evidence-first modernization** — a blackboard society for legacy software modernization
 - Compatibility stance: **hard public cut** — do not preserve old `legmod` command aliases
+
+Evidence-first modernization means Migration Guild accepts modernization work through executable proof, not model confidence, vibes, or self-approval. Writers may propose changes; reviewers/arbiter gates must require evidence before acceptance.
 
 This is a product and command-surface rebrand first, not a deep internal transplant.
 
