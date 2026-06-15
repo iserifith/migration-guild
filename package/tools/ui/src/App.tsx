@@ -49,7 +49,7 @@ export default function App() {
   return (
     <div className="layout">
       <header className="header">
-        <h1>legmod</h1>
+        <h1>Migration Guild</h1>
         <span className="sep">›</span>
         <span className="project">registry inspector</span>
         <div className="stats">

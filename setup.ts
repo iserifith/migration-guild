@@ -77,7 +77,7 @@ function copyDir(src: string, dest: string, skip: string[] = []): string[] {
 // ── Update mode: sync kit files only, leave registry/legacy/modern alone ──────
 async function runUpdate() {
   console.log("\n╔══════════════════════════════════════╗");
-  console.log("║   legmod — Update Kit Files          ║");
+  console.log("║   Migration Guild — Update Kit Files          ║");
   console.log("╚══════════════════════════════════════╝\n");
   console.log("Updating agents, skills, prompts, instructions, and migration CLI.");
   console.log("legacy/, modern/, and migration/registry.db are untouched.\n");
@@ -113,7 +113,7 @@ async function runUpdate() {
 // ── Install mode: full fresh setup ────────────────────────────────────────────
 async function runInstall() {
   console.log("\n╔══════════════════════════════════════╗");
-  console.log("║   legmod — Java Migration Kit Setup  ║");
+  console.log("║   Migration Guild — Setup  ║");
   console.log("╚══════════════════════════════════════╝\n");
 
   let framework: string;
@@ -189,8 +189,8 @@ async function runInstall() {
     total++;
   }
 
-  // Copy .env.example and legmod.config.json to workspace root
-  for (const f of [".env.example", "legmod.config.json"]) {
+  // Copy .env.example and guildctl.config.json to workspace root
+  for (const f of [".env.example", "guildctl.config.json"]) {
     const src  = path.join(PKG_DIR, f);
     const dest = path.join(CWD, f);
     if (fs.existsSync(src) && !fs.existsSync(dest)) {
@@ -238,7 +238,7 @@ async function runInstall() {
   console.log(`  ${n}. Install runtime dependencies:`);
   console.log(`       cd migration && npm install && cd ..`);
   console.log(`  ${n+1}. Run the full migration pipeline:`);
-  console.log(`       node migration/legmod/dist/cli.js run --parallel 3`);
+  console.log(`       npx guildctl run --parallel 3`);
   console.log(`  ${n+2}. Watch live progress (second terminal):`);
   console.log(`       node migration/registry/dist/cli.js serve\n`);
 }
@@ -248,7 +248,7 @@ async function main() {
   // Detected by the presence of package/copilot-instructions.md inside CWD.
   const kitRootMarker = path.join(CWD, "package", "copilot-instructions.md");
   if (fs.existsSync(kitRootMarker)) {
-    console.error("\n✗  Cannot run setup against the legmod kit source tree.");
+    console.error("\n✗  Cannot run setup against the Migration Guild kit source tree.");
     console.error("   Change into a migration workspace, or pass an explicit target path:");
     console.error("   node setup.js --update /path/to/your/workspace\n");
     process.exit(1);

@@ -184,6 +184,6 @@ node migration/registry/dist/cli.js create-artifact \
 node migration/registry/dist/cli.js list-ready
 # All new audit entries will appear ready
 
-# Then migrate:
-legmod-agent migration-agent
+# Then migrate via Migration Guild:
+guildctl migrate
 ```

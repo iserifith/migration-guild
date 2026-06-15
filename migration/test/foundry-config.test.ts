@@ -10,7 +10,7 @@ test("loadConfig rejects unsupported foundry phase override keys", () => {
 
   try {
     writeFileSync(
-      path.join(workspace, "legmod.config.json"),
+      path.join(workspace, "guildctl.config.json"),
       JSON.stringify({
         llmProvider: "copilot",
         foundry: {
@@ -42,7 +42,7 @@ test("loadConfig keeps supported migration phase overrides", () => {
 
   try {
     writeFileSync(
-      path.join(workspace, "legmod.config.json"),
+      path.join(workspace, "guildctl.config.json"),
       JSON.stringify({
         llmProvider: "copilot",
         foundry: {

@@ -1,9 +1,9 @@
 {
-  "name": "@legmod/kit",
+  "name": "@migration-guild/kit",
   "version": "0.1.0",
-  "description": "Copilot CLI customization kit for Java legacy-to-Spring Boot migration",
+  "description": "Migration Guild setup kit for blackboard-based legacy software modernization",
   "bin": {
-    "legmod-setup": "dist/setup.js"
+    "guildctl-setup": "dist/setup.js"
   },
   "scripts": {
     "build": "tsup setup.ts --format cjs --out-dir dist",

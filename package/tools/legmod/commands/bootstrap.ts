@@ -196,7 +196,7 @@ export function bootstrapTargetModule(
   assetsDir = getAssetsDir(workspaceRoot),
 ): BootstrapResult {
   if (!fs.existsSync(assetsDir)) {
-    throw new Error(`[legmod] Bootstrap assets not found: ${assetsDir}`);
+    throw new Error(`[guildctl] Bootstrap assets not found: ${assetsDir}`);
   }
 
   const projectType = detectBootstrapProjectType(artifacts);

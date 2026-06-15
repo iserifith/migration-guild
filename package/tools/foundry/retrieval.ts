@@ -26,7 +26,7 @@ export interface SearchSimilarOptions {
  * similar artifacts from `artifact_embeddings`, joined with artifact metadata.
  *
  * Returns `[]` when the `artifact_embeddings` table has not yet been created
- * (i.e. `legmod batch-submit --type embed` has never been run).
+ * (i.e. `guildctl batch-submit --type embed` has never been run).
  */
 export async function searchSimilar(
   db: Database.Database,

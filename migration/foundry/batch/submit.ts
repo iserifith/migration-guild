@@ -123,7 +123,7 @@ function buildValidationJsonl(type: Exclude<BatchJobType, "evaluate">, model: st
       url: "/embeddings",
       body: {
         model,
-        input: "legmod batch preflight",
+        input: "guildctl batch preflight",
       },
     });
   }
@@ -169,7 +169,7 @@ export async function validateBatchSupport(
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes("invalid_deployment_type")) {
       throw new Error(
-        `[legmod] Foundry batch preflight failed for model "${model}". ` +
+        `[guildctl] Foundry batch preflight failed for model "${model}". ` +
           "This deployment is not batch-capable. Use a deployment with a supported batch SKU " +
           "(for example globalbatch or datazonebatch), disable batch for this phase, or switch the phase provider to copilot."
       );

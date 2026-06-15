@@ -1,5 +1,5 @@
 /**
- * Shared UI constants for the legmod registry inspector.
+ * Shared UI constants for the Migration Guild registry inspector.
  *
  * Keep filter option lists, status colour mappings, and the tab registry here
  * so individual components never hard-code values that need to stay in sync

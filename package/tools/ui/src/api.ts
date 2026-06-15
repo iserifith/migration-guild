@@ -1,5 +1,5 @@
 /**
- * Typed HTTP client for the legmod registry API.
+ * Typed HTTP client for the Migration Guild registry API.
  *
  * All fetch calls in the UI should go through this module so that:
  *  - The API contract is visible in one place

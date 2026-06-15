@@ -19,7 +19,7 @@ function runCli(scriptPath: string, cwd: string, phase: string) {
 }
 
 test("migration legmod CLI recognizes run remediate", () => {
-  const cwd = "/Users/seri/Workspace/legmod/migration";
+  const cwd = path.resolve(__dirname, "..");
   const scriptPath = path.join(cwd, "legmod", "cli.ts");
   const result = runCli(scriptPath, cwd, "remediate");
 
@@ -28,7 +28,7 @@ test("migration legmod CLI recognizes run remediate", () => {
 });
 
 test("migration legmod CLI recognizes run bootstrap", () => {
-  const cwd = "/Users/seri/Workspace/legmod/migration";
+  const cwd = path.resolve(__dirname, "..");
   const scriptPath = path.join(cwd, "legmod", "cli.ts");
   const result = runCli(scriptPath, cwd, "bootstrap");
 

@@ -1,4 +1,4 @@
-# Microsoft AI Foundry — Reference for legmod
+# Microsoft AI Foundry — Reference for Migration Guild
 
 Local reference extracted from official Microsoft documentation.
 Sources: learn.microsoft.com/azure/ai-foundry, last fetched 2026-04-01.
@@ -16,8 +16,8 @@ Your Foundry resource exposes two distinct endpoints with different API shapes:
 
 Your values:
 ```
-FOUNDRY_OPENAI_ENDPOINT=https://legmod.openai.azure.com/openai/v1
-FOUNDRY_PROJECT_ENDPOINT=https://legmod.services.ai.azure.com/api/projects/legmod
+FOUNDRY_OPENAI_ENDPOINT=https://Migration Guild.openai.azure.com/openai/v1
+FOUNDRY_PROJECT_ENDPOINT=https://Migration Guild.services.ai.azure.com/api/projects/Migration Guild
 ```
 
 These are **different API surfaces** — do not mix them up. The OpenAI endpoint follows
@@ -32,7 +32,7 @@ Both endpoints accept:
 - **API key**: `api-key: <key>` request header
 - **Entra ID token**: `Authorization: Bearer <token>` (recommended for production)
 
-For API key auth used in legmod, pass `api-key` header on every request.
+For API key auth used in Migration Guild, pass `api-key` header on every request.
 
 ---
 
@@ -196,7 +196,7 @@ POST {openaiEndpoint}/batches/{batch_id}/cancel
 
 ## 4. Foundry Agents — REST API
 
-Base URL: `{projectEndpoint}` = `https://legmod.services.ai.azure.com/api/projects/legmod`
+Base URL: `{projectEndpoint}` = `https://Migration Guild.services.ai.azure.com/api/projects/Migration Guild`
 
 All requests append `?api-version=2025-01-01-preview`.
 
@@ -290,7 +290,7 @@ Most recent message is the agent's last response. Filter by `role: "assistant"`.
 
 ### Built-in tools available
 
-| Tool | Use in legmod |
+| Tool | Use in Migration Guild |
 |---|---|
 | `code_interpreter` | Run `javac`/`mvn test` to verify compiled code |
 | `file_search` | Search legacy codebase files attached to thread |
@@ -319,7 +319,7 @@ evaluations programmatically in the current preview — use the portal or Python
    - **Agent**: task completion, tool call accuracy, intent resolution
 5. Submit — results appear in the Evaluation tab
 
-**For legmod's code-level evaluations**, we implement our own evaluators directly
+**For Migration Guild's code-level evaluations**, we implement our own evaluators directly
 (`no-legacy-imports`, `signature-preservation`, `test-coverage`, `correctness`)
 using the Foundry chat API for the LLM-based `correctness` evaluator.
 
@@ -339,7 +339,7 @@ from azure.monitor.opentelemetry import configure_azure_monitor
 configure_azure_monitor(connection_string="InstrumentationKey=...")
 ```
 
-### For legmod (TypeScript)
+### For Migration Guild (TypeScript)
 Tracing is done locally via the `traces` SQLite table. Every call through
 `FoundryClient` fires a `TraceHook`, writing span_name, model, tokens, latency,
 and cost_usd to the local DB. Remote export to Azure Monitor is future work.
@@ -383,7 +383,7 @@ These are list prices. Your enterprise agreement may differ.
 | Evaluations in code | Python `azure-ai-evaluation` package |
 | Tracing to Azure Monitor | `azure-monitor-opentelemetry` + `AIProjectClient.telemetry` |
 
-legmod uses direct REST (no SDK) to keep the Node.js dependency footprint minimal.
+Migration Guild uses direct REST (no SDK) to keep the Node.js dependency footprint minimal.
 
 ---
 

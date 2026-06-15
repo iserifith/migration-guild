@@ -1,6 +1,6 @@
 # Copilot Instructions
 
-This repository is the **source code for the legmod kit itself**. It is **not** a migration workspace.
+This repository is the **source code for the Migration Guild kit itself**. It is **not** a migration workspace.
 
 ## Working model
 

@@ -1,4 +1,4 @@
-# How legmod works behind the scenes
+# How Migration Guild works behind the scenes
 
 This guide explains what the kit is actually doing when you run the pipeline: which processes start, what gets written to the registry, how phases coordinate, and how failures are surfaced.
 
@@ -6,7 +6,7 @@ This guide explains what the kit is actually doing when you run the pipeline: wh
 
 ## Mental model
 
-legmod is **not** one long in-process migration engine. It is an **orchestrator** around:
+Migration Guild is **not** one long in-process migration engine. It is an **orchestrator** around:
 
 1. A local workspace with `legacy/`, `modern/`, and `migration/`
 2. A SQLite registry (`migration/registry.db`)
@@ -23,7 +23,7 @@ The registry is the source of truth. Agents are disposable workers.
 | ----------------------- | ------------------------------------------------------------------ |
 | `legacy/`               | Read-only source code being migrated                               |
 | `modern/`               | Write target for migrated tests and production code                |
-| `migration/legmod/`     | Orchestrator CLI that runs phases                                  |
+| `__MIGRATION_LEGMOD__/`     | Orchestrator CLI that runs phases                                  |
 | `migration/registry/`   | Registry CLI and state-management logic                            |
 | `migration/registry.db` | SQLite database tracking artifacts, events, dependencies, and runs |
 | `.github/agents/`       | Agent definitions used by Copilot CLI                              |
@@ -33,9 +33,9 @@ The registry is the source of truth. Agents are disposable workers.
 
 ## The two CLIs
 
-### `legmod`
+### `guildctl`
 
-`node migration/legmod/dist/cli.js ...`
+`node __MIGRATION_LEGMOD__/dist/cli.js ...`
 
 This is the operator-facing orchestrator. It:
 
@@ -65,13 +65,13 @@ This is the lower-level state API. Agents use it to:
 
 ## 1. Inventory
 
-Implemented in `migration/legmod/commands/inventory.ts`.
+Implemented in `__MIGRATION_LEGMOD__/commands/inventory.ts`.
 
 Inventory has three parts:
 
-1. **Local file scan**: legmod walks `legacy/` itself and registers every `.java` file in the registry.
+1. **Local file scan**: Migration Guild walks `legacy/` itself and registers every `.java` file in the registry.
 2. **Classification**: each registered artifact is classified with role/framework metadata.
-3. **Pre-plan audit refresh**: legmod scans each source artifact for JVM compatibility and risky dependency usage, then persists the findings in the registry.
+3. **Pre-plan audit refresh**: Migration Guild scans each source artifact for JVM compatibility and risky dependency usage, then persists the findings in the registry.
 
 Classification can happen in two modes:
 
@@ -97,7 +97,7 @@ That makes the planning gate state queryable per artifact before waves are assig
 
 ## 2. Planning
 
-Implemented in `migration/legmod/commands/plan.ts`.
+Implemented in `__MIGRATION_LEGMOD__/commands/plan.ts`.
 
 Planning is split into three sub-steps:
 
@@ -129,7 +129,7 @@ node migration/registry/dist/cli.js approve-dependency-strategy --finding-id <id
 
 ## 3. Bootstrap (optional explicit phase)
 
-Implemented in `migration/legmod/commands/bootstrap.ts`.
+Implemented in `__MIGRATION_LEGMOD__/commands/bootstrap.ts`.
 
 Bootstrap scaffolds the minimal target module in `modern/` using the packaged target-module assets. It is safe to run explicitly, and migration also runs it automatically when required.
 
@@ -142,7 +142,7 @@ Current behavior:
 
 ## 4. Migration
 
-Implemented in `migration/legmod/commands/migrate.ts`.
+Implemented in `__MIGRATION_LEGMOD__/commands/migrate.ts`.
 
 Migration runs three pools:
 
@@ -152,11 +152,11 @@ Migration runs three pools:
 
 Each pool is executed by spawning multiple Copilot CLI subprocesses in parallel. Each subprocess is tracked in the registry `runs` table.
 
-Important detail: legmod itself does **not** migrate files directly. It starts workers, then watches registry state and event output.
+Important detail: Migration Guild itself does **not** migrate files directly. It starts workers, then watches registry state and event output.
 
 ## 5. Review
 
-Implemented in `migration/legmod/commands/review.ts`.
+Implemented in `__MIGRATION_LEGMOD__/commands/review.ts`.
 
 Review repeatedly looks for first-class artifacts with `status = migrated`, then spawns `review-agent` processes for them in batches. It keeps polling until:
 
@@ -253,7 +253,7 @@ That means the dashboard does **not** depend on agents printing well-behaved log
 
 This is what powers:
 
-- `legmod watch`
+- `guildctl watch`
 - recent-event rendering
 - phase progress output during long runs
 
@@ -261,9 +261,9 @@ This is what powers:
 
 ## How Copilot subprocesses are spawned
 
-Implemented in `migration/legmod/runner.ts`.
+Implemented in `__MIGRATION_LEGMOD__/runner.ts`.
 
-For each spawned worker, legmod:
+For each spawned worker, Migration Guild:
 
 1. chooses the effective provider for the phase (`copilot` or `foundry`)
 2. sets provider environment variables if Foundry is selected
@@ -295,7 +295,7 @@ Each run stores:
 
 This is the most important operational behavior.
 
-### What legmod treats as visible failure
+### What Migration Guild treats as visible failure
 
 - a spawned Copilot process exits non-zero
 - a run times out
@@ -311,8 +311,8 @@ On timeout, worker processes are terminated (`SIGTERM`, then `SIGKILL` fallback)
 - exit codes are stored in `runs`
 - per-run log files are preserved when logging is enabled
 - migration/review now reject failed worker batches instead of treating them as mere lack of progress
-- `legmod watch` highlights long-running `in-progress` artifacts
-- `legmod release` can return stuck claims to their pre-claim state
+- `guildctl watch` highlights long-running `in-progress` artifacts
+- `guildctl release` can return stuck claims to their pre-claim state
 
 ### Stale and stuck work
 
@@ -326,8 +326,8 @@ There are two related but different concepts:
 Commands involved:
 
 - `node migration/registry/dist/cli.js list-runs`
-- `node migration/legmod/dist/cli.js watch`
-- `node migration/legmod/dist/cli.js release --id "<artifact-id>"`
+- `node __MIGRATION_LEGMOD__/dist/cli.js watch`
+- `node __MIGRATION_LEGMOD__/dist/cli.js release --id "<artifact-id>"`
 
 Environment knobs:
 
@@ -341,9 +341,9 @@ Environment knobs:
 
 ---
 
-## What `legmod watch` is showing you
+## What `guildctl watch` is showing you
 
-Implemented in `migration/legmod/commands/watch.ts`.
+Implemented in `__MIGRATION_LEGMOD__/commands/watch.ts`.
 
 The watch dashboard redraws on an interval and combines:
 
@@ -368,10 +368,10 @@ If an agent crashes or gets wedged:
 Typical operator commands:
 
 ```bash
-node migration/legmod/dist/cli.js status
-node migration/legmod/dist/cli.js watch
+node __MIGRATION_LEGMOD__/dist/cli.js status
+node __MIGRATION_LEGMOD__/dist/cli.js watch
 node migration/registry/dist/cli.js list-runs --agent review-agent
-node migration/legmod/dist/cli.js release --id "<artifact-id>"
+node __MIGRATION_LEGMOD__/dist/cli.js release --id "<artifact-id>"
 ```
 
 Because the registry is persistent and claims are explicit, recovery is usually a matter of correcting state and rerunning workers, not starting over.
@@ -410,7 +410,7 @@ See also: `docs/foundry-api-reference.md`
 
 ## Design principles
 
-legmod is built around a few core ideas:
+Migration Guild is built around a few core ideas:
 
 1. **Registry first** — database state is more important than agent console output
 2. **Agents are workers, not authorities** — they do work, but the registry decides progress

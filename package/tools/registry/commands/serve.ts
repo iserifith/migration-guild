@@ -201,7 +201,7 @@ export function startServer(db: Database.Database, port = 3322) {
 
   server.listen(port, "127.0.0.1", () => {
     const url = `http://localhost:${port}`;
-    console.log(`\n  legmod registry inspector\n  ${url}\n`);
+    console.log(`\n  Migration Guild registry inspector\n  ${url}\n`);
     // Try to open browser
     const open = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
     require("child_process").exec(`${open} ${url}`);

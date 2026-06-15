@@ -1,10 +1,10 @@
-# legmod development guide
+# Migration Guild development guide
 
 This file is for people changing the **kit itself**, not for users running a migration workspace.
 
 ## What this repository contains
 
-legmod has two parallel concerns:
+Migration Guild has two parallel concerns:
 
 1. **Repository-local maintainer artifacts** used while developing the kit
 2. **Packaged kit artifacts** copied into user workspaces by `setup.ts`
@@ -22,7 +22,7 @@ The split matters because not everything in this repository ships.
 | `package/skills/` | Skill definitions and shipped skill assets installed into migration workspaces | Yes |
 | `package/prompts/` | Prompt shortcuts installed into migration workspaces | Yes |
 | `package/instructions/` | Path-scoped instructions installed into migration workspaces | Yes |
-| `package/tools/` | Registry CLI, legmod CLI, Foundry integrations, packaging-time runtime files | Yes |
+| `package/tools/` | Registry CLI, guildctl CLI, Foundry integrations, packaging-time runtime files | Yes |
 | `setup.ts` | Installer entrypoint that copies `package/` into a target workspace | Yes, as compiled `dist/setup.js` |
 | `scripts/build-dist.mjs` | Builds the distributable tarball | Dev tool |
 
@@ -56,7 +56,7 @@ Important consequence:
 
 ### Runtime and packaging paths
 
-- `migration/` — live development copy of the registry and legmod CLIs used in this repo
+- `migration/` — live development copy of the registry and guildctl CLIs used in this repo
 - `package/tools/` — packaged copy of the same toolset that gets shipped
 - `dist/` — compiled installer and assembled tarball output
 - `package/mock/` — packaged sample fixture content for setting up a separate test workspace
@@ -97,7 +97,7 @@ Do not use this repository root as a migration workspace.
 Instead:
 
 1. Create a fresh workspace outside this repository.
-2. Install the kit there with `npx legmod-setup` or by unpacking the built tarball.
+2. Install the kit there with `npx guildctl-setup` or by unpacking the built tarball.
 3. Copy a fixture into that external workspace when you need a reproducible migration scenario.
 
 Use `package/mock/` for maintained sample content instead of recreating `legacy/` or `modern/` at the repo root.
@@ -129,7 +129,7 @@ npm run build:dist
 What they do:
 
 - `npm run build` compiles `setup.ts` to `dist/setup.js`
-- `npm run build:dist` runs the cross-platform dist builder, builds `package/tools/`, rebuilds `dist/setup.js`, then assembles `dist/legmod-kit.tar.gz`
+- `npm run build:dist` runs the cross-platform dist builder, builds `package/tools/`, rebuilds `dist/setup.js`, then assembles `dist/__LEGMOD_KIT_TGZ__`
 
 ## Mirroring rules
 
@@ -140,7 +140,7 @@ The only intentional live mirror is:
 When runtime claim/run behavior changes, keep these pairs aligned in the same commit:
 
 - `migration/registry/**` <-> `package/tools/registry/**`
-- `migration/legmod/**` <-> `package/tools/legmod/**`
+- `__MIGRATION_LEGMOD__/**` <-> `__PACKAGE_TOOLS_LEGMOD__/**`
 - `migration/registry_schema.sql` <-> `package/tools/registry_schema.sql`
 - `migration/test/**` <-> `package/tools/test/**` for behavior-level regression coverage
 
