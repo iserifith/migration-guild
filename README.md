@@ -1,4 +1,4 @@
-# legmod — Java Migration Kit
+# Migration Guild — Java Migration Kit
 
 **Migrate any legacy Java codebase to a modern framework using GitHub Copilot CLI.**
 
@@ -14,13 +14,13 @@ The target framework is chosen based on what the legacy code actually is — not
 
 ## How it works
 
-legmod installs a set of Copilot agents, skills, and prompts into your project. Each agent handles one phase of the migration. A SQLite registry tracks every file's status so multiple Copilot sessions can run in parallel without stepping on each other.
+Migration Guild installs a set of Copilot agents, skills, and prompts into your project. Each agent handles one phase of the migration. A SQLite registry tracks every file's status so multiple Copilot sessions can run in parallel without stepping on each other.
 
 ```
 Inventory → Planning → Bootstrap → Migration (parallel) → Review
 ```
 
-**Want the internals?** See [docs/how-legmod-works.md](docs/how-legmod-works.md) for the registry model, phase orchestration, agent spawning, failure handling, and recovery flow.
+**Want the internals?** See [__HOW_LEGMOD_DOC__](__HOW_LEGMOD_DOC__) for the registry model, phase orchestration, agent spawning, failure handling, and recovery flow.
 
 ---
 
@@ -38,7 +38,7 @@ Run the installer inside a new empty folder (your migration workspace):
 
 ```bash
 mkdir my-migration && cd my-migration
-npx legmod-setup
+npx guildctl-setup
 ```
 
 The setup wizard asks two questions:
@@ -46,7 +46,7 @@ The setup wizard asks two questions:
 1. **Legacy repo URL** — paste the GitHub URL; it will be cloned into `legacy/` automatically
 2. **Project type** — `web`, `service`, or `library` (used to select the right Gradle build template)
 
-Then build the registry and legmod CLIs:
+Then build the registry and guildctl CLIs:
 
 ```bash
 cd migration && npm install && cd ..
@@ -68,30 +68,30 @@ migration/       ← registry CLI and database
 
 ---
 
-## Using the legmod CLI (recommended)
+## Using the guildctl CLI (recommended)
 
-The `legmod` CLI is a one-command orchestrator that drives the full pipeline for you. It spawns Copilot under the hood with the right agent, model, and flags — no manual wiring needed.
+The `guildctl` CLI is a one-command orchestrator that drives the full pipeline for you. It spawns Copilot under the hood with the right agent, model, and flags — no manual wiring needed.
 
 ```bash
 # Run the full pipeline (inventory → plan → bootstrap? → migrate → review)
-node migration/legmod/dist/cli.js run
+node __MIGRATION_LEGMOD__/dist/cli.js run
 
 # Run with 3 parallel migration + review sessions
-node migration/legmod/dist/cli.js run --parallel 3
+node __MIGRATION_LEGMOD__/dist/cli.js run --parallel 3
 
 # Run individual phases
-node migration/legmod/dist/cli.js inventory
-node migration/legmod/dist/cli.js plan
-node migration/legmod/dist/cli.js bootstrap
-node migration/legmod/dist/cli.js migrate --parallel 3
-node migration/legmod/dist/cli.js review --parallel 2
-node migration/legmod/dist/cli.js remediate --id <artifact-id>
+node __MIGRATION_LEGMOD__/dist/cli.js inventory
+node __MIGRATION_LEGMOD__/dist/cli.js plan
+node __MIGRATION_LEGMOD__/dist/cli.js bootstrap
+node __MIGRATION_LEGMOD__/dist/cli.js migrate --parallel 3
+node __MIGRATION_LEGMOD__/dist/cli.js review --parallel 2
+node __MIGRATION_LEGMOD__/dist/cli.js remediate --id <artifact-id>
 
 # Check current status
-node migration/legmod/dist/cli.js status
+node __MIGRATION_LEGMOD__/dist/cli.js status
 ```
 
-**What legmod handles automatically:**
+**What Migration Guild handles automatically:**
 
 - Selects the right agent and model per phase
 - Passes `--yolo` so agents can run registry commands without interruption
@@ -102,15 +102,15 @@ node migration/legmod/dist/cli.js status
 - Polls `registry.db` for live progress via SQLite triggers (no agent cooperation needed)
 - Advances phases automatically when the current phase completes
 
-> **Tip:** Set `COPILOT_CMD=gh` (or whatever your Copilot CLI binary is named) if `copilot` doesn't resolve on `PATH`. For example: `COPILOT_CMD=gh node migration/legmod/dist/cli.js run`
+> **Tip:** Set `COPILOT_CMD=gh` (or whatever your Copilot CLI binary is named) if `copilot` doesn't resolve on `PATH`. For example: `COPILOT_CMD=gh node __MIGRATION_LEGMOD__/dist/cli.js run`
 >
-> Set `LEGMOD_STALL_MINS=<n>` to change the stall warning threshold in `legmod watch` (default: 10 minutes).
+> Set `LEGMOD_STALL_MINS=<n>` to change the stall warning threshold in `guildctl watch` (default: 10 minutes).
 
 ---
 
 ## Manual Copilot invocation (advanced)
 
-The steps below describe the same workflow using raw `copilot` CLI commands. Use these when you need fine-grained control, want to target a specific file, or the legmod CLI doesn't cover your use case.
+The steps below describe the same workflow using raw `copilot` CLI commands. Use these when you need fine-grained control, want to target a specific file, or the guildctl CLI doesn't cover your use case.
 
 Open Copilot in your workspace and run the inventory phase. This scans every Java file in `legacy/`, classifies it, and registers it in the registry.
 
@@ -157,7 +157,7 @@ Or use the built-in prompt:
 
 **What happens:**
 
-1. legmod refreshes the pre-plan audit and writes JVM/dependency findings to the registry
+1. Migration Guild refreshes the pre-plan audit and writes JVM/dependency findings to the registry
 2. critical JVM findings block planning until the risky API usage is remediated
 3. stack advisor proposes legacy-to-target framework mappings
 4. risky dependencies must have an approved upgrade or replacement strategy before wave assignment starts
@@ -191,12 +191,12 @@ node migration/registry/dist/cli.js wave-plan
 Before agents start writing migrated files, scaffold the target module:
 
 ```bash
-node migration/legmod/dist/cli.js bootstrap
+node __MIGRATION_LEGMOD__/dist/cli.js bootstrap
 ```
 
 **What happens:**
 
-1. legmod classifies the legacy project as `web`, `service`, or `library`
+1. Migration Guild classifies the legacy project as `web`, `service`, or `library`
 2. Scaffolds `modern/` with the matching Gradle template
 3. Creates source roots, `settings.gradle`, and for Spring targets an `Application.java` plus `application.yml`
 4. Leaves any existing target files in place
@@ -348,10 +348,10 @@ node migration/registry/dist/cli.js get-events --id "legacy-source:jolt-core:Cha
 
 ## Update the kit
 
-When a new version of legmod is released, update your workspace without touching the registry or legacy source:
+When a new version of Migration Guild is released, update your workspace without touching the registry or legacy source:
 
 ```bash
-npx legmod-setup --update
+npx guildctl-setup --update
 cd migration && npm install && cd ..
 ```
 

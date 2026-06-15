@@ -1,12 +1,12 @@
 {
-  "name": "@legmod/registry",
+  "name": "@migration-guild/registry",
   "version": "0.1.0",
-  "description": "Migration artifact registry — CLI and library",
+  "description": "Migration Guild artifact registry \u2014 CLI and library",
   "main": "registry/dist/index.js",
   "types": "registry/dist/index.d.ts",
   "bin": {
     "registry": "registry/dist/cli.js",
-    "legmod": "legmod/dist/cli.js"
+    "guildctl": "legmod/dist/cli.js"
   },
   "scripts": {
     "test": "node --import tsx --test test/*.test.ts"

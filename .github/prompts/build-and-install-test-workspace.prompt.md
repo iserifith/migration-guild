@@ -1,8 +1,8 @@
 ---
-description: "Build the legmod distributable from this clone, then install it into an external test workspace."
+description: "Build the Migration Guild distributable from this clone, then install it into an external test workspace."
 ---
 
-Prepare a fresh external test workspace using this legmod repository clone.
+Prepare a fresh external test workspace using this Migration Guild repository clone.
 
 Inputs:
 - `workspace`: absolute path to the test workspace
@@ -12,7 +12,7 @@ If either input is missing, stop and ask for it before making changes.
 
 Workflow:
 
-1. Confirm the current directory is the legmod kit source repository.
+1. Confirm the current directory is the Migration Guild source repository.
 2. Validate `${workspace}`:
    - it must be an absolute path
    - it must not be this repository root
@@ -31,7 +31,7 @@ Workflow:
    ```bash
    npm run build:dist
    ```
-   Confirm `dist/legmod-kit.tar.gz` exists before continuing.
+   Confirm `dist/migration-guild-kit.tar.gz` exists before continuing.
 6. Install the built kit into `${workspace}` from the tarball:
    - unpack the tarball outside this repository
    - run the packaged `setup.js` from the workspace directory

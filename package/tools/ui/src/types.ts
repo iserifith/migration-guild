@@ -1,5 +1,5 @@
 /**
- * UI-consumer types for the legmod registry API.
+ * UI-consumer types for the Migration Guild registry API.
  *
  * These mirror the DTOs currently served by migration/registry/commands/serve.ts
  * and shaped by migration/registry/commands/queries.ts.

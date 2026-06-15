@@ -11,8 +11,8 @@ const __dirname = path.dirname(__filename);
 
 const repoRoot = path.resolve(__dirname, "..");
 const distDir = path.join(repoRoot, "dist");
-const buildDir = path.join(distDir, "legmod-kit-build");
-const tarball = path.join(distDir, "legmod-kit.tar.gz");
+const buildDir = path.join(distDir, "migration-guild-kit-build");
+const tarball = path.join(distDir, "migration-guild-kit.tar.gz");
 
 function resolveCommand(command) {
   if (process.platform === "win32" && (command === "npm" || command === "npx")) {
@@ -139,7 +139,7 @@ async function copyFilteredDirectory(sourceDir, destinationDir, rootDir = source
 }
 
 async function assembleTarball() {
-  console.log("▶ Step 3/3 — Assemble dist/legmod-kit.tar.gz");
+  console.log("▶ Step 3/3 — Assemble dist/migration-guild-kit.tar.gz");
 
   await fs.rm(buildDir, { recursive: true, force: true });
   await fs.mkdir(buildDir, { recursive: true });
@@ -182,7 +182,7 @@ async function main() {
 
   console.log("");
   console.log("╔══════════════════════════════════════╗");
-  console.log("║       legmod-kit dist builder        ║");
+  console.log("║       migration-guild-kit dist builder        ║");
   console.log("╚══════════════════════════════════════╝");
   console.log("");
 
@@ -198,7 +198,7 @@ async function main() {
 
   console.log("");
   console.log("  Done! Distribute with:");
-  console.log("    curl -fsSL <url>/legmod-kit.tar.gz | tar -xz && node legmod-kit-build/setup.js");
+  console.log("    curl -fsSL <url>/migration-guild-kit.tar.gz | tar -xz && node migration-guild-kit-build/setup.js");
   console.log("");
 }
 

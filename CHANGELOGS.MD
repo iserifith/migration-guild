@@ -1,4 +1,4 @@
-# legmod repository changelog
+# Migration Guild repository changelog
 
 This file tracks **development changes to the kit repository itself**.
 

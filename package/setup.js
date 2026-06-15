@@ -77,7 +77,7 @@ function copyDir(src, dest, skip = []) {
 }
 async function runUpdate() {
   console.log("\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557");
-  console.log("\u2551   legmod \u2014 Update Kit Files          \u2551");
+  console.log("\u2551   Migration Guild \u2014 Update Kit Files          \u2551");
   console.log("\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D\n");
   console.log("Updating agents, skills, prompts, instructions, and migration CLI.");
   console.log("legacy/, modern/, and migration/registry.db are untouched.\n");
@@ -110,7 +110,7 @@ Done. ${total} file(s) updated.`);
 }
 async function runInstall() {
   console.log("\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557");
-  console.log("\u2551   legmod \u2014 Java Migration Kit Setup  \u2551");
+  console.log("\u2551   Migration Guild \u2014 Setup  \u2551");
   console.log("\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D\n");
   let framework;
   let repoUrl;
@@ -177,7 +177,7 @@ async function runInstall() {
     console.log(`    + ${path.relative(CWD, instructionsDest)}`);
     total++;
   }
-  for (const f of [".env.example", "legmod.config.json"]) {
+  for (const f of [".env.example", "guildctl.config.json"]) {
     const src = path.join(PKG_DIR, f);
     const dest = path.join(CWD, f);
     if (fs.existsSync(src) && !fs.existsSync(dest)) {
@@ -226,7 +226,7 @@ Done. ${total} file(s) installed.`);
   console.log(`  ${n}. Install runtime dependencies:`);
   console.log(`       cd migration && npm install && cd ..`);
   console.log(`  ${n + 1}. Run the full migration pipeline:`);
-  console.log(`       node migration/legmod/dist/cli.js run --parallel 3`);
+  console.log(`       npx guildctl run --parallel 3`);
   console.log(`  ${n + 2}. Watch live progress (second terminal):`);
   console.log(`       node migration/registry/dist/cli.js serve
 `);

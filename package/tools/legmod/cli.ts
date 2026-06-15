@@ -26,8 +26,8 @@ import { registerEvalCommands } from "../foundry/eval/commands";
 const program = new Command();
 
 program
-  .name("legmod")
-  .description("legmod — Java migration orchestrator")
+  .name("guildctl")
+  .description("guildctl — Migration Guild orchestrator")
   .version("0.1.0");
 
 program.option("--db <path>", "Path to registry.db (overrides REGISTRY_DB env)");
@@ -192,7 +192,7 @@ program
 
 program
   .command("search-similar")
-  .description("Find artifacts semantically similar to a query using stored embeddings (requires legmod batch-submit --type embed)")
+  .description("Find artifacts semantically similar to a query using stored embeddings (requires guildctl batch-submit --type embed)")
   .requiredOption("--query <text>", "Natural language or code query")
   .option("--top-k <n>", "Number of results to return (default: 5)", parseInt)
   .option("--min-score <f>", "Minimum cosine similarity threshold 0–1 (default: 0)", parseFloat)

@@ -42,7 +42,7 @@ export async function runRelease(db: Database.Database, opts: ReleaseOpts): Prom
   }
 
   if (opts.id) {
-    releaseTask(db, opts.id, "operator", "released via legmod release");
+    releaseTask(db, opts.id, "operator", "released via guildctl release");
     console.log(`  ${GREEN}✓${R} Released ${opts.id}`);
     return;
   }
@@ -57,7 +57,7 @@ export async function runRelease(db: Database.Database, opts: ReleaseOpts): Prom
 
   console.log(`\n  Releasing ${stuck.length} artifact(s):\n`);
   for (const s of stuck) {
-    releaseTask(db, s.id, "operator", "released via legmod release --all-stuck");
+    releaseTask(db, s.id, "operator", "released via guildctl release --all-stuck");
     console.log(`  ${GREEN}✓${R} ${s.claimed_by.padEnd(18)} ${YELLOW}${s.ageMinutes}m${R}  ${DIM}${s.path}${R}`);
   }
   console.log();

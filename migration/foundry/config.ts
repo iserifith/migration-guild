@@ -128,7 +128,7 @@ function validatePhaseOverrideMap<T>(
   if (overrides == null) return undefined;
   if (typeof overrides !== "object" || Array.isArray(overrides)) {
     throw new Error(
-      `[legmod] foundry.${section} must be an object keyed by phase name (${VALID_PHASE_KEYS.join(", ")}).`,
+      `[guildctl] foundry.${section} must be an object keyed by phase name (${VALID_PHASE_KEYS.join(", ")}).`,
     );
   }
 
@@ -136,7 +136,7 @@ function validatePhaseOverrideMap<T>(
     .filter((key) => !VALID_PHASE_KEY_SET.has(key));
   if (invalidKeys.length > 0) {
     throw new Error(
-      `[legmod] foundry.${section} contains unsupported phase key(s): ${invalidKeys.map((key) => `"${key}"`).join(", ")}. ` +
+      `[guildctl] foundry.${section} contains unsupported phase key(s): ${invalidKeys.map((key) => `"${key}"`).join(", ")}. ` +
         `Use only: ${VALID_PHASE_KEYS.join(", ")}.`,
     );
   }
@@ -205,7 +205,7 @@ const DEFAULT_CONFIG: LegmodConfig = {
 
 export function getConfigPath(workspaceRoot?: string): string {
   const root = workspaceRoot ?? process.cwd();
-  return path.join(root, "legmod.config.json");
+  return path.join(root, "guildctl.config.json");
 }
 
 // ─── Env interpolation ────────────────────────────────────────────────────────
@@ -216,7 +216,7 @@ function interpolateEnv(value: string, warnOnMissing = true): string {
     const v = process.env[name];
     if (v === undefined && warnOnMissing) {
       process.stderr.write(
-        `[legmod] Warning: environment variable ${name} is not set\n`
+        `[guildctl] Warning: environment variable ${name} is not set\n`
       );
     }
     return v ?? "";
@@ -238,7 +238,7 @@ function interpolateFoundry(cfg: FoundryConfig, warnOnMissingEnv = true): Foundr
 // ─── Reader ───────────────────────────────────────────────────────────────────
 
 /**
- * Load and parse legmod.config.json from the given workspace root (default: cwd).
+ * Load and parse guildctl.config.json from the given workspace root (default: cwd).
  * Returns DEFAULT_CONFIG if no file is found — all Foundry features will be
  * disabled and the system falls back to Copilot CLI.
  */
@@ -254,7 +254,7 @@ export function loadConfig(workspaceRoot?: string): LegmodConfig {
     raw = JSON.parse(fs.readFileSync(configPath, "utf-8"));
   } catch (err) {
     throw new Error(
-      `[legmod] Failed to parse legmod.config.json: ${(err as Error).message}`
+      `[guildctl] Failed to parse guildctl.config.json: ${(err as Error).message}`
     );
   }
 
@@ -318,14 +318,14 @@ export function getTracingConfig(cfg: LegmodConfig): TracingConfig {
 export function requireFoundryConfig(cfg: LegmodConfig): FoundryConfig {
   if (!cfg.foundry) {
     throw new Error(
-      "[legmod] Foundry is not configured. Add a \"foundry\" section to legmod.config.json " +
+      "[guildctl] Foundry is not configured. Add a \"foundry\" section to guildctl.config.json " +
         "with endpoint, apiKey, chatModel, and embeddingModel."
     );
   }
   if (!cfg.foundry.openaiEndpoint || !cfg.foundry.projectEndpoint || !cfg.foundry.apiKey) {
     throw new Error(
-      "[legmod] Foundry openaiEndpoint, projectEndpoint, or apiKey is missing. " +
-        "Set FOUNDRY_OPENAI_ENDPOINT, FOUNDRY_PROJECT_ENDPOINT, and FOUNDRY_API_KEY, or update legmod.config.json."
+      "[guildctl] Foundry openaiEndpoint, projectEndpoint, or apiKey is missing. " +
+        "Set FOUNDRY_OPENAI_ENDPOINT, FOUNDRY_PROJECT_ENDPOINT, and FOUNDRY_API_KEY, or update guildctl.config.json."
     );
   }
   return cfg.foundry;
@@ -338,8 +338,8 @@ export function requirePhaseFoundryConfig(
 ): FoundryConfig {
   if (!cfg.foundry) {
     throw new Error(
-      `[legmod] Phase "${phase}" is configured to use ${opts.batch ? "Foundry batch" : "Foundry"}, ` +
-        "but no Foundry config is present. Add a \"foundry\" section to legmod.config.json " +
+      `[guildctl] Phase "${phase}" is configured to use ${opts.batch ? "Foundry batch" : "Foundry"}, ` +
+        "but no Foundry config is present. Add a \"foundry\" section to guildctl.config.json " +
         "with endpoint, apiKey, chatModel, and embeddingModel."
     );
   }
@@ -352,9 +352,9 @@ export function requirePhaseFoundryConfig(
   if (missing.length > 0) {
     const missingList = missing.join(", ");
     throw new Error(
-      `[legmod] Phase "${phase}" is configured to use ${opts.batch ? "Foundry batch" : "Foundry"}, ` +
+      `[guildctl] Phase "${phase}" is configured to use ${opts.batch ? "Foundry batch" : "Foundry"}, ` +
         `but ${missingList} ${missing.length === 1 ? "is" : "are"} not set. ` +
-        `Set ${missingList} or update legmod.config.json before rerunning.`
+        `Set ${missingList} or update guildctl.config.json before rerunning.`
     );
   }
 

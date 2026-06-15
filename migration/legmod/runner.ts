@@ -215,7 +215,7 @@ function getRunClaimIntroLine(db: Database.Database, runId: string): string | nu
     const artifactPath = row.artifact_path ?? "unknown-path";
     const artifactKind = row.artifact_kind ?? "unknown-kind";
     const wave = row.artifact_wave == null ? "n/a" : String(row.artifact_wave);
-    return `[legmod] Working on ${artifactPath} (${artifactKind}, wave=${wave}, claimed from ${row.from_status}, artifact=${artifact})`;
+    return `[guildctl] Working on ${artifactPath} (${artifactKind}, wave=${wave}, claimed from ${row.from_status}, artifact=${artifact})`;
   } catch {
     return null;
   }
@@ -327,8 +327,8 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
     }
     if (claimResult.status !== 0) {
       const errMsg = (claimResult.stderr ?? "").trim() || (claimResult.stdout ?? "").trim();
-      process.stderr.write(`[legmod] pre-claim failed (exit ${claimResult.status}): ${errMsg}\n`);
-      writeLogLine(logStream, `[legmod] pre-claim failed (exit ${claimResult.status}): ${errMsg}`);
+      process.stderr.write(`[guildctl] pre-claim failed (exit ${claimResult.status}): ${errMsg}\n`);
+      writeLogLine(logStream, `[guildctl] pre-claim failed (exit ${claimResult.status}): ${errMsg}`);
       finishRun(db, { runId: run.run_id, exitCode: 1, reason: `pre-claim failed: ${errMsg}` });
       logStream?.end();
       return Promise.resolve({ runId: run.run_id, agent, model, prompt, logFile, exitCode: 1 });
@@ -339,7 +339,7 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
       preClaimId = claimed.claim_id;
       preClaimToken = claimed.claim_token;
     } catch {
-      process.stderr.write(`[legmod] pre-claim: failed to parse claim JSON\n`);
+      process.stderr.write(`[guildctl] pre-claim: failed to parse claim JSON\n`);
       finishRun(db, { runId: run.run_id, exitCode: 1, reason: "pre-claim: failed to parse claim JSON" });
       logStream?.end();
       return Promise.resolve({ runId: run.run_id, agent, model, prompt, logFile, exitCode: 1 });
@@ -420,7 +420,7 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
           }
           if (released.length > 0) {
             finalExitCode = 1;
-            const msg = `[legmod] ${agent} exited with code 0 but left ${released.length} claimed artifact(s); marking run failed and releasing claims`;
+            const msg = `[guildctl] ${agent} exited with code 0 but left ${released.length} claimed artifact(s); marking run failed and releasing claims`;
             process.stderr.write(msg + "\n");
             writeLogLine(logStream, msg);
           }
@@ -442,7 +442,7 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        const msg = `[legmod] Failed to auto-release claims for ${claimOwner}: ${message}`;
+        const msg = `[guildctl] Failed to auto-release claims for ${claimOwner}: ${message}`;
         process.stderr.write(msg + "\n");
         writeLogLine(logStream, msg);
       }
@@ -456,6 +456,15 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
         exitCode: finalExitCode,
         reason: terminationReason,
       });
+
+      const result = {
+        runId: run.run_id,
+        agent,
+        model,
+        prompt,
+        logFile,
+        exitCode: finalExitCode,
+      };
 
       if (logStream) {
         const elapsedS = ((Date.now() - startMs) / 1000).toFixed(1);
@@ -483,24 +492,18 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
             LOG_SEP,
             "",
           ].join("\n"),
+          () => resolve(result),
         );
+      } else {
+        resolve(result);
       }
-
-      resolve({
-        runId: run.run_id,
-        agent,
-        model,
-        prompt,
-        logFile,
-        exitCode: finalExitCode,
-      });
     };
 
     if ((opts.timeoutMs ?? 0) > 0) {
       timeoutHandle = setTimeout(() => {
         timedOut = true;
         const timeoutMins = Math.round((opts.timeoutMs ?? 0) / 60000);
-        const msg = `[legmod] ${agent} timed out after ${timeoutMins}m; terminating pid ${proc.pid ?? "unknown"}`;
+        const msg = `[guildctl] ${agent} timed out after ${timeoutMins}m; terminating pid ${proc.pid ?? "unknown"}`;
         process.stderr.write(msg + "\n");
         writeLogLine(logStream, msg);
         try {
@@ -526,7 +529,7 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
       finalize(timedOut ? 124 : (code ?? 1));
     });
     proc.on("error", (err) => {
-      const msg = `[legmod] Failed to start copilot: ${err.message}`;
+      const msg = `[guildctl] Failed to start copilot: ${err.message}`;
       process.stderr.write(msg + "\n");
       writeLogLine(logStream, msg);
       finalize(1);
@@ -559,7 +562,7 @@ export async function spawnAgent(
     process.env["COPILOT_PROVIDER_TYPE"] = f.providerType;
     process.env["COPILOT_PROVIDER_API_KEY"] = f.apiKey;
     process.stderr.write(
-      `[legmod] Phase "${phase ?? "unknown"}" → foundry (${f.providerType} @ ${f.openaiEndpoint}, model: ${opts.model})\n`,
+      `[guildctl] Phase "${phase ?? "unknown"}" → foundry (${f.providerType} @ ${f.openaiEndpoint}, model: ${opts.model})\n`,
     );
   } else {
     // Ensure Foundry env vars are cleared so Copilot uses its own routing
@@ -567,7 +570,7 @@ export async function spawnAgent(
     delete process.env["COPILOT_PROVIDER_TYPE"];
     delete process.env["COPILOT_PROVIDER_API_KEY"];
     process.stderr.write(
-      `[legmod] Phase "${phase ?? "unknown"}" → copilot (model: ${opts.model})\n`,
+      `[guildctl] Phase "${phase ?? "unknown"}" → copilot (model: ${opts.model})\n`,
     );
   }
 

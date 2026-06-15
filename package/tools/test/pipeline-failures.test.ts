@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
 import type { AgentRunResult } from "../legmod/runner";
@@ -47,7 +48,7 @@ test("runMigrate stops after analyzer failures without spawning later pools", as
   const originalApiKey = process.env["FOUNDRY_API_KEY"];
 
   try {
-    process.chdir("/Users/seri/Workspace/legmod");
+    process.chdir(path.resolve(__dirname, "..", ".."));
     process.env["FOUNDRY_OPENAI_ENDPOINT"] = "https://example.openai.azure.com/openai/v1";
     process.env["FOUNDRY_PROJECT_ENDPOINT"] = "https://example.services.ai.azure.com/api/projects/test";
     process.env["FOUNDRY_API_KEY"] = "test-key";

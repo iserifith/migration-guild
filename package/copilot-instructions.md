@@ -1,6 +1,6 @@
 # Copilot Instructions
 
-This project is undergoing a Java migration using the **legmod** kit.
+This project is undergoing a legacy software modernization using the **Migration Guild** kit.
 
 ## Project Configuration
 

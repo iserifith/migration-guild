@@ -1,4 +1,4 @@
-# legmod — Getting Started
+# Migration Guild — Getting Started
 
 Migrate a legacy Java codebase to Spring Boot 3 (or plain Java 17+) using AI agents.
 Multiple agents run in parallel, a SQLite registry tracks every file, and your original source is never touched.
@@ -18,17 +18,17 @@ Multiple agents run in parallel, a SQLite registry tracks every file, and your o
 
 ```bash
 # 1. Extract the kit
-tar -xzf legmod-kit.tar.gz
+tar -xzf __LEGMOD_KIT_TGZ__
 
 # 2. Create your workspace
 mkdir my-migration && cd my-migration
 
 # 3. Run the setup wizard
 #    Interactive — prompts for framework and legacy repo URL
-node ../legmod-kit-build/setup.js
+node ../__LEGMOD_KIT_BUILD__/setup.js
 
 #    Non-interactive alternative:
-node ../legmod-kit-build/setup.js --framework "Spring Boot 3.x" --legacy-url https://github.com/your-org/your-repo
+node ../__LEGMOD_KIT_BUILD__/setup.js --framework "Spring Boot 3.x" --legacy-url https://github.com/your-org/your-repo
 
 # 4. Install dependencies
 cd migration && npm install && cd ..
@@ -44,8 +44,8 @@ cp .env.example .env
 ## Smoke test (verify setup before running the full pipeline)
 
 ```bash
-# Should print the legmod help text with no errors
-node migration/legmod/dist/cli.js --help
+# Should print the guildctl help text with no errors
+node __MIGRATION_LEGMOD__/dist/cli.js --help
 
 # Should return [] (empty — nothing migrated yet)
 node migration/registry/dist/cli.js list-artifacts
@@ -57,14 +57,14 @@ node migration/registry/dist/cli.js list-artifacts
 
 ```bash
 # Run phase by phase (recommended for first run):
-node migration/legmod/dist/cli.js run inventory
-node migration/legmod/dist/cli.js run plan
-node migration/legmod/dist/cli.js run bootstrap
-node migration/legmod/dist/cli.js run migrate --parallel 3
-node migration/legmod/dist/cli.js run review
+node __MIGRATION_LEGMOD__/dist/cli.js run inventory
+node __MIGRATION_LEGMOD__/dist/cli.js run plan
+node __MIGRATION_LEGMOD__/dist/cli.js run bootstrap
+node __MIGRATION_LEGMOD__/dist/cli.js run migrate --parallel 3
+node __MIGRATION_LEGMOD__/dist/cli.js run review
 
 # Or run all phases in one command:
-node migration/legmod/dist/cli.js run --parallel 3
+node __MIGRATION_LEGMOD__/dist/cli.js run --parallel 3
 ```
 
 > **Monitor progress** — open a second terminal and run:
@@ -97,7 +97,7 @@ FOUNDRY_EMBED_ENDPOINT=https://<resource>.cognitiveservices.azure.com/openai/v1
 FOUNDRY_API_KEY=<your-key>
 ```
 
-Then in `legmod.config.json`, set `"llmProvider": "foundry"` and configure per-phase models under `foundry.phaseModels`.
+Then in `guildctl.config.json`, set `"llmProvider": "foundry"` and configure per-phase models under `foundry.phaseModels`.
 For the migration pipeline, the phase keys are `analysis`, `test-writing`, and `code-writing`.
 
 The CLI loads `.env` automatically — no `export` or `source` needed.
@@ -116,4 +116,4 @@ The CLI loads `.env` automatically — no `export` or `source` needed.
 
 Full CLI reference: see `README.md`.
 
-For the internal architecture and control flow, see `docs/how-legmod-works.md`.
+For the internal architecture and control flow, see `__HOW_LEGMOD_DOC__`.

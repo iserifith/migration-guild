@@ -231,7 +231,7 @@ describe("App shell", () => {
   it("renders the application title", () => {
     mockRegistryData();
     render(<App />);
-    expect(screen.getByRole("heading", { name: /legmod/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Migration Guild/i })).toBeInTheDocument();
   });
 
   it("renders all active monitoring tabs", () => {

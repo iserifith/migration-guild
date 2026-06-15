@@ -90,7 +90,7 @@ function renderActiveSessions(db: Database.Database): void {
     const stalled = age >= STALL_MINUTES;
     const ageColor = stalled ? RED : DIM;
     const file = path.basename(row.path);
-    const stallFlag = stalled ? `  ${RED}⚠ stalled — run: legmod release --id "${row.id}"${R}` : "";
+    const stallFlag = stalled ? `  ${RED}⚠ stalled — run: guildctl release --id "${row.id}"${R}` : "";
     console.log(`  ${YELLOW}${row.claimed_by.padEnd(18)}${R}  ${file}  ${ageColor}${ageStr}${R}${stallFlag}`);
   }
 }
@@ -101,7 +101,7 @@ export function runWatch(db: Database.Database, intervalMs = 2000): void {
 
     const now = new Date().toLocaleTimeString();
     const stallNote = `${DIM}stall threshold: ${STALL_MINUTES}m${R}`;
-    console.log(`${BOLD}legmod watch${R}  ${DIM}refreshed ${now} · Ctrl+C to exit${R}  ${stallNote}`);
+    console.log(`${BOLD}guildctl watch${R}  ${DIM}refreshed ${now} · Ctrl+C to exit${R}  ${stallNote}`);
 
     printStatusSummary(db);
     printWavePlan(db);
