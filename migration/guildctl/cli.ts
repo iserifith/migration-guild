@@ -3,7 +3,7 @@ import * as path from "path";
 // Auto-load .env from project root (my-migration/) — works regardless of CWD
 // so users don't need to `set -a && source .env && set +a` before every command.
 import { config as dotenvConfig } from "dotenv";
-dotenvConfig({ path: path.resolve(__dirname, "..", "..", "..", ".env") });
+dotenvConfig({ path: path.resolve(__dirname, "..", "..", "..", ".env"), quiet: true });
 
 import { Command } from "commander";
 import { getDb } from "../registry/db/connection";
@@ -17,6 +17,8 @@ import { runStatus, printNextSteps } from "./commands/status";
 import { runWatch } from "./commands/watch";
 import { runRelease } from "./commands/release";
 import { runRemediate } from "./commands/remediate";
+import { runEvidenceAdd, runEvidenceList } from "./commands/evidence";
+import { runArbitrate } from "./commands/arbitrate";
 import { loadConfig, requireFoundryConfig } from "../foundry/config";
 import { FoundryClient } from "../foundry/foundry-client";
 import { registerTracingCommands } from "../foundry/tracing/commands";
@@ -145,6 +147,57 @@ program
       model: opts.model,
       prompt: opts.prompt,
     });
+  });
+
+// ─── evidence gate ────────────────────────────────────────────────────────────
+
+const evidence = program
+  .command("evidence")
+  .description("Record and inspect proof submitted by Critics and evaluators");
+
+evidence
+  .command("add")
+  .description("Record acceptance evidence for an artifact")
+  .requiredOption("--artifact <id>", "Artifact ID")
+  .requiredOption("--type <type>", "Evidence type: test-command | build-command | static-check | review-verdict | benchmark-result")
+  .requiredOption("--produced-by <agent>", "Agent or role that produced the evidence")
+  .option("--command <cmd>", "Command that produced this evidence")
+  .option("--exit-code <n>", "Command exit code", parseInt)
+  .option("--pass", "Mark evidence as passing")
+  .option("--fail", "Mark evidence as failing")
+  .requiredOption("--summary <text>", "Human-readable evidence summary")
+  .option("--run-id <id>", "Associated run ID")
+  .option("--output-path <path>", "Path to full evidence output")
+  .option("--output-excerpt <text>", "Short output excerpt")
+  .option("--json", "Print recorded evidence as JSON")
+  .action(async (opts) => {
+    assertDbExists(dbPath());
+    await runEvidenceAdd(db(), opts);
+  });
+
+evidence
+  .command("list")
+  .description("List acceptance evidence for an artifact")
+  .requiredOption("--artifact <id>", "Artifact ID")
+  .option("--json", "Print evidence rows as JSON")
+  .action((opts) => {
+    assertDbExists(dbPath());
+    runEvidenceList(db(), opts);
+  });
+
+program
+  .command("arbitrate")
+  .description("Approve or reject a migrated artifact from recorded evidence")
+  .requiredOption("--artifact <id>", "Artifact ID")
+  .option("--approve", "Approve artifact and promote it to reviewed")
+  .option("--reject", "Reject artifact and move it to needs-rework")
+  .requiredOption("--arbiter <agent>", "Independent arbiter agent or role")
+  .requiredOption("--reason <text>", "Decision rationale")
+  .option("--evidence <id...>", "Evidence IDs to attach to the decision")
+  .option("--json", "Print arbitration decision as JSON")
+  .action(async (opts) => {
+    assertDbExists(dbPath());
+    await runArbitrate(db(), opts);
   });
 
 // ─── run ──────────────────────────────────────────────────────────────────────
