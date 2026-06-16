@@ -7,7 +7,7 @@ import { getLogDir } from "../util";
 import { loadConfig, resolvePhaseModel } from "../../foundry/config";
 import { getStatusCounts } from "../monitoring";
 
-const REMEDIATION_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["LEGMOD_REMEDIATION_TIMEOUT_MINS"] ?? "15", 10));
+const REMEDIATION_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["GUILDCTL_REMEDIATION_TIMEOUT_MINS"] ?? "15", 10));
 
 const SUMMARY_STATUSES = [
   "planned",

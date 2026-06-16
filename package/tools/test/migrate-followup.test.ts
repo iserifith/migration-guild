@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import Database from "better-sqlite3";
-import { getMigrationFollowUp } from "../legmod/commands/migrate";
+import { getMigrationFollowUp } from "../guildctl/commands/migrate";
 import { registerArtifact, setArtifactStatus, setArtifactWave } from "../registry/commands/artifacts";
 import { applySchema } from "../registry/db/schema";
 

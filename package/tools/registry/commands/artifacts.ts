@@ -103,7 +103,7 @@ export function setArtifactStatus(
       if (artifact.status === "in-progress" && activeClaim) {
         if (opts.claimId && opts.claimToken) {
           completeClaimForArtifact(db, id, opts.claimId, opts.claimToken, opts.agent ?? activeClaim.agent, status);
-        } else if ((opts.agent ?? "") === "operator" || (opts.agent ?? "") === "remediation-agent" || (opts.agent ?? "") === "legmod") {
+        } else if ((opts.agent ?? "") === "operator" || (opts.agent ?? "") === "remediation-agent" || (opts.agent ?? "") === "guildctl") {
           releaseClaimByArtifactId(
             db,
             id,

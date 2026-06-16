@@ -22,20 +22,20 @@ You are a Java migration engineer in a split migration pipeline. Your sole respo
 
 1. **Check for a pre-claimed artifact first** — the runner may have already claimed on your behalf:
   ```bash
-  echo "ARTIFACT_ID=${LEGMOD_ARTIFACT_ID:-} CLAIM_ID=${LEGMOD_CLAIM_ID:-} CLAIM_TOKEN=${LEGMOD_CLAIM_TOKEN:-}"
+  echo "ARTIFACT_ID=${GUILDCTL_ARTIFACT_ID:-} CLAIM_ID=${GUILDCTL_CLAIM_ID:-} CLAIM_TOKEN=${GUILDCTL_CLAIM_TOKEN:-}"
   ```
-  - If `LEGMOD_ARTIFACT_ID` is set: skip the claim command. Use `LEGMOD_ARTIFACT_ID` as `<id>`, `LEGMOD_CLAIM_ID` as `claim_id`, and `LEGMOD_CLAIM_TOKEN` as `claim_token`. Proceed directly to step 2.
-  - If `LEGMOD_ARTIFACT_ID` is **not** set: self-claim by running:
+  - If `GUILDCTL_ARTIFACT_ID` is set: skip the claim command. Use `GUILDCTL_ARTIFACT_ID` as `<id>`, `GUILDCTL_CLAIM_ID` as `claim_id`, and `GUILDCTL_CLAIM_TOKEN` as `claim_token`. Proceed directly to step 2.
+  - If `GUILDCTL_ARTIFACT_ID` is **not** set: self-claim by running:
    ```bash
    node migration/registry/dist/cli.js claim \
-     --agent "${LEGMOD_AGENT_KIND:-code-writer-agent}" \
-     --owner "${LEGMOD_AGENT_NAME:-code-writer-agent}" \
-     --run-id "${LEGMOD_RUN_ID:?missing LEGMOD_RUN_ID}" \
+     --agent "${GUILDCTL_AGENT_KIND:-code-writer-agent}" \
+     --owner "${GUILDCTL_AGENT_NAME:-code-writer-agent}" \
+     --run-id "${GUILDCTL_RUN_ID:?missing GUILDCTL_RUN_ID}" \
      --model "${MODEL:-unknown}" \
      --from-status tests-written \
      --tier first-class
    ```
-   **IMPORTANT: If `LEGMOD_RUN_ID` is not set in the environment, do NOT invent a value. Stop immediately with a non-zero exit — do not proceed with the claim.**
+   **IMPORTANT: If `GUILDCTL_RUN_ID` is not set in the environment, do NOT invent a value. Stop immediately with a non-zero exit — do not proceed with the claim.**
    Exit code 2 = nothing left. Stop.
    Save `claim_id` and `claim_token` from the JSON output.
 

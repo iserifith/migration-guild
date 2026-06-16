@@ -11,6 +11,6 @@
     "resolveJsonModule": true,
     "skipLibCheck": true
   },
-  "include": ["registry/**/*", "legmod/**/*", "foundry/**/*"],
+  "include": ["registry/**/*", "guildctl/**/*", "foundry/**/*"],
   "exclude": ["node_modules", "dist", "*/dist"]
 }

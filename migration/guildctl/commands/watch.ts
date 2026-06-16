@@ -17,7 +17,7 @@ const RED = "\x1b[31m";
 const MAGENTA = "\x1b[35m";
 const BLUE = "\x1b[34m";
 
-const STALL_MINUTES = parseInt(process.env["LEGMOD_STALL_MINS"] ?? "10", 10);
+const STALL_MINUTES = parseInt(process.env["GUILDCTL_STALL_MINS"] ?? "10", 10);
 
 const STATUS_COLOR: Record<string, string> = {
   "pending":       DIM,

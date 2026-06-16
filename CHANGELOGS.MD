@@ -49,8 +49,8 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 - Added lease-backed artifact claims with opaque claim IDs/tokens, heartbeat renewal, stale-claim reconciliation, and explicit claim lifecycle events (`claim-heartbeat`, `claim-completed`, `claim-released`, `claim-expired`).
 - Added run ownership metadata (`owner_id`, `phase`) plus termination reasons, pid backfill support, and run-reap event emission so run/claim cleanup is traceable.
-- Changed migration workers to receive stable run/session environment (`LEGMOD_RUN_ID`, `LEGMOD_AGENT_KIND`), process one claim per run, and pass claim tokens when advancing status.
-- Added phase-specific migration worker timeout knobs (`LEGMOD_ANALYZE_TIMEOUT_MINS`, `LEGMOD_TEST_TIMEOUT_MINS`, `LEGMOD_CODE_TIMEOUT_MINS`) and stale-claim reconciliation checkpoints between pools.
+- Changed migration workers to receive stable run/session environment (`GUILDCTL_RUN_ID`, `GUILDCTL_AGENT_KIND`), process one claim per run, and pass claim tokens when advancing status.
+- Added phase-specific migration worker timeout knobs (`GUILDCTL_ANALYZE_TIMEOUT_MINS`, `GUILDCTL_TEST_TIMEOUT_MINS`, `GUILDCTL_CODE_TIMEOUT_MINS`) and stale-claim reconciliation checkpoints between pools.
 - Changed first-class readiness/claimability logic to ignore non-terminal second-class dependencies when evaluating first-class migration queue progress.
 - Added lease and claim-token regression tests in both development runtime (`migration/test`) and packaged runtime mirror (`package/tools/test`).
 

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import Database from "better-sqlite3";
-import type { AgentRunResult } from "../legmod/runner";
-import { runRemediate } from "../legmod/commands/remediate";
+import type { AgentRunResult } from "../guildctl/runner";
+import { runRemediate } from "../guildctl/commands/remediate";
 import { applySchema } from "../registry/db/schema";
 import { registerArtifact } from "../registry/commands/artifacts";
 
@@ -27,7 +27,7 @@ function runResult(exitCode: number): AgentRunResult {
     agent: "remediation-agent",
     model: "test-model",
     prompt: "test prompt",
-    logFile: "/tmp/legmod-remediate.log",
+    logFile: "/tmp/guildctl-remediate.log",
     exitCode,
   };
 }

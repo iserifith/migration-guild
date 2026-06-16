@@ -6,7 +6,7 @@
   "types": "registry/dist/index.d.ts",
   "bin": {
     "registry": "registry/dist/cli.js",
-    "guildctl": "legmod/dist/cli.js"
+    "guildctl": "guildctl/dist/cli.js"
   },
   "scripts": {
     "test": "node --import tsx --test test/*.test.ts"

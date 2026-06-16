@@ -118,7 +118,7 @@ type BatchValidationClient = Pick<FoundryClient, "uploadFile" | "submitBatchJob"
 function buildValidationJsonl(type: Exclude<BatchJobType, "evaluate">, model: string): string {
   if (type === "embed") {
     return JSON.stringify({
-      custom_id: "__legmod_batch_preflight__",
+      custom_id: "__guildctl_batch_preflight__",
       method: "POST",
       url: "/embeddings",
       body: {
@@ -129,7 +129,7 @@ function buildValidationJsonl(type: Exclude<BatchJobType, "evaluate">, model: st
   }
 
   return JSON.stringify({
-    custom_id: "__legmod_batch_preflight__",
+    custom_id: "__guildctl_batch_preflight__",
     method: "POST",
     url: "/chat/completions",
     body: {
@@ -162,7 +162,7 @@ export async function validateBatchSupport(
       input_file_id: inputFileId,
       endpoint: type === "embed" ? "/embeddings" : "/chat/completions",
       completion_window: "24h",
-      metadata: { legmod: "batch-preflight", type, model },
+      metadata: { guildctl: "batch-preflight", type, model },
     });
     await client.cancelBatchJob(job.id);
   } catch (err) {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
-import { isGitWorktree, snapshotChangedFiles, spawnCopilot } from "../legmod/runner";
+import { isGitWorktree, snapshotChangedFiles, spawnCopilot } from "../guildctl/runner";
 import { registerArtifact, setArtifactStatus } from "../registry/commands/artifacts";
 import { startRun, reapDeadRuns } from "../registry/commands/runs";
 import { applySchema } from "../registry/db/schema";
@@ -36,7 +36,7 @@ test("reapDeadRuns marks a missing pid as failed", () => {
 
 test("spawnCopilot records failed stub runs and writes a log file", async () => {
   const db = createDb();
-  const workDir = mkdtempSync(path.join(tmpdir(), "legmod-runner-"));
+  const workDir = mkdtempSync(path.join(tmpdir(), "guildctl-runner-"));
   const stubPath = path.join(workDir, "fake-copilot.sh");
   const original = process.env["COPILOT_CMD"];
 
@@ -75,7 +75,7 @@ test("spawnCopilot records failed stub runs and writes a log file", async () => 
 
 test("spawnCopilot auto-releases claimed artifacts after a failed run", async () => {
   const db = createDb();
-  const workDir = mkdtempSync(path.join(tmpdir(), "legmod-runner-"));
+  const workDir = mkdtempSync(path.join(tmpdir(), "guildctl-runner-"));
   const stubPath = path.join(workDir, "fake-copilot.sh");
   const original = process.env["COPILOT_CMD"];
   const claimOwner = "test-writer-agent:claim-1";
@@ -126,7 +126,7 @@ test("spawnCopilot auto-releases claimed artifacts after a failed run", async ()
 
 test("spawnCopilot treats lingering claimed artifacts after exit 0 as failure", async () => {
   const db = createDb();
-  const workDir = mkdtempSync(path.join(tmpdir(), "legmod-runner-"));
+  const workDir = mkdtempSync(path.join(tmpdir(), "guildctl-runner-"));
   const stubPath = path.join(workDir, "fake-copilot.sh");
   const original = process.env["COPILOT_CMD"];
   const claimOwner = "code-writer-agent:claim-1";
@@ -180,7 +180,7 @@ test("spawnCopilot treats lingering claimed artifacts after exit 0 as failure", 
 });
 
 test("git change snapshots stay quiet outside git worktrees", () => {
-  const workDir = mkdtempSync(path.join(tmpdir(), "legmod-non-git-"));
+  const workDir = mkdtempSync(path.join(tmpdir(), "guildctl-non-git-"));
 
   try {
     assert.equal(isGitWorktree(workDir), false);

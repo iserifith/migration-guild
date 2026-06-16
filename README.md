@@ -20,7 +20,7 @@ Migration Guild installs a set of Copilot agents, skills, and prompts into your 
 Inventory → Planning → Bootstrap → Migration (parallel) → Review
 ```
 
-**Want the internals?** See [__HOW_LEGMOD_DOC__](__HOW_LEGMOD_DOC__) for the registry model, phase orchestration, agent spawning, failure handling, and recovery flow.
+**Want the internals?** See [__HOW_GUILDCTL_DOC__](__HOW_GUILDCTL_DOC__) for the registry model, phase orchestration, agent spawning, failure handling, and recovery flow.
 
 ---
 
@@ -74,21 +74,21 @@ The `guildctl` CLI is a one-command orchestrator that drives the full pipeline f
 
 ```bash
 # Run the full pipeline (inventory → plan → bootstrap? → migrate → review)
-node __MIGRATION_LEGMOD__/dist/cli.js run
+node __MIGRATION_GUILDCTL__/dist/cli.js run
 
 # Run with 3 parallel migration + review sessions
-node __MIGRATION_LEGMOD__/dist/cli.js run --parallel 3
+node __MIGRATION_GUILDCTL__/dist/cli.js run --parallel 3
 
 # Run individual phases
-node __MIGRATION_LEGMOD__/dist/cli.js inventory
-node __MIGRATION_LEGMOD__/dist/cli.js plan
-node __MIGRATION_LEGMOD__/dist/cli.js bootstrap
-node __MIGRATION_LEGMOD__/dist/cli.js migrate --parallel 3
-node __MIGRATION_LEGMOD__/dist/cli.js review --parallel 2
-node __MIGRATION_LEGMOD__/dist/cli.js remediate --id <artifact-id>
+node __MIGRATION_GUILDCTL__/dist/cli.js inventory
+node __MIGRATION_GUILDCTL__/dist/cli.js plan
+node __MIGRATION_GUILDCTL__/dist/cli.js bootstrap
+node __MIGRATION_GUILDCTL__/dist/cli.js migrate --parallel 3
+node __MIGRATION_GUILDCTL__/dist/cli.js review --parallel 2
+node __MIGRATION_GUILDCTL__/dist/cli.js remediate --id <artifact-id>
 
 # Check current status
-node __MIGRATION_LEGMOD__/dist/cli.js status
+node __MIGRATION_GUILDCTL__/dist/cli.js status
 ```
 
 **What Migration Guild handles automatically:**
@@ -102,9 +102,9 @@ node __MIGRATION_LEGMOD__/dist/cli.js status
 - Polls `registry.db` for live progress via SQLite triggers (no agent cooperation needed)
 - Advances phases automatically when the current phase completes
 
-> **Tip:** Set `COPILOT_CMD=gh` (or whatever your Copilot CLI binary is named) if `copilot` doesn't resolve on `PATH`. For example: `COPILOT_CMD=gh node __MIGRATION_LEGMOD__/dist/cli.js run`
+> **Tip:** Set `COPILOT_CMD=gh` (or whatever your Copilot CLI binary is named) if `copilot` doesn't resolve on `PATH`. For example: `COPILOT_CMD=gh node __MIGRATION_GUILDCTL__/dist/cli.js run`
 >
-> Set `LEGMOD_STALL_MINS=<n>` to change the stall warning threshold in `guildctl watch` (default: 10 minutes).
+> Set `GUILDCTL_STALL_MINS=<n>` to change the stall warning threshold in `guildctl watch` (default: 10 minutes).
 
 ---
 
@@ -191,7 +191,7 @@ node migration/registry/dist/cli.js wave-plan
 Before agents start writing migrated files, scaffold the target module:
 
 ```bash
-node __MIGRATION_LEGMOD__/dist/cli.js bootstrap
+node __MIGRATION_GUILDCTL__/dist/cli.js bootstrap
 ```
 
 **What happens:**

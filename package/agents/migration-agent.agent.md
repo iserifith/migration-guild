@@ -18,7 +18,7 @@ You are a Java migration engineer executing a migration pipeline. Each run: clai
 
 1. Claim the next task:
    ```bash
-   node migration/registry/dist/cli.js claim --agent "${LEGMOD_AGENT_NAME:-migration-agent}" --model "${MODEL:-unknown}" --tier first-class
+   node migration/registry/dist/cli.js claim --agent "${GUILDCTL_AGENT_NAME:-migration-agent}" --model "${MODEL:-unknown}" --tier first-class
    ```
    Exit code 2 = nothing left. Stop.
 
@@ -26,12 +26,12 @@ You are a Java migration engineer executing a migration pipeline. Each run: clai
 
 3. **Find similar migrated artifacts as reference.** Before writing any code, search for already-migrated files that share the same role or patterns:
    ```bash
-   node migration/legmod/dist/cli.js search-similar \
+   node migration/guildctl/dist/cli.js search-similar \
      --query "$(head -40 <claimed-legacy-path>)" \
      --top-k 3 \
      --min-score 0.75
    ```
-   For each result where `status` is `migrated` or `completed` and `target_path` is non-null: read the file at `target_path` directly — do not derive the modern path manually — and use it as a reference for package structure, annotations, and DI style. This step is optional — skip it if the command exits non-zero (Foundry not configured or unavailable), returns `[]` (embeddings not yet populated — run `node migration/legmod/dist/cli.js batch-submit --type embed` first, then `batch-wait --job-id <id>`), or no results meet the `--min-score` threshold.
+   For each result where `status` is `migrated` or `completed` and `target_path` is non-null: read the file at `target_path` directly — do not derive the modern path manually — and use it as a reference for package structure, annotations, and DI style. This step is optional — skip it if the command exits non-zero (Foundry not configured or unavailable), returns `[]` (embeddings not yet populated — run `node migration/guildctl/dist/cli.js batch-submit --type embed` first, then `batch-wait --job-id <id>`), or no results meet the `--min-score` threshold.
 
 4. **Resolve second-class dependencies inline.** Before writing any code, check for linked config/descriptor/SQL artifacts:
    ```bash
