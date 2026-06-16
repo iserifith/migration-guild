@@ -102,6 +102,14 @@ CREATE TABLE IF NOT EXISTS events (
                      'analyzed',
                      'scaffolded',
                      'migrated',
+                     'proposal-submitted',
+                     'evidence-submitted',
+                     'critique-issued',
+                     'arbitration-approved',
+                     'arbitration-rejected',
+                     'conflict-opened',
+                     'conflict-resolved',
+                     'benchmark-recorded',
                      'reviewed',
                      'remediated',
                      'blocked',
@@ -180,6 +188,45 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE INDEX IF NOT EXISTS idx_runs_agent  ON runs(agent);
 CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
 CREATE INDEX IF NOT EXISTS idx_runs_owner  ON runs(owner_id);
+
+-- ─── Acceptance Evidence Gate ────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS acceptance_evidence (
+    evidence_id     TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+    artifact_id     TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    run_id          TEXT REFERENCES runs(run_id) ON DELETE SET NULL,
+    produced_by     TEXT NOT NULL,
+    evidence_type   TEXT NOT NULL CHECK (evidence_type IN (
+                       'test-command',
+                       'build-command',
+                       'static-check',
+                       'review-verdict',
+                       'benchmark-result'
+                     )),
+    command         TEXT,
+    exit_code       INTEGER,
+    pass            INTEGER NOT NULL CHECK (pass IN (0, 1)),
+    summary         TEXT NOT NULL,
+    output_path     TEXT,
+    output_excerpt  TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_acceptance_evidence_artifact ON acceptance_evidence(artifact_id);
+CREATE INDEX IF NOT EXISTS idx_acceptance_evidence_pass ON acceptance_evidence(artifact_id, pass);
+CREATE INDEX IF NOT EXISTS idx_acceptance_evidence_type ON acceptance_evidence(evidence_type);
+
+CREATE TABLE IF NOT EXISTS arbitration_decisions (
+    decision_id    TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+    artifact_id    TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    arbiter        TEXT NOT NULL,
+    decision       TEXT NOT NULL CHECK (decision IN ('approved', 'rejected')),
+    reason         TEXT NOT NULL,
+    evidence_ids   TEXT NOT NULL,
+    decided_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_arbitration_decisions_artifact ON arbitration_decisions(artifact_id);
 
 -- ─── Claim Attempts ───────────────────────────────────────────────────────────
 

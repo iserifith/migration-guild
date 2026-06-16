@@ -13,6 +13,7 @@ export {
 } from "./commands/claim";
 export * from "./commands/dependencies";
 export * from "./commands/events";
+export * from "./commands/evidence";
 export * from "./commands/context";
 export * from "./commands/changelog";
 export * from "./commands/operator";
