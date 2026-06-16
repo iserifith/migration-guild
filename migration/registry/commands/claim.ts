@@ -5,7 +5,7 @@ import type { Artifact, ArtifactClaim, ClaimedArtifact, Status } from "../types"
 
 const DEFAULT_LEASE_MINUTES = Math.max(
   5,
-  parseInt(process.env["LEGMOD_CLAIM_LEASE_MINS"] ?? "30", 10),
+  parseInt(process.env["GUILDCTL_CLAIM_LEASE_MINS"] ?? "30", 10),
 );
 
 function makeOpaqueId(): string {

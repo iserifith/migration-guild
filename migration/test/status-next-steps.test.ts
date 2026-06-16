@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import Database from "better-sqlite3";
-import { phaseState, printNextSteps } from "../legmod/commands/status";
+import { phaseState, printNextSteps } from "../guildctl/commands/status";
 import { registerArtifact, setArtifactStatus, setArtifactWave } from "../registry/commands/artifacts";
 import { applySchema } from "../registry/db/schema";
 

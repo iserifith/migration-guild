@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { reconcileStaleClaims } from "./claim";
 
-const STALE_RUN_MINUTES = Math.max(1, parseInt(process.env["LEGMOD_STALE_RUN_MINS"] ?? "30", 10));
+const STALE_RUN_MINUTES = Math.max(1, parseInt(process.env["GUILDCTL_STALE_RUN_MINS"] ?? "30", 10));
 
 export interface Run {
   run_id: string;
@@ -161,7 +161,7 @@ export function reapDeadRuns(db: Database.Database, agent?: string): Run[] {
         FROM artifact_claims c
         WHERE c.run_id = @run_id
       `).run({
-        agent: "legmod",
+        agent: "guildctl",
         run_id: run.run_id,
         summary: `Reaped ${run.agent} run ${run.run_id}`,
         event_data: JSON.stringify({
@@ -171,7 +171,7 @@ export function reapDeadRuns(db: Database.Database, agent?: string): Run[] {
         }),
       });
     }
-    reconcileStaleClaims(db, "legmod");
+    reconcileStaleClaims(db, "guildctl");
   }
 
   return reaped;

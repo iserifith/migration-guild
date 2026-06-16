@@ -8,7 +8,7 @@ export function assertDbExists(dbPath?: string): void {
     process.stderr.write(
       `\n  ✗ Registry not found: ${resolved}\n\n` +
       `  Run inventory first to initialise the registry:\n` +
-      `    node migration/legmod/dist/cli.js inventory\n\n`
+      `    node migration/guildctl/dist/cli.js inventory\n\n`
     );
     process.exit(1);
   }

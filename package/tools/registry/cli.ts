@@ -502,7 +502,7 @@ program
 program
   .command("reconcile-claims")
   .description("Release claims whose leases expired or whose owning runs stopped")
-  .option("--agent <agent>", "Agent recorded on reconciliation events", "legmod")
+  .option("--agent <agent>", "Agent recorded on reconciliation events", "guildctl")
   .action((opts) => run(() => reconcileStaleClaims(db(), opts.agent)));
 
 // ─── Wave Planning ───────────────────────────────────────────────────────────

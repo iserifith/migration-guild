@@ -128,7 +128,7 @@ export async function runInventory(db: Database.Database): Promise<void> {
   // Ensure schema exists (idempotent)
   applySchema(db);
 
-  // Always resolve project root from __dirname (migration/legmod/dist → my-migration/)
+  // Always resolve project root from __dirname (migration/guildctl/dist → my-migration/)
   const projectRoot = path.resolve(__dirname, "..", "..", "..");
 
   // Step 1: scan legacy/ and register all .java files directly — no agent needed

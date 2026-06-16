@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import Database from "better-sqlite3";
-import { printInProgress } from "../legmod/dashboard";
+import { printInProgress } from "../guildctl/dashboard";
 import { registerArtifact } from "../registry/commands/artifacts";
 import { applySchema } from "../registry/db/schema";
 

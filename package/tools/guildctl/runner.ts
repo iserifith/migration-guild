@@ -352,13 +352,13 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
     cwd: projectRoot,
     env: {
       ...process.env,
-      LEGMOD_AGENT_NAME: claimOwner,
-      LEGMOD_AGENT_KIND: agent,
-      LEGMOD_RUN_ID: run.run_id,
+      GUILDCTL_AGENT_NAME: claimOwner,
+      GUILDCTL_AGENT_KIND: agent,
+      GUILDCTL_RUN_ID: run.run_id,
       ...(preClaimedArtifactId != null ? {
-        LEGMOD_ARTIFACT_ID: preClaimedArtifactId,
-        LEGMOD_CLAIM_ID: preClaimId!,
-        LEGMOD_CLAIM_TOKEN: preClaimToken!,
+        GUILDCTL_ARTIFACT_ID: preClaimedArtifactId,
+        GUILDCTL_CLAIM_ID: preClaimId!,
+        GUILDCTL_CLAIM_TOKEN: preClaimToken!,
       } : {}),
     },
     stdio: logStream ? ["ignore", "pipe", "pipe"] : "inherit",
@@ -407,14 +407,14 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
           let released = releaseClaimsForRun(
             db,
             run.run_id,
-            "legmod",
+            "guildctl",
             `auto-released after ${agent} exited without advancing claimed work`,
           );
           if (released.length === 0) {
             released = releaseClaimedArtifactsForOwner(
               db,
               claimOwner,
-              "legmod",
+              "guildctl",
               `auto-released after ${agent} exited without advancing claimed work`,
             );
           }
@@ -428,14 +428,14 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
           const released = releaseClaimsForRun(
             db,
             run.run_id,
-            "legmod",
+            "guildctl",
             `auto-released after ${agent} exited with code ${exitCode}`,
           );
           if (released.length === 0) {
             releaseClaimedArtifactsForOwner(
               db,
               claimOwner,
-              "legmod",
+              "guildctl",
               `auto-released after ${agent} exited with code ${exitCode}`,
             );
           }

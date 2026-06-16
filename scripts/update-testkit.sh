@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# update-testkit.sh — Build, sync, and update a legmod test workspace.
+# update-testkit.sh — Build, sync, and update a guildctl test workspace.
 #
 # Usage:
 #   scripts/update-testkit.sh <workspace-path> [revert-state]

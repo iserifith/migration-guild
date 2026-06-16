@@ -11,7 +11,7 @@ const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
 const RED = "\x1b[31m";
 
-export const STALL_MINUTES = parseInt(process.env["LEGMOD_STALL_MINS"] ?? "10", 10);
+export const STALL_MINUTES = parseInt(process.env["GUILDCTL_STALL_MINS"] ?? "10", 10);
 
 export type StatusCounts = Record<string, number>;
 
@@ -390,7 +390,7 @@ export function printStaleSessionWarnings(db: Database.Database): void {
   console.log(`\n${BOLD}${RED}Stale Sessions${R}`);
   for (const row of rows.slice(0, 5)) {
     console.log(
-      `  ${RED}⚠${R} ${row.claimed_by.padEnd(18)} ${path.basename(row.path)}  ${row.age_minutes}m  release: node migration/legmod/dist/cli.js release --id "${row.id}"`
+      `  ${RED}⚠${R} ${row.claimed_by.padEnd(18)} ${path.basename(row.path)}  ${row.age_minutes}m  release: node migration/guildctl/dist/cli.js release --id "${row.id}"`
     );
   }
   if (rows.length > 5) {

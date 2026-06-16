@@ -18,18 +18,18 @@ function runCli(scriptPath: string, cwd: string, phase: string) {
   );
 }
 
-test("migration legmod CLI recognizes run remediate", () => {
+test("migration guildctl CLI recognizes run remediate", () => {
   const cwd = path.resolve(__dirname, "..");
-  const scriptPath = path.join(cwd, "legmod", "cli.ts");
+  const scriptPath = path.join(cwd, "guildctl", "cli.ts");
   const result = runCli(scriptPath, cwd, "remediate");
 
   assert.notEqual(result.stderr.includes('Unknown phase: "remediate"'), true);
   assert.notEqual(result.status, 0);
 });
 
-test("migration legmod CLI recognizes run bootstrap", () => {
+test("migration guildctl CLI recognizes run bootstrap", () => {
   const cwd = path.resolve(__dirname, "..");
-  const scriptPath = path.join(cwd, "legmod", "cli.ts");
+  const scriptPath = path.join(cwd, "guildctl", "cli.ts");
   const result = runCli(scriptPath, cwd, "bootstrap");
 
   assert.notEqual(result.stderr.includes('Unknown phase: "bootstrap"'), true);

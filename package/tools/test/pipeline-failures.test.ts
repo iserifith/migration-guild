@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
-import type { AgentRunResult } from "../legmod/runner";
-import { runMigrate } from "../legmod/commands/migrate";
-import { runReview } from "../legmod/commands/review";
+import type { AgentRunResult } from "../guildctl/runner";
+import { runMigrate } from "../guildctl/commands/migrate";
+import { runReview } from "../guildctl/commands/review";
 import { registerArtifact, setArtifactStatus } from "../registry/commands/artifacts";
 import { applySchema } from "../registry/db/schema";
 
@@ -34,7 +34,7 @@ function failedRun(agent: string): AgentRunResult {
     agent,
     model: "test-model",
     prompt: "test prompt",
-    logFile: "/tmp/legmod-test.log",
+    logFile: "/tmp/guildctl-test.log",
     exitCode: 1,
   };
 }

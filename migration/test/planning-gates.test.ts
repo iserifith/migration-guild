@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import Database from "better-sqlite3";
-import type { AgentRunResult } from "../legmod/runner";
-import { runMigrate } from "../legmod/commands/migrate";
-import { runPlan } from "../legmod/commands/plan";
+import type { AgentRunResult } from "../guildctl/runner";
+import { runMigrate } from "../guildctl/commands/migrate";
+import { runPlan } from "../guildctl/commands/plan";
 import { registerArtifact, setArtifactStatus } from "../registry/commands/artifacts";
 import {
   approveDependencyStrategy,
@@ -40,7 +40,7 @@ function success(agent: string): AgentRunResult {
     agent,
     model: "test-model",
     prompt: "test prompt",
-    logFile: "/tmp/legmod-test.log",
+    logFile: "/tmp/guildctl-test.log",
     exitCode: 0,
   };
 }

@@ -78,7 +78,7 @@ test("resolveTargetPath: returns null when no target file exists for legacy-sour
 });
 
 test("resolveTargetPath: derives path by replacing legacy/ → modern/ when no link registered", () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "legmod-test-"));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "guildctl-test-"));
   try {
     const targetFile = writeTempFile(tmp, "modern/src/main/java/Svc.java", "public class Svc {}");
 
@@ -105,7 +105,7 @@ test("resolveTargetPath: derives path by replacing legacy/ → modern/ when no l
 });
 
 test("resolveTargetPath: prefers produced-by link over path convention", () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "legmod-test-"));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "guildctl-test-"));
   try {
     const linkedFile = writeTempFile(tmp, "modern/src/main/java/SvcV2.java", "public class SvcV2 {}");
 
@@ -136,7 +136,7 @@ test("resolveTargetPath: prefers produced-by link over path convention", () => {
 });
 
 test("resolveTargetPath: returns own path for target-source when file exists", () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "legmod-test-"));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "guildctl-test-"));
   try {
     const file = writeTempFile(tmp, "modern/Svc.java", "public class Svc {}");
 
@@ -159,7 +159,7 @@ test("resolveTargetPath: returns own path for target-source when file exists", (
 // ─── buildEmbedBatchInput ────────────────────────────────────────────────────
 
 test("buildEmbedBatchInput: excludes legacy-source artifacts not yet migrated", () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "legmod-test-"));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "guildctl-test-"));
   try {
     // pending artifact with existing target file — should still be excluded
     writeTempFile(tmp, "modern/Svc.java", "class Svc {}");
@@ -180,7 +180,7 @@ test("buildEmbedBatchInput: excludes legacy-source artifacts not yet migrated", 
 });
 
 test("buildEmbedBatchInput: includes migrated legacy-source and reads target file", () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "legmod-test-"));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "guildctl-test-"));
   try {
     const legacyFile = writeTempFile(tmp, "legacy/Svc.java", "// legacy content");
     writeTempFile(tmp, "modern/Svc.java", "// migrated target content");
@@ -206,7 +206,7 @@ test("buildEmbedBatchInput: includes migrated legacy-source and reads target fil
 });
 
 test("buildEmbedBatchInput: excludes artifact when target file does not exist", () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "legmod-test-"));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "guildctl-test-"));
   try {
     const legacyFile = writeTempFile(tmp, "legacy/Svc.java", "// legacy");
     // No modern/Svc.java written → target file absent
@@ -228,7 +228,7 @@ test("buildEmbedBatchInput: excludes artifact when target file does not exist", 
 });
 
 test("buildEmbedBatchInput: includes completed and reviewed status artifacts", () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "legmod-test-"));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "guildctl-test-"));
   try {
     for (const status of ["completed", "reviewed"] as const) {
       const legacyFile = writeTempFile(tmp, `legacy/${status}.java`, `// ${status} legacy`);

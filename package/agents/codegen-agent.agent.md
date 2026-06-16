@@ -18,7 +18,7 @@ You are a Java code generator. Translate legacy Java files to the target framewo
 
 1. Claim the next task:
    ```bash
-   node migration/registry/dist/cli.js claim --agent "${LEGMOD_AGENT_NAME:-codegen-agent}" --model "${MODEL:-unknown}" --from-status tests-written
+   node migration/registry/dist/cli.js claim --agent "${GUILDCTL_AGENT_NAME:-codegen-agent}" --model "${MODEL:-unknown}" --from-status tests-written
    ```
    Exit code 2 = nothing left. Stop.
 

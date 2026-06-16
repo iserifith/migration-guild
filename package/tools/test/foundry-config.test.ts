@@ -6,7 +6,7 @@ import test from "node:test";
 import { loadConfig } from "../foundry/config";
 
 test("loadConfig rejects unsupported foundry phase override keys", () => {
-  const workspace = mkdtempSync(path.join(tmpdir(), "legmod-foundry-config-"));
+  const workspace = mkdtempSync(path.join(tmpdir(), "guildctl-foundry-config-"));
 
   try {
     writeFileSync(
@@ -38,7 +38,7 @@ test("loadConfig rejects unsupported foundry phase override keys", () => {
 });
 
 test("loadConfig keeps supported migration phase overrides", () => {
-  const workspace = mkdtempSync(path.join(tmpdir(), "legmod-foundry-config-"));
+  const workspace = mkdtempSync(path.join(tmpdir(), "guildctl-foundry-config-"));
 
   try {
     writeFileSync(

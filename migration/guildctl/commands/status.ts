@@ -25,7 +25,7 @@ export function phaseState(db: Database.Database): PhaseState {
 
 export function printNextSteps(db: Database.Database): void {
   const s = phaseState(db);
-  const cmd = "node migration/legmod/dist/cli.js";
+  const cmd = "node migration/guildctl/dist/cli.js";
 
   console.log("\n  ─── What to run next ─────────────────────────────────────────\n");
 

@@ -23,7 +23,7 @@ The registry is the source of truth. Agents are disposable workers.
 | ----------------------- | ------------------------------------------------------------------ |
 | `legacy/`               | Read-only source code being migrated                               |
 | `modern/`               | Write target for migrated tests and production code                |
-| `__MIGRATION_LEGMOD__/`     | Orchestrator CLI that runs phases                                  |
+| `__MIGRATION_GUILDCTL__/`     | Orchestrator CLI that runs phases                                  |
 | `migration/registry/`   | Registry CLI and state-management logic                            |
 | `migration/registry.db` | SQLite database tracking artifacts, events, dependencies, and runs |
 | `.github/agents/`       | Agent definitions used by Copilot CLI                              |
@@ -35,7 +35,7 @@ The registry is the source of truth. Agents are disposable workers.
 
 ### `guildctl`
 
-`node __MIGRATION_LEGMOD__/dist/cli.js ...`
+`node __MIGRATION_GUILDCTL__/dist/cli.js ...`
 
 This is the operator-facing orchestrator. It:
 
@@ -65,7 +65,7 @@ This is the lower-level state API. Agents use it to:
 
 ## 1. Inventory
 
-Implemented in `__MIGRATION_LEGMOD__/commands/inventory.ts`.
+Implemented in `__MIGRATION_GUILDCTL__/commands/inventory.ts`.
 
 Inventory has three parts:
 
@@ -97,7 +97,7 @@ That makes the planning gate state queryable per artifact before waves are assig
 
 ## 2. Planning
 
-Implemented in `__MIGRATION_LEGMOD__/commands/plan.ts`.
+Implemented in `__MIGRATION_GUILDCTL__/commands/plan.ts`.
 
 Planning is split into three sub-steps:
 
@@ -129,7 +129,7 @@ node migration/registry/dist/cli.js approve-dependency-strategy --finding-id <id
 
 ## 3. Bootstrap (optional explicit phase)
 
-Implemented in `__MIGRATION_LEGMOD__/commands/bootstrap.ts`.
+Implemented in `__MIGRATION_GUILDCTL__/commands/bootstrap.ts`.
 
 Bootstrap scaffolds the minimal target module in `modern/` using the packaged target-module assets. It is safe to run explicitly, and migration also runs it automatically when required.
 
@@ -142,7 +142,7 @@ Current behavior:
 
 ## 4. Migration
 
-Implemented in `__MIGRATION_LEGMOD__/commands/migrate.ts`.
+Implemented in `__MIGRATION_GUILDCTL__/commands/migrate.ts`.
 
 Migration runs three pools:
 
@@ -156,7 +156,7 @@ Important detail: Migration Guild itself does **not** migrate files directly. It
 
 ## 5. Review
 
-Implemented in `__MIGRATION_LEGMOD__/commands/review.ts`.
+Implemented in `__MIGRATION_GUILDCTL__/commands/review.ts`.
 
 Review repeatedly looks for first-class artifacts with `status = migrated`, then spawns `review-agent` processes for them in batches. It keeps polling until:
 
@@ -261,7 +261,7 @@ This is what powers:
 
 ## How Copilot subprocesses are spawned
 
-Implemented in `__MIGRATION_LEGMOD__/runner.ts`.
+Implemented in `__MIGRATION_GUILDCTL__/runner.ts`.
 
 For each spawned worker, Migration Guild:
 
@@ -326,24 +326,24 @@ There are two related but different concepts:
 Commands involved:
 
 - `node migration/registry/dist/cli.js list-runs`
-- `node __MIGRATION_LEGMOD__/dist/cli.js watch`
-- `node __MIGRATION_LEGMOD__/dist/cli.js release --id "<artifact-id>"`
+- `node __MIGRATION_GUILDCTL__/dist/cli.js watch`
+- `node __MIGRATION_GUILDCTL__/dist/cli.js release --id "<artifact-id>"`
 
 Environment knobs:
 
-- `LEGMOD_STALL_MINS` — when `watch` starts flagging claims as stalled
-- `LEGMOD_STALE_RUN_MINS` — when PID-less running rows are reaped as failed
-- `LEGMOD_REVIEW_TIMEOUT_MINS` — review worker timeout
-- `LEGMOD_ANALYZE_TIMEOUT_MINS` — analyze worker timeout
-- `LEGMOD_TEST_TIMEOUT_MINS` — test-writer worker timeout
-- `LEGMOD_CODE_TIMEOUT_MINS` — code-writer worker timeout
-- `LEGMOD_CLAIM_LEASE_MINS` — default lease duration for active claims
+- `GUILDCTL_STALL_MINS` — when `watch` starts flagging claims as stalled
+- `GUILDCTL_STALE_RUN_MINS` — when PID-less running rows are reaped as failed
+- `GUILDCTL_REVIEW_TIMEOUT_MINS` — review worker timeout
+- `GUILDCTL_ANALYZE_TIMEOUT_MINS` — analyze worker timeout
+- `GUILDCTL_TEST_TIMEOUT_MINS` — test-writer worker timeout
+- `GUILDCTL_CODE_TIMEOUT_MINS` — code-writer worker timeout
+- `GUILDCTL_CLAIM_LEASE_MINS` — default lease duration for active claims
 
 ---
 
 ## What `guildctl watch` is showing you
 
-Implemented in `__MIGRATION_LEGMOD__/commands/watch.ts`.
+Implemented in `__MIGRATION_GUILDCTL__/commands/watch.ts`.
 
 The watch dashboard redraws on an interval and combines:
 
@@ -368,10 +368,10 @@ If an agent crashes or gets wedged:
 Typical operator commands:
 
 ```bash
-node __MIGRATION_LEGMOD__/dist/cli.js status
-node __MIGRATION_LEGMOD__/dist/cli.js watch
+node __MIGRATION_GUILDCTL__/dist/cli.js status
+node __MIGRATION_GUILDCTL__/dist/cli.js watch
 node migration/registry/dist/cli.js list-runs --agent review-agent
-node __MIGRATION_LEGMOD__/dist/cli.js release --id "<artifact-id>"
+node __MIGRATION_GUILDCTL__/dist/cli.js release --id "<artifact-id>"
 ```
 
 Because the registry is persistent and claims are explicit, recovery is usually a matter of correcting state and rerunning workers, not starting over.

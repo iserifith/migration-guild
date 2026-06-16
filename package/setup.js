@@ -190,7 +190,7 @@ async function runInstall() {
     console.log(`
 Cloning legacy repo into legacy/...`);
     try {
-      const tmpDir = path.join(CWD, ".legmod-clone-tmp");
+      const tmpDir = path.join(CWD, ".guildctl-clone-tmp");
       if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true });
       (0, import_child_process.execSync)(`git clone --depth 1 ${repoUrl} "${tmpDir}"`, { stdio: "inherit" });
       const legacyDir = path.join(CWD, "legacy");

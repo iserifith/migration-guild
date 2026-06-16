@@ -129,7 +129,7 @@ npm run build:dist
 What they do:
 
 - `npm run build` compiles `setup.ts` to `dist/setup.js`
-- `npm run build:dist` runs the cross-platform dist builder, builds `package/tools/`, rebuilds `dist/setup.js`, then assembles `dist/__LEGMOD_KIT_TGZ__`
+- `npm run build:dist` runs the cross-platform dist builder, builds `package/tools/`, rebuilds `dist/setup.js`, then assembles `dist/__GUILDCTL_KIT_TGZ__`
 
 ## Mirroring rules
 
@@ -140,7 +140,7 @@ The only intentional live mirror is:
 When runtime claim/run behavior changes, keep these pairs aligned in the same commit:
 
 - `migration/registry/**` <-> `package/tools/registry/**`
-- `__MIGRATION_LEGMOD__/**` <-> `__PACKAGE_TOOLS_LEGMOD__/**`
+- `__MIGRATION_GUILDCTL__/**` <-> `__PACKAGE_TOOLS_GUILDCTL__/**`
 - `migration/registry_schema.sql` <-> `package/tools/registry_schema.sql`
 - `migration/test/**` <-> `package/tools/test/**` for behavior-level regression coverage
 
@@ -159,10 +159,10 @@ Operator/runtime expectations:
 
 Environment knobs introduced for migration pool reliability:
 
-- `LEGMOD_ANALYZE_TIMEOUT_MINS`
-- `LEGMOD_TEST_TIMEOUT_MINS`
-- `LEGMOD_CODE_TIMEOUT_MINS`
-- `LEGMOD_CLAIM_LEASE_MINS`
+- `GUILDCTL_ANALYZE_TIMEOUT_MINS`
+- `GUILDCTL_TEST_TIMEOUT_MINS`
+- `GUILDCTL_CODE_TIMEOUT_MINS`
+- `GUILDCTL_CLAIM_LEASE_MINS`
 
 If any of the above semantics change, update both maintainer docs (`DEVELOPMENT.md`, `CHANGELOGS.MD`) and the user-facing runtime architecture docs under `docs/`.
 

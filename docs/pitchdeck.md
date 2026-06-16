@@ -1,17 +1,17 @@
-# Legmod Pitch Sections (Narrative Draft)
+# Guildctl Pitch Sections (Narrative Draft)
 
-Source baseline: `docs/presentation/Legmod_Pitch_Deck.pdf` outline/bookmarks, rewritten into section text.
+Source baseline: `docs/presentation/Guildctl_Pitch_Deck.pdf` outline/bookmarks, rewritten into section text.
 
 ## Intro
 
-### Legmod Pitch Overview and Vision
+### Guildctl Pitch Overview and Vision
 
 - Legacy Code Modernization Challenge
   - Legacy Java systems are complex and poorly documented, making modernization risky, expensive, and slow.
 - Why This Matters Now
   - Teams need to upgrade frameworks and runtime stacks, but manual migration cannot scale across large codebases.
-- Legmod's Vision and Approach
-  - Legmod acts as an AI-assisted migration control tower that organizes work into reliable phases instead of one-off code generation.
+- Guildctl's Vision and Approach
+  - Guildctl acts as an AI-assisted migration control tower that organizes work into reliable phases instead of one-off code generation.
 
 ## Problem Statement
 
@@ -30,7 +30,7 @@ Source baseline: `docs/presentation/Legmod_Pitch_Deck.pdf` outline/bookmarks, re
 
 - Migration Control Tower Opportunity
   - A phased orchestration model can reduce uncertainty by forcing sequence, ownership, and validation across the full migration lifecycle.
-- Legmod as an AI-assisted Migration Toolkit
+- Guildctl as an AI-assisted Migration Toolkit
   - Specialized agents and reusable skills handle targeted tasks while a registry coordinates status and handoffs.
 - Quality by design
   - Planning gates, evaluation checks, and remediation loops ensure output quality is measurable and recoverable.
@@ -40,12 +40,12 @@ Source baseline: `docs/presentation/Legmod_Pitch_Deck.pdf` outline/bookmarks, re
 ### Execution and Demonstration
 
 - Demo objective
-  - Show that Legmod can move from discovery to reviewed output with visible, traceable progress.
+  - Show that Guildctl can move from discovery to reviewed output with visible, traceable progress.
 
 ### Four Core Stages
 
 - Discovery / Inventory
-  - Legmod scans legacy artifacts, classifies roles/framework hints, and builds a structured migration inventory.
+  - Guildctl scans legacy artifacts, classifies roles/framework hints, and builds a structured migration inventory.
 - Planning
   - Stack choices, dependency strategy, and wave planning are confirmed before code generation begins.
 - Execution
@@ -62,10 +62,10 @@ Source baseline: `docs/presentation/Legmod_Pitch_Deck.pdf` outline/bookmarks, re
 
 ## Differentiation and Impact
 
-### Why Legmod Wins
+### Why Guildctl Wins
 
 - More than code generation
-  - Legmod provides orchestration, governance, and traceability, not just transformed files.
+  - Guildctl provides orchestration, governance, and traceability, not just transformed files.
 - Defensible architecture
   - Agent specialization plus shared skills improves consistency and lowers prompt drift risk.
 - Operational confidence
@@ -83,7 +83,7 @@ Source baseline: `docs/presentation/Legmod_Pitch_Deck.pdf` outline/bookmarks, re
 ### How It Works
 
 - Orchestrated core loop
-  - Legmod runs a phased loop of discovery, planning, execution, and review with clear handoff criteria.
+  - Guildctl runs a phased loop of discovery, planning, execution, and review with clear handoff criteria.
 - Specialized agents with shared state
   - Purpose-built agents handle focused tasks while a central registry coordinates artifact status and parallel work.
 - Reusable skills for repeatability
@@ -102,9 +102,9 @@ Source baseline: `docs/presentation/Legmod_Pitch_Deck.pdf` outline/bookmarks, re
 - Near-term roadmap
   - Expand enterprise rollout patterns, improve reporting, and tighten feedback loops from production usage.
 - Business potential
-  - Modernization demand is persistent and high-value, making Legmod relevant across many engineering organizations.
+  - Modernization demand is persistent and high-value, making Guildctl relevant across many engineering organizations.
 
-### The Ask: Proving Legmod in the Real World
+### The Ask: Proving Guildctl in the Real World
 
 - Pilot request
   - Partner on a real migration pilot to validate speed, quality, and operational fit on production-like codebases.

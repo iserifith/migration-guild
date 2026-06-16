@@ -6,7 +6,7 @@ import { getLogDir } from "../util";
 import { loadConfig, resolvePhaseModel } from "../../foundry/config";
 import { reapDeadRuns } from "../../registry/commands/runs";
 
-const REVIEW_TIMEOUT_MINUTES = Math.max(1, parseInt(process.env["LEGMOD_REVIEW_TIMEOUT_MINS"] ?? "10", 10));
+const REVIEW_TIMEOUT_MINUTES = Math.max(1, parseInt(process.env["GUILDCTL_REVIEW_TIMEOUT_MINS"] ?? "10", 10));
 
 function getMigratedArtifacts(db: Database.Database): Array<{ id: string; path: string }> {
   return db.prepare(`

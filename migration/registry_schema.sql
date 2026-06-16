@@ -294,7 +294,7 @@ CREATE INDEX IF NOT EXISTS idx_dependency_strategies_approved_by ON dependency_s
 
 -- ─── Triggers ────────────────────────────────────────────────────────────────
 -- Auto-write a status-changed event whenever any agent (at any depth) updates
--- an artifact's status. legmod CLI polls this table — no agent cooperation needed.
+-- an artifact's status. guildctl CLI polls this table — no agent cooperation needed.
 
 CREATE TRIGGER IF NOT EXISTS trg_artifact_status_change
 AFTER UPDATE OF status ON artifacts

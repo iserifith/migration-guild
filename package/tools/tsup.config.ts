@@ -14,9 +14,9 @@ export default defineConfig([
   },
   {
     entry: {
-      cli: "legmod/cli.ts",
+      cli: "guildctl/cli.ts",
     },
-    outDir: "legmod/dist",
+    outDir: "guildctl/dist",
     format: ["cjs"],
     clean: true,
     sourcemap: true,

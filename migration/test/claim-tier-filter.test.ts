@@ -6,7 +6,7 @@ import { registerArtifact, setArtifactStatus, setArtifactWave } from "../registr
 import { listReadyToMigrate } from "../registry/commands/queries";
 import { linkArtifacts } from "../registry/commands/dependencies";
 import { applySchema } from "../registry/db/schema";
-import { getClaimabilityStats } from "../legmod/monitoring";
+import { getClaimabilityStats } from "../guildctl/monitoring";
 
 function createDb(): Database.Database {
   const db = new Database(":memory:");

@@ -48,7 +48,7 @@ Outcome:
 ### 1. Orchestrator check (initial)
 
 Command:
-**node migration/legmod/dist/cli.js run**
+**node migration/guildctl/dist/cli.js run**
 
 Purpose:
 
@@ -60,7 +60,7 @@ Key output:
 What to run next
 
 1. Inventory (register all Java files)
-   node migration/legmod/dist/cli.js run inventory
+   node migration/guildctl/dist/cli.js run inventory
 ```
 
 Outcome:
@@ -68,14 +68,14 @@ Outcome:
 - Orchestrator correctly routed to Inventory.
 
 Next command:
-**node migration/legmod/dist/cli.js run inventory**
+**node migration/guildctl/dist/cli.js run inventory**
 
 ---
 
 ### 2. Inventory
 
 Command:
-**node migration/legmod/dist/cli.js run inventory**
+**node migration/guildctl/dist/cli.js run inventory**
 
 Purpose:
 
@@ -103,14 +103,14 @@ Outcome:
 - Planning gate blocked by 2 unresolved risky dependency findings.
 
 Next command:
-**node migration/legmod/dist/cli.js run**
+**node migration/guildctl/dist/cli.js run**
 
 ---
 
 ### 3. Orchestrator check (post-inventory)
 
 Command:
-**node migration/legmod/dist/cli.js run**
+**node migration/guildctl/dist/cli.js run**
 
 Purpose:
 
@@ -120,7 +120,7 @@ Key output:
 
 ```
 What to run next 2. Planning (assign migration waves)
-node migration/legmod/dist/cli.js run plan
+node migration/guildctl/dist/cli.js run plan
 ```
 
 Outcome:
@@ -128,14 +128,14 @@ Outcome:
 - Orchestrator correctly routed to Planning.
 
 Next command:
-**node migration/legmod/dist/cli.js run plan**
+**node migration/guildctl/dist/cli.js run plan**
 
 ---
 
 ### 4. Planning attempt 1 (blocked)
 
 Command:
-**node migration/legmod/dist/cli.js run plan**
+**node migration/guildctl/dist/cli.js run plan**
 
 Purpose:
 
@@ -176,14 +176,14 @@ Recommended unblock commands:
 **node migration/registry/dist/cli.js approve-dependency-strategy --finding-id dep-a94aeb95bd5112cb9d27 --strategy upgrade --target-dependency org.junit.jupiter:junit-jupiter --approved-by seri --rationale "Migrate legacy JUnit 4 tests to JUnit 5 Jupiter to align with migration target test framework."**
 
 Next command:
-**node migration/legmod/dist/cli.js run plan**
+**node migration/guildctl/dist/cli.js run plan**
 
 ---
 
 ### 5. Planning attempt 2 (unblocked)
 
 Command:
-**node migration/legmod/dist/cli.js run plan**
+**node migration/guildctl/dist/cli.js run plan**
 
 Purpose:
 
@@ -233,7 +233,7 @@ Outcome:
 ### 6. Migration run
 
 Command:
-**node migration/legmod/dist/cli.js run migrate --parallel 3**
+**node migration/guildctl/dist/cli.js run migrate --parallel 3**
 
 Purpose:
 

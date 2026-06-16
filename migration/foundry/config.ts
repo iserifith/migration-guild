@@ -80,7 +80,7 @@ export interface TracingConfig {
   localOnly: boolean;
 }
 
-export interface LegmodConfig {
+export interface GuildctlConfig {
   /** Which provider handles LLM completions in the Foundry MCP server */
   llmProvider: LLMProvider;
   foundry?: FoundryConfig;
@@ -199,7 +199,7 @@ export function resolveTokenLimit(model: string, cfg?: FoundryConfig): number {
     ?? DEFAULT_MODEL_TOKENS;
 }
 
-const DEFAULT_CONFIG: LegmodConfig = {
+const DEFAULT_CONFIG: GuildctlConfig = {
   llmProvider: "copilot",
 };
 
@@ -242,7 +242,7 @@ function interpolateFoundry(cfg: FoundryConfig, warnOnMissingEnv = true): Foundr
  * Returns DEFAULT_CONFIG if no file is found — all Foundry features will be
  * disabled and the system falls back to Copilot CLI.
  */
-export function loadConfig(workspaceRoot?: string): LegmodConfig {
+export function loadConfig(workspaceRoot?: string): GuildctlConfig {
   const configPath = getConfigPath(workspaceRoot);
 
   if (!fs.existsSync(configPath)) {
@@ -258,9 +258,9 @@ export function loadConfig(workspaceRoot?: string): LegmodConfig {
     );
   }
 
-  const partial = raw as Partial<LegmodConfig>;
+  const partial = raw as Partial<GuildctlConfig>;
 
-  const config: LegmodConfig = {
+  const config: GuildctlConfig = {
     llmProvider: partial.llmProvider ?? DEFAULT_CONFIG.llmProvider,
   };
 
@@ -300,14 +300,14 @@ export function loadConfig(workspaceRoot?: string): LegmodConfig {
 /**
  * Resolve the effective EvalConfig, merging user config with defaults.
  */
-export function getEvalConfig(cfg: LegmodConfig): EvalConfig {
+export function getEvalConfig(cfg: GuildctlConfig): EvalConfig {
   return { ...DEFAULT_EVAL, ...(cfg.eval ?? {}) };
 }
 
 /**
  * Resolve the effective TracingConfig, merging user config with defaults.
  */
-export function getTracingConfig(cfg: LegmodConfig): TracingConfig {
+export function getTracingConfig(cfg: GuildctlConfig): TracingConfig {
   return { ...DEFAULT_TRACING, ...(cfg.tracing ?? {}) };
 }
 
@@ -315,7 +315,7 @@ export function getTracingConfig(cfg: LegmodConfig): TracingConfig {
  * Assert that the Foundry section is configured. Throws with a helpful message
  * if the caller needs Foundry but it is not set up.
  */
-export function requireFoundryConfig(cfg: LegmodConfig): FoundryConfig {
+export function requireFoundryConfig(cfg: GuildctlConfig): FoundryConfig {
   if (!cfg.foundry) {
     throw new Error(
       "[guildctl] Foundry is not configured. Add a \"foundry\" section to guildctl.config.json " +
@@ -333,7 +333,7 @@ export function requireFoundryConfig(cfg: LegmodConfig): FoundryConfig {
 
 export function requirePhaseFoundryConfig(
   phase: PhaseKey,
-  cfg: LegmodConfig,
+  cfg: GuildctlConfig,
   opts: { batch?: boolean } = {},
 ): FoundryConfig {
   if (!cfg.foundry) {
