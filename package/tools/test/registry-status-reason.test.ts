@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import { registerArtifact, setArtifactStatus, setArtifactWave } from "../registry/commands/artifacts";
 import { getEventsQuery } from "../registry/commands/queries";
 import { applySchema } from "../registry/db/schema";
+import type { Status } from "../registry/types";
 
 function createDb(): Database.Database {
   const db = new Database(":memory:");
@@ -53,6 +54,20 @@ test("setArtifactStatus records a reasoned status-changed event when metadata is
       new_status: "skipped",
       reason: "Legacy JUnit 4 coverage is superseded by target-side JUnit 5 tests.",
     });
+  } finally {
+    db.close();
+  }
+});
+
+test("dialogue event labels are not artifact statuses", () => {
+  const db = createDb();
+
+  try {
+    const id = "legacy-source:com.acme.customer:DialogueLabelStatusGuard";
+    registerFirstClassArtifact(db, id);
+
+    assert.throws(() => setArtifactStatus(db, id, "proposal-submitted" as Status));
+    assert.throws(() => setArtifactStatus(db, id, "arbitration-approved" as Status));
   } finally {
     db.close();
   }

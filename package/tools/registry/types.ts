@@ -60,6 +60,14 @@ export type EventType =
   | "analyzed"
   | "scaffolded"
   | "migrated"
+  | "proposal-submitted"
+  | "evidence-submitted"
+  | "critique-issued"
+  | "arbitration-approved"
+  | "arbitration-rejected"
+  | "conflict-opened"
+  | "conflict-resolved"
+  | "benchmark-recorded"
   | "reviewed"
   | "remediated"
   | "blocked"
@@ -158,6 +166,40 @@ export interface Event {
   model: string | null;
   summary: string;
   event_data: string | null;
+}
+
+export type EvidenceType =
+  | "test-command"
+  | "build-command"
+  | "static-check"
+  | "review-verdict"
+  | "benchmark-result";
+
+export interface AcceptanceEvidence {
+  evidence_id: string;
+  artifact_id: string;
+  run_id: string | null;
+  produced_by: string;
+  evidence_type: EvidenceType;
+  command: string | null;
+  exit_code: number | null;
+  pass: 0 | 1;
+  summary: string;
+  output_path: string | null;
+  output_excerpt: string | null;
+  created_at: string;
+}
+
+export type ArbitrationDecisionValue = "approved" | "rejected";
+
+export interface ArbitrationDecision {
+  decision_id: string;
+  artifact_id: string;
+  arbiter: string;
+  decision: ArbitrationDecisionValue;
+  reason: string;
+  evidence_ids: string;
+  decided_at: string;
 }
 
 export type ClaimState =
