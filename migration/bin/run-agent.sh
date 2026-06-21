@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-agent.sh — Launch a Copilot agent with run tracking and transcript logging.
+# run-agent.sh — Launch a Agent agent with run tracking and transcript logging.
 #
 # Usage:
 #   migration/bin/run-agent.sh <agent> [model] [prompt]
@@ -12,7 +12,7 @@
 # What it does:
 #   1. Creates a timestamped log file in logs/
 #   2. Records the run start in the registry (agent, model, log file path)
-#   3. Launches copilot --agent, tees all output to the log file
+#   3. Launches agent --agent, tees all output to the log file
 #   4. Records the run finish with exit code
 #
 # The registry CLI must already be built:
@@ -49,9 +49,9 @@ echo ""
 # Launch agent, tee to log
 EXIT_CODE=0
 if [ -n "$PROMPT" ]; then
-  copilot --agent "$AGENT" --model "$MODEL" --yolo -p "$PROMPT" 2>&1 | tee "$LOG_FILE" || EXIT_CODE=${PIPESTATUS[0]}
+  agent --agent "$AGENT" --model "$MODEL" --yolo -p "$PROMPT" 2>&1 | tee "$LOG_FILE" || EXIT_CODE=${PIPESTATUS[0]}
 else
-  copilot --agent "$AGENT" --model "$MODEL" --yolo 2>&1 | tee "$LOG_FILE" || EXIT_CODE=${PIPESTATUS[0]}
+  agent --agent "$AGENT" --model "$MODEL" --yolo 2>&1 | tee "$LOG_FILE" || EXIT_CODE=${PIPESTATUS[0]}
 fi
 
 # Record run finish

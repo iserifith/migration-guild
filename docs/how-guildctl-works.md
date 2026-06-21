@@ -10,8 +10,8 @@ Migration Guild is **not** one long in-process migration engine. It is an **orch
 
 1. A local workspace with `legacy/`, `modern/`, and `migration/`
 2. A SQLite registry (`migration/registry.db`)
-3. Copilot CLI subprocesses spawned for each phase
-4. Optional Microsoft Foundry integrations for batch, eval, tracing, and retrieval
+3. agent CLI subprocesses spawned for each phase
+4. Optional Microsoft Provider integrations for batch, eval, tracing, and retrieval
 
 The registry is the source of truth. Agents are disposable workers.
 
@@ -26,7 +26,7 @@ The registry is the source of truth. Agents are disposable workers.
 | `__MIGRATION_GUILDCTL__/`     | Orchestrator CLI that runs phases                                  |
 | `migration/registry/`   | Registry CLI and state-management logic                            |
 | `migration/registry.db` | SQLite database tracking artifacts, events, dependencies, and runs |
-| `.github/agents/`       | Agent definitions used by Copilot CLI                              |
+| `.github/agents/`       | Agent definitions used by agent CLI                              |
 | `.github/instructions/` | File-level constraints applied during migration                    |
 
 ---
@@ -42,7 +42,7 @@ This is the operator-facing orchestrator. It:
 - loads `.env` from the workspace root automatically
 - opens the registry database
 - runs pipeline phases (`inventory`, `plan`, `bootstrap`, `migrate`, `review`, `remediate`)
-- spawns Copilot CLI subprocesses
+- spawns agent CLI subprocesses
 - prints dashboards, progress, and operator guidance
 
 `run` with no phase prints the next recommended phase. In normal operation, bootstrap is optional because migration auto-runs bootstrap when `modern/` is not scaffolded.
@@ -75,8 +75,8 @@ Inventory has three parts:
 
 Classification can happen in two modes:
 
-- **Local Copilot agent**: `context-agent`
-- **Foundry batch**: if inventory provider is configured as Foundry and batch is enabled
+- **Local Agent agent**: `context-agent`
+- **Provider batch**: if inventory provider is configured as Provider and batch is enabled
 
 After inventory, artifacts usually have:
 
@@ -150,7 +150,7 @@ Migration runs three pools:
 2. **test-writer-agent** writes target-side tests for `analyzed` artifacts
 3. **code-writer-agent** writes production code for `tests-written` artifacts
 
-Each pool is executed by spawning multiple Copilot CLI subprocesses in parallel. Each subprocess is tracked in the registry `runs` table.
+Each pool is executed by spawning multiple agent CLI subprocesses in parallel. Each subprocess is tracked in the registry `runs` table.
 
 Important detail: Migration Guild itself does **not** migrate files directly. It starts workers, then watches registry state and event output.
 
@@ -259,15 +259,15 @@ This is what powers:
 
 ---
 
-## How Copilot subprocesses are spawned
+## How Agent subprocesses are spawned
 
 Implemented in `__MIGRATION_GUILDCTL__/runner.ts`.
 
 For each spawned worker, Migration Guild:
 
-1. chooses the effective provider for the phase (`copilot` or `foundry`)
-2. sets provider environment variables if Foundry is selected
-3. spawns the Copilot CLI as a child process
+1. chooses the effective provider for the phase (`agent` or `provider`)
+2. sets provider environment variables if Provider is selected
+3. spawns the agent CLI as a child process
 4. records the run in `runs`
 5. optionally writes stdout/stderr to a log file
 6. records final exit code when the process exits
@@ -297,7 +297,7 @@ This is the most important operational behavior.
 
 ### What Migration Guild treats as visible failure
 
-- a spawned Copilot process exits non-zero
+- a spawned Agent process exits non-zero
 - a run times out
 - a recorded PID is no longer alive
 - review makes no registry progress while migrated files remain
@@ -384,9 +384,9 @@ The modernization gates are also explicit operator-visible failures:
 
 ---
 
-## Optional Foundry features
+## Optional Provider features
 
-Foundry is an integration layer, not a separate orchestration model.
+Provider is an integration layer, not a separate orchestration model.
 
 When enabled, it can provide:
 
@@ -402,9 +402,9 @@ The orchestration pattern stays the same:
 - registry remains local
 - file I/O remains local
 - claims and status updates remain local
-- only model execution is routed to Foundry
+- only model execution is routed to Provider
 
-See also: `docs/foundry-api-reference.md`
+See also: `docs/provider-api-reference.md`
 
 ---
 

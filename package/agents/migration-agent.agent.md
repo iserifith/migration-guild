@@ -31,7 +31,7 @@ You are a Java migration engineer executing a migration pipeline. Each run: clai
      --top-k 3 \
      --min-score 0.75
    ```
-   For each result where `status` is `migrated` or `completed` and `target_path` is non-null: read the file at `target_path` directly — do not derive the modern path manually — and use it as a reference for package structure, annotations, and DI style. This step is optional — skip it if the command exits non-zero (Foundry not configured or unavailable), returns `[]` (embeddings not yet populated — run `node migration/guildctl/dist/cli.js batch-submit --type embed` first, then `batch-wait --job-id <id>`), or no results meet the `--min-score` threshold.
+   For each result where `status` is `migrated` or `completed` and `target_path` is non-null: read the file at `target_path` directly — do not derive the modern path manually — and use it as a reference for package structure, annotations, and DI style. This step is optional — skip it if the command exits non-zero (Provider not configured or unavailable), returns `[]` (embeddings not yet populated — run `node migration/guildctl/dist/cli.js batch-submit --type embed` first, then `batch-wait --job-id <id>`), or no results meet the `--min-score` threshold.
 
 4. **Resolve second-class dependencies inline.** Before writing any code, check for linked config/descriptor/SQL artifacts:
    ```bash
@@ -53,7 +53,7 @@ You are a Java migration engineer executing a migration pipeline. Each run: clai
 
 8. Update registry: `set-artifact-status --id "<id>" --status migrated`
 
-9. **Trigger automated evaluation** (if Foundry eval is configured):
+9. **Trigger automated evaluation** (if Provider eval is configured):
    ```bash
    node migration/registry/dist/cli.js evaluate-artifact --id "<id>" --auto-advance
    ```

@@ -22,11 +22,11 @@ import { runEvidenceAdd, runEvidenceList } from "./commands/evidence";
 import { runArbitrate } from "./commands/arbitrate";
 import { runSocietyReport } from "./commands/society-report";
 import { runBenchmarkCompare, runBenchmarkRecord, runBenchmarkReport } from "./commands/benchmark";
-import { loadConfig, requireFoundryConfig } from "../foundry/config";
-import { FoundryClient } from "../foundry/foundry-client";
-import { registerTracingCommands } from "../foundry/tracing/commands";
-import { registerBatchCommands } from "../foundry/batch/commands";
-import { registerEvalCommands } from "../foundry/eval/commands";
+import { loadConfig, requireProviderConfig } from "../provider/config";
+import { ProviderClient } from "../provider/provider-client";
+import { registerTracingCommands } from "../provider/tracing/commands";
+import { registerBatchCommands } from "../provider/batch/commands";
+import { registerEvalCommands } from "../provider/eval/commands";
 import {
   readGuildConfig,
   resolveGuildConfig,
@@ -107,11 +107,11 @@ program
 const db = () => getDb(program.opts()["db"] as string | undefined);
 const dbPath = () => program.opts()["db"] as string | undefined;
 
-/** Lazily build a FoundryClient — only succeeds when foundry config is present. */
-function getFoundryClient(): FoundryClient {
+/** Lazily build a ProviderClient — only succeeds when provider config is present. */
+function getProviderClient(): ProviderClient {
   const cfg = loadConfig();
-  const foundry = requireFoundryConfig(cfg);
-  return new FoundryClient(foundry);
+  const provider = requireProviderConfig(cfg);
+  return new ProviderClient(provider);
 }
 
 // ─── inventory ────────────────────────────────────────────────────────────────
@@ -388,29 +388,29 @@ program
   .option("--min-score <f>", "Minimum cosine similarity threshold 0–1 (default: 0)", parseFloat)
   .action(async (opts) => {
     assertDbExists(dbPath());
-    const { searchSimilar } = await import("../foundry/retrieval");
-    const results = await searchSimilar(db(), getFoundryClient(), opts.query as string, {
+    const { searchSimilar } = await import("../provider/retrieval");
+    const results = await searchSimilar(db(), getProviderClient(), opts.query as string, {
       topK: (opts.topK as number | undefined) ?? 5,
       minScore: (opts.minScore as number | undefined) ?? 0,
     });
     process.stdout.write(JSON.stringify(results, null, 2) + "\n");
   });
 
-// ─── Foundry: batch ───────────────────────────────────────────────────────────
+// ─── Provider: batch ───────────────────────────────────────────────────────────
 
 registerBatchCommands(
   program,
   db,
-  () => getFoundryClient(),
-  () => requireFoundryConfig(loadConfig()),
+  () => getProviderClient(),
+  () => requireProviderConfig(loadConfig()),
 );
 
-// ─── Foundry: tracing / cost ──────────────────────────────────────────────────
+// ─── Provider: tracing / cost ──────────────────────────────────────────────────
 
 registerTracingCommands(program, db);
 
-// ─── Foundry: eval ────────────────────────────────────────────────────────────
+// ─── Provider: eval ────────────────────────────────────────────────────────────
 
-registerEvalCommands(program, db, () => getFoundryClient());
+registerEvalCommands(program, db, () => getProviderClient());
 
 program.parse();

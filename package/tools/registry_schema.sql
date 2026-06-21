@@ -380,7 +380,7 @@ BEGIN
   );
 END;
 
--- ─── Foundry: Evaluation Results ─────────────────────────────────────────────
+-- ─── Provider: Evaluation Results ─────────────────────────────────────────────
 -- One row per evaluator per artifact run. Multiple rows if re-evaluated.
 
 CREATE TABLE IF NOT EXISTS evaluations (
@@ -402,12 +402,12 @@ CREATE TABLE IF NOT EXISTS evaluations (
 CREATE INDEX IF NOT EXISTS idx_evaluations_artifact ON evaluations(artifact_id);
 CREATE INDEX IF NOT EXISTS idx_evaluations_pass     ON evaluations(artifact_id, pass);
 
--- ─── Foundry: Batch Jobs ──────────────────────────────────────────────────────
--- Tracks async batch inference jobs submitted to Foundry.
+-- ─── Provider: Batch Jobs ──────────────────────────────────────────────────────
+-- Tracks async batch inference jobs submitted to Provider.
 
 CREATE TABLE IF NOT EXISTS batch_jobs (
     job_id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-    foundry_job_id TEXT,          -- Foundry-assigned job ID (populated after submission)
+    provider_job_id TEXT,          -- Provider-assigned job ID (populated after submission)
     type           TEXT NOT NULL CHECK (type IN ('inventory', 'embed', 'evaluate')),
     wave           INTEGER,
     status         TEXT NOT NULL DEFAULT 'submitted' CHECK (status IN (
@@ -416,14 +416,14 @@ CREATE TABLE IF NOT EXISTS batch_jobs (
     artifact_ids   TEXT NOT NULL, -- JSON array of artifact IDs in this batch
     submitted_at   TEXT NOT NULL DEFAULT (datetime('now')),
     completed_at   TEXT,
-    result_path    TEXT           -- local path where Foundry wrote output JSONL
+    result_path    TEXT           -- local path where Provider wrote output JSONL
 );
 
 CREATE INDEX IF NOT EXISTS idx_batch_jobs_status ON batch_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_batch_jobs_type   ON batch_jobs(type);
 
--- ─── Foundry: LLM Traces ──────────────────────────────────────────────────────
--- One row per LLM API call. Written by the Foundry client wrapper.
+-- ─── Provider: LLM Traces ──────────────────────────────────────────────────────
+-- One row per LLM API call. Written by the Provider client wrapper.
 
 CREATE TABLE IF NOT EXISTS traces (
     trace_id     TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
@@ -442,7 +442,7 @@ CREATE INDEX IF NOT EXISTS idx_traces_run      ON traces(run_id);
 CREATE INDEX IF NOT EXISTS idx_traces_artifact ON traces(artifact_id);
 CREATE INDEX IF NOT EXISTS idx_traces_ts       ON traces(ts);
 
--- ─── Foundry: Azure AI Agent Threads ──────────────────────────────────────────
+-- ─── Provider: Azure AI Agent Threads ──────────────────────────────────────────
 -- One persistent thread per artifact, shared across migration + review agents.
 
 CREATE TABLE IF NOT EXISTS agent_threads (

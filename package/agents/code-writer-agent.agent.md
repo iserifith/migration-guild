@@ -86,7 +86,7 @@ You are a Java migration engineer in a split migration pipeline. Your sole respo
      --claim-token "<claim_token>"
    ```
 
-10. **Trigger automated evaluation** (if Foundry eval is configured):
+10. **Trigger automated evaluation** (if Provider eval is configured):
    ```bash
    node migration/registry/dist/cli.js evaluate-artifact --id "<id>" --auto-advance
    ```

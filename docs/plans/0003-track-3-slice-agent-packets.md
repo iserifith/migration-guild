@@ -53,7 +53,7 @@ Repository rules:
 - Do not implement guildctl evidence/arbitrate CLI yet.
 
 Files to inspect first:
-- .github/copilot-instructions.md
+- .github/agent-instructions.md
 - docs/plans/0002-track-3-agent-society-evidence-gate.md
 - package/tools/registry_schema.sql
 - package/tools/registry/types.ts
@@ -289,8 +289,8 @@ Repository rules:
 
 Files to inspect first:
 - package/tools/guildctl/commands/review.ts
-- package/tools/foundry/eval/commands.ts
-- package/tools/foundry/eval/run-eval.ts
+- package/tools/provider/eval/commands.ts
+- package/tools/provider/eval/run-eval.ts
 - package/tools/registry/commands/evidence.ts
 - package/tools/test/pipeline-failures.test.ts
 - existing eval/review tests

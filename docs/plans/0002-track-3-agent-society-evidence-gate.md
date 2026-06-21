@@ -48,7 +48,7 @@ Already present in `package/tools/` and mirrored in `migration/`:
 - `guildctl/commands/review.ts`
   - review-agent dispatch for migrated artifacts.
   - detects review stalling.
-- `foundry/eval/commands.ts`
+- `provider/eval/commands.ts`
   - `evaluate-artifact`, `evaluate-wave`, `eval-report`.
   - current `--auto-advance` can advance based on evaluation outcome.
 - UI already has operational views, runs, blockers, artifact details, quality/evaluation surfaces.
@@ -488,8 +488,8 @@ guildctl arbitrate --artifact <id> --reject --arbiter arbiter-agent --reason "te
 
 **Files:**
 - Modify: `package/tools/guildctl/commands/review.ts`
-- Modify: `package/tools/foundry/eval/commands.ts`
-- Modify: `package/tools/foundry/eval/run-eval.ts` if needed
+- Modify: `package/tools/provider/eval/commands.ts`
+- Modify: `package/tools/provider/eval/run-eval.ts` if needed
 - Mirror same changes in `migration/`
 - Test: update `pipeline-failures.test.ts`, create `review-evidence.test.ts`
 

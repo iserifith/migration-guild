@@ -392,7 +392,7 @@ export function validateId(id: string): void {
   }
 }
 
-// ─── Foundry types ────────────────────────────────────────────────────────────
+// ─── Provider types ────────────────────────────────────────────────────────────
 
 export type EvaluatorName =
   | "no-legacy-imports"
@@ -416,7 +416,7 @@ export type BatchJobStatus = "submitted" | "running" | "completed" | "failed";
 
 export interface BatchJob {
   job_id: string;
-  foundry_job_id: string | null;
+  provider_job_id: string | null;
   type: BatchJobType;
   wave: number | null;
   status: BatchJobStatus;

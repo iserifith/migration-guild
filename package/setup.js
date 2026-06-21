@@ -166,8 +166,8 @@ async function runInstall() {
       total += files.length;
     }
   }
-  const instructionsSrc = path.join(PKG_DIR, "copilot-instructions.md");
-  const instructionsDest = path.join(GITHUB_DIR, "copilot-instructions.md");
+  const instructionsSrc = path.join(PKG_DIR, "agent-instructions.md");
+  const instructionsDest = path.join(GITHUB_DIR, "agent-instructions.md");
   if (fs.existsSync(instructionsSrc)) {
     fs.mkdirSync(GITHUB_DIR, { recursive: true });
     let content = fs.readFileSync(instructionsSrc, "utf-8");

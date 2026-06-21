@@ -177,8 +177,8 @@ async function runInstall() {
     }
   }
 
-  const instructionsSrc  = path.join(PKG_DIR, "copilot-instructions.md");
-  const instructionsDest = path.join(GITHUB_DIR, "copilot-instructions.md");
+  const instructionsSrc  = path.join(PKG_DIR, "agent-instructions.md");
+  const instructionsDest = path.join(GITHUB_DIR, "agent-instructions.md");
   if (fs.existsSync(instructionsSrc)) {
     fs.mkdirSync(GITHUB_DIR, { recursive: true });
     let content = fs.readFileSync(instructionsSrc, "utf-8");
@@ -245,8 +245,8 @@ async function runInstall() {
 
 async function main() {
   // Guard: refuse to run against the kit source repository itself.
-  // Detected by the presence of package/copilot-instructions.md inside CWD.
-  const kitRootMarker = path.join(CWD, "package", "copilot-instructions.md");
+  // Detected by the presence of package/agent-instructions.md inside CWD.
+  const kitRootMarker = path.join(CWD, "package", "agent-instructions.md");
   if (fs.existsSync(kitRootMarker)) {
     console.error("\n✗  Cannot run setup against the Migration Guild kit source tree.");
     console.error("   Change into a migration workspace, or pass an explicit target path:");

@@ -9,13 +9,13 @@ import { releaseClaimsForRun } from "../registry/commands/claim";
 import { startRun, finishRun, setRunPid } from "../registry/commands/runs";
 import {
   loadConfig,
-  requireFoundryConfig,
-  requirePhaseFoundryConfig,
+  requireProviderConfig,
+  requirePhaseProviderConfig,
   resolvePhaseProvider,
-} from "../foundry/config";
-import type { PhaseKey } from "../foundry/config";
+} from "../provider/config";
+import type { PhaseKey } from "../provider/config";
 
-export interface SpawnCopilotOpts {
+export interface SpawnAgentOpts {
   agent: string;
   model: string;
   prompt: string;
@@ -42,8 +42,8 @@ export interface AgentRunResult {
   exitCode: number;
 }
 
-function getCopilotCommand(): string {
-  return process.env["COPILOT_CMD"] ?? "copilot";
+function getAgentCommand(): string {
+  return process.env["AGENT_CMD"] ?? "agent";
 }
 
 const LOG_SEP = "=".repeat(72);
@@ -239,7 +239,7 @@ export function summarizeRunFailures(results: AgentRunResult[]): string | null {
   return `${failed.length} agent run(s) failed: ${sample}${extra}`;
 }
 
-export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
+function spawnAgentProcess(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   const { agent, model, prompt, db } = opts;
   const claimOwner = opts.claimOwner ?? `${agent}:${randomUUID()}`;
   const runId = randomUUID().replace(/-/g, "").slice(0, 16);
@@ -287,7 +287,7 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
         `Model:      ${model}`,
         `Started:    ${startedIso}`,
         `Cwd:        ${projectRoot}`,
-        `Command:    ${getCopilotCommand()} --agent ${agent} --model ${model} --yolo -p <prompt:${prompt.length} chars>`,
+        `Command:    ${getAgentCommand()} --agent ${agent} --model ${model} --yolo -p <prompt:${prompt.length} chars>`,
         `Prompt:     ${promptPreview}`,
         LOG_SEP,
         "",
@@ -348,7 +348,7 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
 
   // Always run from the project root (my-migration/) so agent shell commands
   // like `node migration/registry/dist/cli.js ...` resolve correctly.
-  const proc = spawn(getCopilotCommand(), args, {
+  const proc = spawn(getAgentCommand(), args, {
     cwd: projectRoot,
     env: {
       ...process.env,
@@ -529,7 +529,7 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
       finalize(timedOut ? 124 : (code ?? 1));
     });
     proc.on("error", (err) => {
-      const msg = `[guildctl] Failed to start copilot: ${err.message}`;
+      const msg = `[guildctl] Failed to start agent: ${err.message}`;
       process.stderr.write(msg + "\n");
       writeLogLine(logStream, msg);
       finalize(1);
@@ -538,41 +538,41 @@ export function spawnCopilot(opts: SpawnCopilotOpts): Promise<AgentRunResult> {
 }
 
 /**
- * Spawn a Copilot CLI agent, routing LLM calls through Azure Foundry when
- * the resolved provider for this phase is "foundry". All agent execution,
+ * Spawn a agent CLI agent, routing LLM calls through OpenAI-compatible provider when
+ * the resolved provider for this phase is "provider". All agent execution,
  * tool use, file I/O and registry access remain local — only the model
  * endpoint changes.
  */
 export async function spawnAgent(
-  opts: SpawnCopilotOpts & { phase?: PhaseKey },
+  opts: SpawnAgentOpts & { phase?: PhaseKey },
 ): Promise<AgentRunResult> {
   const cfg = loadConfig();
   const phase = opts.phase;
 
   // Determine provider for this phase
   const provider = phase
-    ? resolvePhaseProvider(phase, cfg.foundry)
+    ? resolvePhaseProvider(phase, cfg.provider)
     : cfg.llmProvider; // fallback to global when no phase given
 
-  if (provider === "foundry") {
+  if (provider === "provider") {
     const f = phase
-      ? requirePhaseFoundryConfig(phase, cfg)
-      : requireFoundryConfig(cfg);
-    process.env["COPILOT_PROVIDER_BASE_URL"] = f.openaiEndpoint;
-    process.env["COPILOT_PROVIDER_TYPE"] = f.providerType;
-    process.env["COPILOT_PROVIDER_API_KEY"] = f.apiKey;
+      ? requirePhaseProviderConfig(phase, cfg)
+      : requireProviderConfig(cfg);
+    process.env["AGENT_PROVIDER_BASE_URL"] = f.openaiEndpoint;
+    process.env["AGENT_PROVIDER_TYPE"] = f.providerType;
+    process.env["AGENT_PROVIDER_API_KEY"] = f.apiKey;
     process.stderr.write(
-      `[guildctl] Phase "${phase ?? "unknown"}" → foundry (${f.providerType} @ ${f.openaiEndpoint}, model: ${opts.model})\n`,
+      `[guildctl] Phase "${phase ?? "unknown"}" → provider (${f.providerType} @ ${f.openaiEndpoint}, model: ${opts.model})\n`,
     );
   } else {
-    // Ensure Foundry env vars are cleared so Copilot uses its own routing
-    delete process.env["COPILOT_PROVIDER_BASE_URL"];
-    delete process.env["COPILOT_PROVIDER_TYPE"];
-    delete process.env["COPILOT_PROVIDER_API_KEY"];
+    // Ensure Provider env vars are cleared so Agent uses its own routing
+    delete process.env["AGENT_PROVIDER_BASE_URL"];
+    delete process.env["AGENT_PROVIDER_TYPE"];
+    delete process.env["AGENT_PROVIDER_API_KEY"];
     process.stderr.write(
-      `[guildctl] Phase "${phase ?? "unknown"}" → copilot (model: ${opts.model})\n`,
+      `[guildctl] Phase "${phase ?? "unknown"}" → agent (model: ${opts.model})\n`,
     );
   }
 
-  return spawnCopilot(opts);
+  return spawnAgentProcess(opts);
 }

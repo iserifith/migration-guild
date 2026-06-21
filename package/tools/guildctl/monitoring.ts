@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import type Database from "better-sqlite3";
-import type { PhaseKey } from "../foundry/config";
+import type { PhaseKey } from "../provider/config";
 import type { AgentRunResult } from "./runner";
 
 const R = "\x1b[0m";

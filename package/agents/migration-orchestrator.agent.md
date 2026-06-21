@@ -6,7 +6,7 @@ agents: [context-agent, planner-agent, migration-agent, review-agent, audit-agen
 
 You are the migration orchestrator for a Java legacy-to-modern migration project. You coordinate specialist agents across five phases. The registry at `migration/registry.db` is the single source of truth — every phase writes its state there before advancing.
 
-Read `.github/copilot-instructions.md` at the start of every session to confirm project configuration (legacy root, target root, target framework, registry path).
+Read `.github/agent-instructions.md` at the start of every session to confirm project configuration (legacy root, target root, target framework, registry path).
 
 ## Startup Policy
 

@@ -19,10 +19,10 @@ import Database from "better-sqlite3";
 import { applySchema } from "../registry/db/schema";
 import { registerArtifact, setArtifactStatus } from "../registry/commands/artifacts";
 import { linkArtifacts } from "../registry/commands/dependencies";
-import { resolveTargetPath } from "../foundry/batch/target-path";
-import { buildEmbedBatchInput } from "../foundry/batch/submit";
-import { searchSimilar } from "../foundry/retrieval";
-import type { FoundryConfig } from "../foundry/config";
+import { resolveTargetPath } from "../provider/batch/target-path";
+import { buildEmbedBatchInput } from "../provider/batch/submit";
+import { searchSimilar } from "../provider/retrieval";
+import type { ProviderConfig } from "../provider/config";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -50,7 +50,7 @@ function createEmbeddingsTable(db: Database.Database): void {
   )`);
 }
 
-const minimalCfg: FoundryConfig = {
+const minimalCfg: ProviderConfig = {
   openaiEndpoint: "https://example.openai.azure.com/openai/v1",
   projectEndpoint: "https://example.services.ai.azure.com/api/projects/demo",
   apiKey: "test-key",
@@ -273,7 +273,7 @@ test("searchSimilar: excludes embeddings with null target_path", async () => {
 
   const client = {
     embedOne: async (): Promise<number[]> => [1, 0],
-  } as import("../foundry/foundry-client").FoundryClient;
+  } as import("../provider/provider-client").ProviderClient;
 
   const results = await searchSimilar(db, client, "query");
   assert.equal(results.length, 0, "legacy-era embedding with null target_path must be excluded");
@@ -294,7 +294,7 @@ test("searchSimilar: includes embeddings with target_path and returns target_pat
 
   const client = {
     embedOne: async (): Promise<number[]> => [1, 0],
-  } as import("../foundry/foundry-client").FoundryClient;
+  } as import("../provider/provider-client").ProviderClient;
 
   const results = await searchSimilar(db, client, "query");
   assert.equal(results.length, 1);

@@ -1,10 +1,10 @@
 {
-  "llmProvider": "copilot",
-  "foundry": {
-    "openaiEndpoint": "${FOUNDRY_OPENAI_ENDPOINT}",
-    "embedEndpoint": "${FOUNDRY_EMBED_ENDPOINT}",
-    "projectEndpoint": "${FOUNDRY_PROJECT_ENDPOINT}",
-    "apiKey": "${FOUNDRY_API_KEY}",
+  "llmProvider": "agent",
+  "provider": {
+    "openaiEndpoint": "${PROVIDER_OPENAI_ENDPOINT}",
+    "embedEndpoint": "${PROVIDER_EMBED_ENDPOINT}",
+    "projectEndpoint": "${PROVIDER_PROJECT_ENDPOINT}",
+    "apiKey": "${PROVIDER_API_KEY}",
     "chatModel": "gpt-5.4-mini",
     "embeddingModel": "text-embedding-ada-002",
     "batchEnabled": false,
@@ -23,13 +23,13 @@
       "eval": "gpt-5.4-mini"
     },
     "phaseProviders": {
-      "inventory": "foundry",
-      "planning": "copilot",
-      "analysis": "foundry",
-      "test-writing": "foundry",
-      "code-writing": "foundry",
-      "review": "copilot",
-      "eval": "foundry"
+      "inventory": "provider",
+      "planning": "agent",
+      "analysis": "provider",
+      "test-writing": "provider",
+      "code-writing": "provider",
+      "review": "agent",
+      "eval": "provider"
     }
   },
   "eval": {

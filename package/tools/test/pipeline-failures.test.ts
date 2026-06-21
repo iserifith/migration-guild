@@ -43,15 +43,15 @@ test("runMigrate stops after analyzer failures without spawning later pools", as
   const db = createDb();
   const agents: string[] = [];
   const originalCwd = process.cwd();
-  const originalOpenAi = process.env["FOUNDRY_OPENAI_ENDPOINT"];
-  const originalProject = process.env["FOUNDRY_PROJECT_ENDPOINT"];
-  const originalApiKey = process.env["FOUNDRY_API_KEY"];
+  const originalOpenAi = process.env["PROVIDER_OPENAI_ENDPOINT"];
+  const originalProject = process.env["PROVIDER_PROJECT_ENDPOINT"];
+  const originalApiKey = process.env["PROVIDER_API_KEY"];
 
   try {
     process.chdir(path.resolve(__dirname, "..", ".."));
-    process.env["FOUNDRY_OPENAI_ENDPOINT"] = "https://example.openai.azure.com/openai/v1";
-    process.env["FOUNDRY_PROJECT_ENDPOINT"] = "https://example.services.ai.azure.com/api/projects/test";
-    process.env["FOUNDRY_API_KEY"] = "test-key";
+    process.env["PROVIDER_OPENAI_ENDPOINT"] = "https://example.openai.azure.com/openai/v1";
+    process.env["PROVIDER_PROJECT_ENDPOINT"] = "https://example.services.ai.azure.com/api/projects/test";
+    process.env["PROVIDER_API_KEY"] = "test-key";
 
     registerFirstClassArtifact(db, "legacy-source:com.acme.customer:CustomerKeyService", "planned");
 
@@ -72,12 +72,12 @@ test("runMigrate stops after analyzer failures without spawning later pools", as
     assert.deepEqual(agents, ["analyze-agent"]);
   } finally {
     process.chdir(originalCwd);
-    if (originalOpenAi == null) delete process.env["FOUNDRY_OPENAI_ENDPOINT"];
-    else process.env["FOUNDRY_OPENAI_ENDPOINT"] = originalOpenAi;
-    if (originalProject == null) delete process.env["FOUNDRY_PROJECT_ENDPOINT"];
-    else process.env["FOUNDRY_PROJECT_ENDPOINT"] = originalProject;
-    if (originalApiKey == null) delete process.env["FOUNDRY_API_KEY"];
-    else process.env["FOUNDRY_API_KEY"] = originalApiKey;
+    if (originalOpenAi == null) delete process.env["PROVIDER_OPENAI_ENDPOINT"];
+    else process.env["PROVIDER_OPENAI_ENDPOINT"] = originalOpenAi;
+    if (originalProject == null) delete process.env["PROVIDER_PROJECT_ENDPOINT"];
+    else process.env["PROVIDER_PROJECT_ENDPOINT"] = originalProject;
+    if (originalApiKey == null) delete process.env["PROVIDER_API_KEY"];
+    else process.env["PROVIDER_API_KEY"] = originalApiKey;
     db.close();
   }
 });

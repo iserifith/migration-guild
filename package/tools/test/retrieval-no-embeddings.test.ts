@@ -1,21 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import Database from "better-sqlite3";
-import { searchSimilar } from "../foundry/retrieval";
+import { searchSimilar } from "../provider/retrieval";
 import { applySchema } from "../registry/db/schema";
 import { registerArtifact } from "../registry/commands/artifacts";
 
-// Minimal FoundryClient stub — embedOne should NOT be called when the table
+// Minimal ProviderClient stub — embedOne should NOT be called when the table
 // is absent or empty (the function returns early).
 const stubClient = {
   embedOne: async (_text: string): Promise<number[]> => {
     throw new Error("embedOne should not be called when embeddings are not initialized");
   },
-} as import("../foundry/foundry-client").FoundryClient;
+} as import("../provider/provider-client").ProviderClient;
 
 const stubClientReturnsVec = {
   embedOne: async (_text: string): Promise<number[]> => [1, 0],
-} as import("../foundry/foundry-client").FoundryClient;
+} as import("../provider/provider-client").ProviderClient;
 
 function createDb(): Database.Database {
   const db = new Database(":memory:");
@@ -62,7 +62,7 @@ test("searchSimilar returns ranked results when embeddings are present", async (
 
   const client = {
     embedOne: async (_text: string): Promise<number[]> => [1, 0],
-  } as import("../foundry/foundry-client").FoundryClient;
+  } as import("../provider/provider-client").ProviderClient;
 
   const results = await searchSimilar(db, client, "query");
   assert.equal(results.length, 1);
@@ -82,7 +82,7 @@ test("searchSimilar propagates real errors unrelated to feature initialization",
     embedOne: async (_text: string): Promise<number[]> => {
       throw new Error("Network failure: connection refused");
     },
-  } as import("../foundry/foundry-client").FoundryClient;
+  } as import("../provider/provider-client").ProviderClient;
 
   await assert.rejects(
     () => searchSimilar(db, brokenClient, "query"),

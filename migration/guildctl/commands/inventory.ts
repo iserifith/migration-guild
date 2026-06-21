@@ -7,14 +7,14 @@ import { printPhaseHeader, printEvent, printStatusSummary } from "../dashboard";
 import { getLogDir } from "../util";
 import {
   loadConfig,
-  requireFoundryConfig,
+  requireProviderConfig,
   resolvePhaseModel,
   resolvePhaseProvider,
-} from "../../foundry/config";
-import { FoundryClient } from "../../foundry/foundry-client";
-import { submitBatch } from "../../foundry/batch/submit";
-import { waitForBatch } from "../../foundry/batch/poll";
-import { applyInventoryResults } from "../../foundry/batch/apply";
+} from "../../provider/config";
+import { ProviderClient } from "../../provider/provider-client";
+import { submitBatch } from "../../provider/batch/submit";
+import { waitForBatch } from "../../provider/batch/poll";
+import { applyInventoryResults } from "../../provider/batch/apply";
 import { registerArtifact } from "../../registry/commands/artifacts";
 import { setNext } from "../../registry/commands/operator";
 import { applySchema } from "../../registry/db/schema";
@@ -99,21 +99,21 @@ function scanAndRegister(db: Database.Database, projectRoot: string): number {
   return registered;
 }
 
-// ─── Batch path (Foundry) ────────────────────────────────────────────────────
+// ─── Batch path (Provider) ────────────────────────────────────────────────────
 
 async function runInventoryBatch(db: Database.Database): Promise<void> {
   const cfg = loadConfig();
-  const foundry = requireFoundryConfig(cfg);
-  const client = new FoundryClient(foundry);
+  const provider = requireProviderConfig(cfg);
+  const client = new ProviderClient(provider);
 
-  process.stdout.write("  Provider: foundry (batch)\n\n");
+  process.stdout.write("  Provider: provider (batch)\n\n");
 
-  const job = await submitBatch(db, client, foundry, "inventory");
+  const job = await submitBatch(db, client, provider, "inventory");
   process.stdout.write(`  Batch job submitted: ${job.job_id} — waiting for completion…\n`);
 
   const completed = await waitForBatch(db, client, job.job_id);
   if (completed.status === "failed") {
-    process.stderr.write(`\n  ✗ Foundry batch job failed: ${completed.job_id}\n`);
+    process.stderr.write(`\n  ✗ Provider batch job failed: ${completed.job_id}\n`);
     process.exit(1);
   }
 
@@ -141,14 +141,14 @@ export async function runInventory(db: Database.Database): Promise<void> {
   });
 
   const cfg = loadConfig();
-  const inventoryProvider = resolvePhaseProvider("inventory", cfg.foundry);
+  const inventoryProvider = resolvePhaseProvider("inventory", cfg.provider);
 
-  if (inventoryProvider === "foundry" && cfg.foundry?.batchEnabled) {
-    // Step 2a: Foundry batch — classify all registered artifacts
+  if (inventoryProvider === "provider" && cfg.provider?.batchEnabled) {
+    // Step 2a: Provider batch — classify all registered artifacts
     await runInventoryBatch(db);
   } else {
-    // Step 2b: local Copilot agent — classify each artifact (role, framework, etc.)
-    const model = resolvePhaseModel("inventory", cfg.foundry);
+    // Step 2b: local Agent agent — classify each artifact (role, framework, etc.)
+    const model = resolvePhaseModel("inventory", cfg.provider);
     console.log(`  Agent: context-agent   Model: ${model}\n`);
     const result = await spawnAgent({
       agent: "context-agent",
