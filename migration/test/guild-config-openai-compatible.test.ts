@@ -18,7 +18,7 @@ test("Guild config scaffolds and resolves OpenAI-compatible defaults", () => {
   assert.equal(fs.existsSync(configPath), true);
   const cfg = resolveGuildConfig({ cwd: root });
   assert.equal(cfg.version, 1);
-  assert.equal(cfg.model.base_url, "https://openrouter.ai/api/v1");
+  assert.equal(cfg.model.base_url, "https://dashscope-intl.aliyuncs.com/compatible-mode/v1");
   assert.equal(cfg.migration.require_evidence_before_intent, true);
   assert.equal(cfg.approval.mode, "manual");
 });
@@ -35,7 +35,7 @@ test("Guild profiles override OpenAI-compatible runtime settings", () => {
 test("simple YAML parser and writer round-trip nested Guild config", () => {
   const yaml = stringifySimpleYaml(DEFAULT_GUILD_CONFIG as unknown as Record<string, unknown>);
   const parsed = parseSimpleYaml(yaml);
-  assert.equal((parsed.model as any).base_url, "https://openrouter.ai/api/v1");
+  assert.equal((parsed.model as any).base_url, "https://dashscope-intl.aliyuncs.com/compatible-mode/v1");
   assert.equal((parsed.migration as any).max_autonomous_steps, 3);
 });
 
@@ -49,7 +49,7 @@ test("OpenAI-compatible client reports missing configured API key without leakin
   const root = tempRepo();
   scaffoldGuildConfig(root);
   const cfg = resolveGuildConfig({ cwd: root });
-  delete process.env.OPENROUTER_API_KEY;
+  delete process.env.DASHSCOPE_API_KEY;
   const client = new OpenAICompatibleClient(cfg);
   await assert.rejects(
     () => client.complete({ messages: [{ role: "user", content: "hello" }] }),
