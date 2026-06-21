@@ -19,6 +19,8 @@ import { runRelease } from "./commands/release";
 import { runRemediate } from "./commands/remediate";
 import { runEvidenceAdd, runEvidenceList } from "./commands/evidence";
 import { runArbitrate } from "./commands/arbitrate";
+import { runSocietyReport } from "./commands/society-report";
+import { runBenchmarkCompare, runBenchmarkRecord, runBenchmarkReport } from "./commands/benchmark";
 import { loadConfig, requireFoundryConfig } from "../foundry/config";
 import { FoundryClient } from "../foundry/foundry-client";
 import { registerTracingCommands } from "../foundry/tracing/commands";
@@ -198,6 +200,63 @@ program
   .action(async (opts) => {
     assertDbExists(dbPath());
     await runArbitrate(db(), opts);
+  });
+
+
+program
+  .command("society-report")
+  .description("Show judge-readable agent society proof: roles, dialogue, evidence, arbitration, efficiency")
+  .option("--json", "Print report as JSON")
+  .action((opts) => {
+    assertDbExists(dbPath());
+    runSocietyReport(db(), opts);
+  });
+
+const benchmark = program
+  .command("benchmark")
+  .description("Record, report, and compare single-agent vs guild benchmark runs");
+
+benchmark
+  .command("record")
+  .description("Record a manual benchmark run")
+  .requiredOption("--mode <mode>", "single-agent | guild")
+  .requiredOption("--fixture <name>", "Fixture name")
+  .requiredOption("--elapsed-ms <n>", "Elapsed runtime in milliseconds", parseInt)
+  .requiredOption("--total-runs <n>", "Total agent/tool runs", parseInt)
+  .requiredOption("--failed-runs <n>", "Failed agent/tool runs", parseInt)
+  .requiredOption("--artifacts-planned <n>", "Artifacts planned", parseInt)
+  .requiredOption("--artifacts-completed <n>", "Artifacts completed", parseInt)
+  .requiredOption("--evidence-pass-rate <n>", "Evidence pass rate from 0 to 1", parseFloat)
+  .requiredOption("--rework-count <n>", "Rework count", parseInt)
+  .requiredOption("--verdict <verdict>", "pass | fail")
+  .option("--total-cost-usd <n>", "Total cost in USD", parseFloat)
+  .option("--notes <text>", "Notes")
+  .option("--json", "Print recorded row as JSON")
+  .action((opts) => {
+    assertDbExists(dbPath());
+    runBenchmarkRecord(db(), opts);
+  });
+
+benchmark
+  .command("report")
+  .description("List benchmark runs")
+  .option("--mode <mode>", "Filter by mode")
+  .option("--fixture <name>", "Filter by fixture")
+  .option("--json", "Print rows as JSON")
+  .action((opts) => {
+    assertDbExists(dbPath());
+    runBenchmarkReport(db(), opts);
+  });
+
+benchmark
+  .command("compare")
+  .description("Compare single-agent baseline against guild benchmark")
+  .requiredOption("--baseline <id>", "single-agent benchmark ID")
+  .requiredOption("--guild <id>", "guild benchmark ID")
+  .option("--json", "Print comparison as JSON")
+  .action((opts) => {
+    assertDbExists(dbPath());
+    runBenchmarkCompare(db(), opts);
   });
 
 // ─── run ──────────────────────────────────────────────────────────────────────

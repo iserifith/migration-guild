@@ -5,6 +5,7 @@ import type { FoundryClient } from "../foundry-client";
 import type { EvalConfig } from "../config";
 import { getArtifactById } from "../../registry/commands/queries";
 import { appendChangelog } from "../../registry/commands/changelog";
+import { addAcceptanceEvidence, approveArtifactWithEvidence, rejectArtifactWithEvidence } from "../../registry/commands/evidence";
 import { runAllEvaluators, type EvaluatorInput, type EvaluatorResult } from "./evaluators";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -163,24 +164,43 @@ export async function evaluateArtifact(
     JSON.stringify({ pass: overallPass, score: aggregateScore, results }),
   );
 
-  // Auto-advance status when requested
+  const evidence = addAcceptanceEvidence(db, {
+    artifactId,
+    producedBy: "eval-runner",
+    evidenceType: overallPass ? "static-check" : "review-verdict",
+    command: "guildctl evaluate-artifact",
+    exitCode: overallPass ? 0 : 1,
+    pass: overallPass ? 1 : 0,
+    summary: `Evaluation ${overallPass ? "passed" : "failed"}. ${summary}`,
+    outputExcerpt: summary,
+  });
+
+  insertEvent(
+    db,
+    artifactId,
+    "evidence-submitted",
+    `Evaluation evidence submitted: ${overallPass ? "PASS" : "FAIL"}. ${summary}`,
+    JSON.stringify({ role: "critic", evidence_id: evidence.evidence_id, pass: evidence.pass, evidence_type: evidence.evidence_type }),
+  );
+
+  // Auto-advance only through arbitration. The evaluator produces evidence;
+  // guildctl-arbiter decides from that evidence so Builder/Critic cannot self-approve.
   const autoAdvance = opts.autoAdvance ?? cfg.autoAdvance;
   if (autoAdvance) {
     if (overallPass) {
-      db.prepare(
-        `UPDATE artifacts SET status = 'completed', updated_at = datetime('now') WHERE id = ?`,
-      ).run(artifactId);
-
-      insertEvent(
-        db,
+      approveArtifactWithEvidence(db, {
         artifactId,
-        "auto-completed",
-        `Auto-advanced to completed after evaluation passed (score=${aggregateScore ?? "n/a"}).`,
-      );
+        arbiter: "guildctl-arbiter",
+        reason: `Evaluation passed (score=${aggregateScore ?? "n/a"}).`,
+        evidenceIds: [evidence.evidence_id],
+      });
     } else {
-      db.prepare(
-        `UPDATE artifacts SET status = 'needs-rework', updated_at = datetime('now') WHERE id = ?`,
-      ).run(artifactId);
+      rejectArtifactWithEvidence(db, {
+        artifactId,
+        arbiter: "guildctl-arbiter",
+        reason: `Evaluation failed. ${summary}`,
+        evidenceIds: [evidence.evidence_id],
+      });
 
       insertEvent(
         db,

@@ -202,6 +202,41 @@ export interface ArbitrationDecision {
   decided_at: string;
 }
 
+
+export type BenchmarkMode = "single-agent" | "guild";
+export type BenchmarkVerdict = "pass" | "fail";
+
+export interface BenchmarkRun {
+  benchmark_id: string;
+  mode: BenchmarkMode;
+  fixture: string;
+  started_at: string;
+  finished_at: string;
+  elapsed_ms: number;
+  total_runs: number;
+  failed_runs: number;
+  artifacts_planned: number;
+  artifacts_completed: number;
+  evidence_pass_rate: number;
+  rework_count: number;
+  total_cost_usd: number | null;
+  verdict: BenchmarkVerdict;
+  notes: string | null;
+}
+
+export interface BenchmarkComparison {
+  baseline: BenchmarkRun;
+  guild: BenchmarkRun;
+  deltas: {
+    elapsed_ms: number;
+    failed_runs: number;
+    completion_rate: number;
+    evidence_pass_rate: number;
+    rework_count: number;
+    total_cost_usd: number | null;
+  };
+}
+
 export type ClaimState =
   | "active"
   | "completed"
@@ -436,6 +471,9 @@ export interface ApiArtifactRow {
   claimed_at: string | null;
   created_at: string;
   updated_at: string;
+  acceptance_state?: "Proposed" | "Evidence Passed" | "Rejected" | "Accepted";
+  evidence?: AcceptanceEvidence[];
+  latest_arbitration?: ArbitrationDecision | null;
 }
 
 /** GET /api/status — overall migration progress summary. */

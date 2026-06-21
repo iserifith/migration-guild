@@ -27,6 +27,7 @@ export default function ArtifactDetail({
     ["Module", artifact.module ?? "-"],
     ["Wave", artifact.wave != null ? `wave ${artifact.wave}` : "-"],
     ["Status",     artifact.status],
+    ["Acceptance state", artifact.acceptance_state ?? "-"],
     ["Path",       artifact.path],
     ["Data path",  artifact.data_path ?? "-"],
     ["Created",    formatTimestamp(artifact.created_at, timeMode)],
@@ -45,6 +46,27 @@ export default function ArtifactDetail({
             <span className="detail-value">{value}</span>
           </React.Fragment>
         ))}
+      </div>
+
+
+      <div className="events">
+        <h3>Evidence gate</h3>
+        {artifact.evidence && artifact.evidence.length > 0 ? artifact.evidence.map((e) => (
+          <div key={e.evidence_id} className="event-item">
+            <span className="event-type">{e.evidence_type}</span>
+            <span className="event-agent">{e.produced_by}</span>
+            <span className="event-note">{e.pass ? "PASS" : "FAIL"}: {e.summary}{e.command ? ` (${e.command}${e.exit_code !== null ? ` exit=${e.exit_code}` : ""})` : ""}</span>
+            <span className="event-time">{formatTimestamp(e.created_at, timeMode)}</span>
+          </div>
+        )) : <EmptyState compact title="No acceptance evidence yet." />}
+        {artifact.latest_arbitration ? (
+          <div className="event-item">
+            <span className="event-type">arbitration-{artifact.latest_arbitration.decision}</span>
+            <span className="event-agent">{artifact.latest_arbitration.arbiter}</span>
+            <span className="event-note">{artifact.latest_arbitration.reason}</span>
+            <span className="event-time">{formatTimestamp(artifact.latest_arbitration.decided_at, timeMode)}</span>
+          </div>
+        ) : null}
       </div>
 
       <div className="events">
