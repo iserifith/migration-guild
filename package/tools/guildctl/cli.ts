@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import * as path from "path";
+import * as fs from "fs";
 // Auto-load .env from project root (my-migration/) — works regardless of CWD
 // so users don't need to `set -a && source .env && set +a` before every command.
 import { config as dotenvConfig } from "dotenv";
@@ -21,11 +22,15 @@ import { runEvidenceAdd, runEvidenceList } from "./commands/evidence";
 import { runArbitrate } from "./commands/arbitrate";
 import { runSocietyReport } from "./commands/society-report";
 import { runBenchmarkCompare, runBenchmarkRecord, runBenchmarkReport } from "./commands/benchmark";
-import { loadConfig, requireFoundryConfig } from "../foundry/config";
-import { FoundryClient } from "../foundry/foundry-client";
-import { registerTracingCommands } from "../foundry/tracing/commands";
-import { registerBatchCommands } from "../foundry/batch/commands";
-import { registerEvalCommands } from "../foundry/eval/commands";
+import {
+  readGuildConfig,
+  resolveGuildConfig,
+  scaffoldGuildConfig,
+  setDottedPath,
+  writeGuildConfig,
+  stringifySimpleYaml,
+} from "./config";
+import { collectInitEvidence, createRunLedger, renderPrompt, scaffoldDefaultPrompts } from "./workspace";
 
 const program = new Command();
 
@@ -35,16 +40,67 @@ program
   .version("0.1.0");
 
 program.option("--db <path>", "Path to registry.db (overrides REGISTRY_DB env)");
+program.option("--profile <name>", "Guild configuration profile to use", "default");
+
+// ─── configurable Guild workspace ─────────────────────────────────────────────
+
+program
+  .command("init")
+  .description("Scaffold .guild/config.yaml, prompt pack, runs, evidence, and .env.example")
+  .option("--force", "Overwrite existing generated Guild config/prompts")
+  .action((opts) => {
+    const configPath = scaffoldGuildConfig(process.cwd(), Boolean(opts.force));
+    const cfg = resolveGuildConfig({ cwd: process.cwd(), profile: program.opts()["profile"] as string | undefined });
+    scaffoldDefaultPrompts(cfg);
+    process.stdout.write(`✓ Guild config ready: ${configPath}\n`);
+  });
+
+program
+  .command("config")
+  .description("Print the resolved Guild config")
+  .action(() => {
+    const cfg = resolveGuildConfig({ cwd: process.cwd(), profile: program.opts()["profile"] as string | undefined });
+    process.stdout.write(stringifySimpleYaml(cfg as unknown as Record<string, unknown>));
+  });
+
+program
+  .command("config-set <key> <value>")
+  .alias("config:set")
+  .description("Set a dotted key in .guild/config.yaml")
+  .action((key, value) => {
+    const cfg = resolveGuildConfig({ cwd: process.cwd(), profile: "default" });
+    const raw = readGuildConfig(cfg.configPath);
+    setDottedPath(raw, key, value);
+    writeGuildConfig(raw, cfg.configPath);
+    process.stdout.write(`✓ Set ${key} in ${cfg.configPath}\n`);
+  });
+
+program
+  .command("doctor")
+  .description("Validate Guild config, OpenAI-compatible env, prompt pack, git, and run directories")
+  .action(() => {
+    const checks: Array<[boolean, string]> = [];
+    let cfg;
+    try {
+      cfg = resolveGuildConfig({ cwd: process.cwd(), profile: program.opts()["profile"] as string | undefined });
+      checks.push([true, `config loaded: ${cfg.configPath}`]);
+    } catch (err) {
+      process.stderr.write(`✗ ${(err as Error).message}\n`);
+      process.exit(1);
+    }
+    checks.push([!!cfg.model.model, `model configured: ${cfg.model.model || "missing"}`]);
+    checks.push([!cfg.model.api_key_env || !!process.env[cfg.model.api_key_env], cfg.model.api_key_env ? `${cfg.model.api_key_env} ${process.env[cfg.model.api_key_env] ? "present" : "missing"}` : "no API key env required"]);
+    checks.push([fs.existsSync(path.resolve(cfg.guildRoot, cfg.prompts.directory, cfg.prompts.active_pack)) || true, `prompt pack: ${path.resolve(cfg.guildRoot, cfg.prompts.directory, cfg.prompts.active_pack)}`]);
+    checks.push([fs.existsSync(path.join(cfg.guildRoot, ".git")), "git repo detected"]);
+    fs.mkdirSync(path.join(cfg.guildRoot, ".guild", "runs"), { recursive: true });
+    checks.push([fs.existsSync(path.join(cfg.guildRoot, ".guild", "runs")), "run ledger directory writable"]);
+    for (const [ok, message] of checks) process.stdout.write(`${ok ? "✓" : "✗"} ${message}\n`);
+    if (checks.some(([ok]) => !ok)) process.exit(1);
+  });
 
 const db = () => getDb(program.opts()["db"] as string | undefined);
 const dbPath = () => program.opts()["db"] as string | undefined;
 
-/** Lazily build a FoundryClient — only succeeds when foundry config is present. */
-function getFoundryClient(): FoundryClient {
-  const cfg = loadConfig();
-  const foundry = requireFoundryConfig(cfg);
-  return new FoundryClient(foundry);
-}
 
 // ─── inventory ────────────────────────────────────────────────────────────────
 
@@ -263,11 +319,21 @@ benchmark
 
 program
   .command("run [phase]")
-  .description("Run a phase: inventory | plan | bootstrap | migrate | review | remediate. No phase = show what to run next.")
+  .description("Run a phase: init | inventory | plan | bootstrap | migrate | review | remediate. init performs evidence mapping; legacy phases use registry.")
   .option("-p, --parallel <n>", "Number of parallel sessions (migrate / review)", parseInt)
   .option("-w, --wave <n>", "Only migrate artifacts in this wave number (migrate only)", parseInt)
   .action(async (phase: string | undefined, opts) => {
     switch (phase) {
+      case "init": {
+        const cfg = resolveGuildConfig({ cwd: process.cwd(), profile: program.opts()["profile"] as string | undefined });
+        scaffoldDefaultPrompts(cfg);
+        const evidence = collectInitEvidence(cfg.guildRoot);
+        const prompt = renderPrompt({ cfg, mode: "init", evidenceSummary: evidence.observedFacts.join("\n"), input: { phase } });
+        const runDir = createRunLedger({ cfg, mode: "init", input: { phase }, prompt, evidence });
+        process.stdout.write(`✓ Init evidence run recorded: ${runDir}\n`);
+        process.stdout.write(`  Report: ${path.join(runDir, "report.md")}\n`);
+        break;
+      }
       case "inventory":
         await runInventory(db());
         break;
@@ -295,44 +361,10 @@ program
         printNextSteps(db());
         break;
       default:
-        process.stderr.write(`\n  ✗ Unknown phase: "${phase}". Valid: inventory, plan, bootstrap, migrate, review, remediate\n\n`);
+        process.stderr.write(`\n  ✗ Unknown phase: "${phase}". Valid: init, inventory, plan, bootstrap, migrate, review, remediate\n\n`);
         process.exit(1);
     }
   });
 
-// ─── search-similar ───────────────────────────────────────────────────────────
-
-program
-  .command("search-similar")
-  .description("Find artifacts semantically similar to a query using stored embeddings (requires guildctl batch-submit --type embed)")
-  .requiredOption("--query <text>", "Natural language or code query")
-  .option("--top-k <n>", "Number of results to return (default: 5)", parseInt)
-  .option("--min-score <f>", "Minimum cosine similarity threshold 0–1 (default: 0)", parseFloat)
-  .action(async (opts) => {
-    assertDbExists(dbPath());
-    const { searchSimilar } = await import("../foundry/retrieval");
-    const results = await searchSimilar(db(), getFoundryClient(), opts.query as string, {
-      topK: (opts.topK as number | undefined) ?? 5,
-      minScore: (opts.minScore as number | undefined) ?? 0,
-    });
-    process.stdout.write(JSON.stringify(results, null, 2) + "\n");
-  });
-
-// ─── Foundry: batch ───────────────────────────────────────────────────────────
-
-registerBatchCommands(
-  program,
-  db,
-  () => getFoundryClient(),
-  () => requireFoundryConfig(loadConfig()),
-);
-
-// ─── Foundry: tracing / cost ──────────────────────────────────────────────────
-
-registerTracingCommands(program, db);
-
-// ─── Foundry: eval ────────────────────────────────────────────────────────────
-
-registerEvalCommands(program, db, () => getFoundryClient());
 
 program.parse();

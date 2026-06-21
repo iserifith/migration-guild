@@ -34,7 +34,7 @@ You are a Java migration stack advisor. Your job is to examine all registered ar
    - **Caching** (EhCache 2.x, etc.)
    - **Build / Packaging** (Maven plugins, EAR/WAR, etc.)
 
-4. For each detected framework, use the `#framework-mapper` skill to determine the recommended target. Apply project-type context from `copilot-instructions.md` (web / service / library).
+4. For each detected framework, use the `#framework-mapper` skill to determine the recommended target. Apply project-type context from `agent-instructions.md` (web / service / library).
 
 5. Record each mapping in the registry:
    ```bash

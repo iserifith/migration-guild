@@ -14,7 +14,7 @@ You are a target framework reference expert. Your job is to find and explain the
 
 ## Approach
 
-1. Read `.github/copilot-instructions.md` to confirm the target framework for this project.
+1. Read `.github/agent-instructions.md` to confirm the target framework for this project.
 
 2. Search `modern/` for an existing reference:
    - REST endpoint → search for controller classes
@@ -39,7 +39,7 @@ You are a target framework reference expert. Your job is to find and explain the
 ## Reference: <pattern or file role>
 
 **Reference File**: `<path in modern/ or "None — using standard conventions">`
-**Target Framework**: <from copilot-instructions.md>
+**Target Framework**: <from agent-instructions.md>
 
 ### Key Annotations
 - `@Annotation` — purpose

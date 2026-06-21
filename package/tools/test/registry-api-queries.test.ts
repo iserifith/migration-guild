@@ -25,8 +25,6 @@ import {
   queryOpenBlockers,
   queryOpenIssues,
   queryRunHistory,
-  queryEvaluationSummary,
-  queryCostSummary,
 } from "../registry/commands/queries";
 import { applySchema } from "../registry/db/schema";
 
@@ -558,109 +556,6 @@ test("queryRunHistory: filters by status", () => {
     const runs = queryRunHistory(db, { status: "failed" });
     assert.equal(runs.length, 1);
     assert.equal(runs[0].run_id, "r2");
-  } finally {
-    db.close();
-  }
-});
-
-// ─── queryEvaluationSummary ───────────────────────────────────────────────────
-
-test("queryEvaluationSummary: aggregates pass/fail counts by evaluator", () => {
-  const db = createDb();
-  try {
-    const id = "legacy-source:com.acme:EvalArt";
-    registerArt(db, id);
-
-    db.prepare(
-      `INSERT INTO evaluations (eval_id, artifact_id, evaluator, score, pass)
-       VALUES ('e1', ?, 'no-legacy-imports',    1.0, 1),
-              ('e2', ?, 'no-legacy-imports',    0.0, 0),
-              ('e3', ?, 'signature-preservation', 0.9, 1)`,
-    ).run(id, id, id);
-
-    const summary = queryEvaluationSummary(db);
-
-    const nli = summary.find((s) => s.evaluator === "no-legacy-imports");
-    assert.ok(nli);
-    assert.equal(nli.total,  2);
-    assert.equal(nli.passed, 1);
-    assert.equal(nli.failed, 1);
-
-    const sp = summary.find((s) => s.evaluator === "signature-preservation");
-    assert.ok(sp);
-    assert.equal(sp.total,  1);
-    assert.equal(sp.passed, 1);
-    assert.equal(sp.failed, 0);
-  } finally {
-    db.close();
-  }
-});
-
-test("queryEvaluationSummary: scopes to a single artifact when id is provided", () => {
-  const db = createDb();
-  try {
-    const id1 = "legacy-source:com.acme:EvalA";
-    const id2 = "legacy-source:com.acme:EvalB";
-    registerArt(db, id1);
-    registerArt(db, id2);
-
-    db.prepare(
-      `INSERT INTO evaluations (eval_id, artifact_id, evaluator, pass)
-       VALUES ('e1', ?, 'no-legacy-imports', 1),
-              ('e2', ?, 'no-legacy-imports', 0)`,
-    ).run(id1, id2);
-
-    const summary = queryEvaluationSummary(db, id1);
-    assert.equal(summary.length, 1);
-    assert.equal(summary[0].total,  1);
-    assert.equal(summary[0].passed, 1);
-  } finally {
-    db.close();
-  }
-});
-
-// ─── queryCostSummary ─────────────────────────────────────────────────────────
-
-test("queryCostSummary: returns zeros when no traces exist", () => {
-  const db = createDb();
-  try {
-    const cost = queryCostSummary(db);
-    assert.equal(cost.total_tokens_in,  0);
-    assert.equal(cost.total_tokens_out, 0);
-    assert.equal(cost.total_cost_usd,   0);
-    assert.equal(cost.total_calls,      0);
-    assert.deepEqual(cost.by_model,     []);
-  } finally {
-    db.close();
-  }
-});
-
-test("queryCostSummary: aggregates totals and groups by model", () => {
-  const db = createDb();
-  try {
-    db.prepare(
-      `INSERT INTO traces (trace_id, span_name, model, tokens_in, tokens_out, cost_usd)
-       VALUES ('t1', 'migration', 'gpt-4o',  1000, 500,  0.02),
-              ('t2', 'migration', 'gpt-4o',  2000, 800,  0.04),
-              ('t3', 'review',    'gpt-4o-mini', 500, 200, 0.001)`,
-    ).run();
-
-    const cost = queryCostSummary(db);
-
-    assert.equal(cost.total_calls,      3);
-    assert.equal(cost.total_tokens_in,  3500);
-    assert.equal(cost.total_tokens_out, 1500);
-    assert.ok(Math.abs(cost.total_cost_usd - 0.061) < 0.001);
-
-    const gpt4 = cost.by_model.find((m) => m.model === "gpt-4o");
-    assert.ok(gpt4);
-    assert.equal(gpt4.calls,      2);
-    assert.equal(gpt4.tokens_in,  3000);
-    assert.equal(gpt4.tokens_out, 1300);
-
-    const mini = cost.by_model.find((m) => m.model === "gpt-4o-mini");
-    assert.ok(mini);
-    assert.equal(mini.calls, 1);
   } finally {
     db.close();
   }

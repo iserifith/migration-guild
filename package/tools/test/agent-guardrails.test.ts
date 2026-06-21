@@ -34,7 +34,7 @@ test("migration orchestrator keeps remediation registry-first and legacy read-on
 
 test("remediation agent stays registry-only", () => {
   const remediation = readRepoFile("package", "agents", "remediation-agent.agent.md");
-  const instructions = readRepoFile("package", "copilot-instructions.md");
+  const instructions = readRepoFile("package", "agent-instructions.md");
 
   assert.match(remediation, /Remediation is \*\*registry-only\*\*/);
   assert.match(remediation, /Never edit files in `modern\/` as part of remediation/);

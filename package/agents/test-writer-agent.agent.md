@@ -53,7 +53,6 @@ You are a Java test engineer in a split migration pipeline. Your sole responsibi
 
 4. Read the claimed legacy file only for spot checks or when the analysis is ambiguous.
 
-5. Do **not** run `search-similar` and do **not** scan broad areas of `modern/`. Keep context short. If you need a style reference, read at most one directly relevant existing test file.
 
 6. **Resolve second-class dependencies inline.** Before writing any test code, check for linked config/descriptor/SQL artifacts:
    ```bash

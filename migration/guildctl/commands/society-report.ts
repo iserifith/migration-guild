@@ -39,7 +39,6 @@ export interface SocietyReport {
     elapsed_runtime_ms: number | null;
     failed_runs: number;
     reworked_artifacts: number;
-    total_cost_usd: number | null;
   };
 }
 
@@ -67,9 +66,6 @@ function querySocietyReport(db: Database.Database): SocietyReport {
   const runtime = db.prepare("SELECT MIN(started_at) AS first, MAX(COALESCE(finished_at, started_at)) AS last FROM runs").get() as { first: string | null; last: string | null };
   let elapsed: number | null = null;
   if (runtime.first && runtime.last) elapsed = Math.max(0, new Date(runtime.last).getTime() - new Date(runtime.first).getTime());
-  let costRow: { total: number | null } | undefined;
-  try { costRow = db.prepare("SELECT SUM(cost_usd) AS total FROM llm_traces").get() as { total: number | null } | undefined; }
-  catch { try { costRow = db.prepare("SELECT SUM(cost_usd) AS total FROM traces").get() as { total: number | null } | undefined; } catch { costRow = { total: null }; } }
   return {
     roles,
     task_division: { by_status: byStatus, by_wave: byWave, by_tier: byTier, active_claims: count(db, "SELECT COUNT(*) AS n FROM artifact_claims WHERE state = 'active'") },
@@ -82,7 +78,7 @@ function querySocietyReport(db: Database.Database): SocietyReport {
       arbitration_rejected: count(db, "SELECT COUNT(*) AS n FROM arbitration_decisions WHERE decision = 'rejected'"),
     },
     evidence: { total: evidenceTotal, passed: evidencePassed, failed: evidenceFailed, pass_rate: evidenceTotal === 0 ? 0 : evidencePassed / evidenceTotal, artifacts_awaiting_evidence: awaitingEvidence, artifacts_awaiting_arbitration: awaitingArbitration },
-    efficiency: { elapsed_runtime_ms: elapsed, failed_runs: count(db, "SELECT COUNT(*) AS n FROM runs WHERE status = 'failed' OR exit_code IS NOT NULL AND exit_code != 0"), reworked_artifacts: count(db, "SELECT COUNT(*) AS n FROM artifacts WHERE status = 'needs-rework'"), total_cost_usd: costRow?.total ?? null },
+    efficiency: { elapsed_runtime_ms: elapsed, failed_runs: count(db, "SELECT COUNT(*) AS n FROM runs WHERE status = 'failed' OR exit_code IS NOT NULL AND exit_code != 0"), reworked_artifacts: count(db, "SELECT COUNT(*) AS n FROM artifacts WHERE status = 'needs-rework'") },
   };
 }
 
@@ -102,5 +98,5 @@ export function runSocietyReport(db: Database.Database, opts: { json?: boolean }
   process.stdout.write("\nEvidence\n");
   process.stdout.write(`- total: ${report.evidence.total}\n- passed: ${report.evidence.passed}\n- failed: ${report.evidence.failed}\n- pass rate: ${(report.evidence.pass_rate*100).toFixed(1)}%\n- awaiting evidence: ${report.evidence.artifacts_awaiting_evidence}\n- awaiting arbitration: ${report.evidence.artifacts_awaiting_arbitration}\n`);
   process.stdout.write("\nEfficiency hooks\n");
-  process.stdout.write(`- elapsed runtime ms: ${report.efficiency.elapsed_runtime_ms ?? "n/a"}\n- failed runs: ${report.efficiency.failed_runs}\n- reworked artifacts: ${report.efficiency.reworked_artifacts}\n- total cost usd: ${report.efficiency.total_cost_usd ?? "n/a"}\n`);
+  process.stdout.write(`- elapsed runtime ms: ${report.efficiency.elapsed_runtime_ms ?? "n/a"}\n- failed runs: ${report.efficiency.failed_runs}\n- reworked artifacts: ${report.efficiency.reworked_artifacts}\n`);
 }

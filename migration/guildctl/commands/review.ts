@@ -3,7 +3,7 @@ import { spawnAgent, summarizeRunFailures } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printStatusSummary } from "../dashboard";
 import { getLogDir } from "../util";
-import { loadConfig, resolvePhaseModel } from "../../foundry/config";
+import { loadConfig, resolvePhaseModel } from "../config";
 import { reapDeadRuns } from "../../registry/commands/runs";
 
 const REVIEW_TIMEOUT_MINUTES = Math.max(1, parseInt(process.env["GUILDCTL_REVIEW_TIMEOUT_MINS"] ?? "10", 10));
@@ -71,7 +71,7 @@ export async function runReview(
 ): Promise<void> {
   const parallel = Math.max(1, opts.parallel ?? 1);
   const logDir = (deps.getLogDir ?? getLogDir)();
-  const model = resolvePhaseModel("review", loadConfig().foundry);
+  const model = resolvePhaseModel("review", loadConfig());
   const runAgent = deps.spawnAgent ?? spawnAgent;
   const poll = deps.startPolling ?? startPolling;
   const sleep = deps.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));

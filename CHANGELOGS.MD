@@ -20,7 +20,7 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 - Changed bootstrap scaffolding to prefer packaged skill assets, emit deterministic Spring app/resource files for non-library modules, return structured bootstrap results, and treat already-scaffolded targets as an explicit skip result.
 - Changed runner execution logging to use stable timestamped log naming plus richer run headers/footers (owner, phase, command, claim summaries, and written-file snapshots).
 - Changed timeout handling to terminate timed-out agent processes (SIGTERM then SIGKILL) instead of leaving them alive for manual stuck-process triage.
-- Added Foundry batch input model overrides and batch preflight validation plumbing in migration runtime, plus Foundry env interpolation warning behavior that only warns when Foundry is actually selected by provider/phase.
+- Replaced vendor-specific runtime plumbing with strict OpenAI-compatible configuration and client behavior.
 - Changed registry query/API surface by removing run-log-file endpoint plumbing and simplifying several SQL/query helpers while preserving paged monitoring query contracts.
 - Changed the migration inspector UI back to a lighter Artifacts/Wave Plan experience, removing the extended multi-tab monitoring surfaces and shared async state wrappers.
 - Changed tool dependency policy in both migration and packaged runtime manifests to fully pinned versions plus explicit `overrides`, with corresponding lockfile refreshes.
@@ -32,7 +32,7 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 - Added a pre-plan JVM compatibility audit refresh that persists per-artifact findings in the registry, blocks planning on critical findings, and records operator-facing readiness guidance.
 - Added a dependency modernization hard gate with per-artifact dependency findings, explicit approved upgrade/replacement strategies, registry event traceability, and migration/planning enforcement.
 - Added registry CLI commands for querying JVM/dependency findings and approving dependency strategies, plus mirrored regression coverage in both `migration/test` and `package/tools/test`.
-- Changed Copilot runner timeout behavior to perform log-health analysis and mark runs as `STUCK_PENDING_REVIEW` (without forced process kill) when output appears stalled or error-patterned, including explicit operator recovery guidance.
+- Changed Agent runner timeout behavior to perform log-health analysis and mark runs as `STUCK_PENDING_REVIEW` (without forced process kill) when output appears stalled or error-patterned, including explicit operator recovery guidance.
 - Enhanced the runs UI log viewer with per-line rendering, filterable log text, wrap toggling, and source log-file visibility for faster triage.
 
 ### April 17, 2026
@@ -65,7 +65,7 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 - Scoped the bootstrap documentation workflow to maintainer docs instead of broad user-facing docs.
 - Switched the documentation-agent workflow from a local pre-commit hook to a manual maintainer step, with post-CI automation as the intended long-term home.
 - Documented the split between repo-local `.github/` artifacts and shipped `package/` artifacts.
-- Changed the repository layout to stop dogfooding a repo-root migration workspace: shipped Copilot runtime artifacts now live only under `package/`, root `.github/` is maintainer-only, and kit testing should happen in a separate external workspace.
+- Changed the repository layout to stop dogfooding a repo-root migration workspace: shipped Agent runtime artifacts now live only under `package/`, root `.github/` is maintainer-only, and kit testing should happen in a separate external workspace.
 - Changed migration runs to surface per-phase runtime details, queue summaries, stale-session warnings, and clearer follow-up commands when work remains or runs fail.
 - Changed run handling to auto-release lingering claims and treat false-success exits that leave claimed artifacts behind as failed runs.
-- Changed Foundry embedding and semantic-search behavior to index target-side files, persist resolved target paths, and return an empty result set when no embedding corpus has been built yet.
+- Removed semantic-search behavior; agents now use explicit file/context references.

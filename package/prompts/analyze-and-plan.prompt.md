@@ -41,7 +41,7 @@ Analyze the legacy Java application in `legacy/` and produce a complete migratio
 ### Project Summary
 - **Legacy source root**: `legacy/`
 - **Target root**: `modern/`
-- **Project type**: (from `.github/copilot-instructions.md`)
+- **Project type**: (from `.github/agent-instructions.md`)
 - **Total first-class files**: N
 - **Total second-class files**: N
 
@@ -60,4 +60,4 @@ Analyze the legacy Java application in `legacy/` and produce a complete migratio
 - <risk or open question>
 
 ### Next Step
-Run `Migrate next task` in any Copilot session to begin parallel execution.
+Run `Migrate next task` in any Agent session to begin parallel execution.

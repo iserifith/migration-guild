@@ -1,4 +1,4 @@
-# Copilot Instructions
+# Agent Instructions
 
 This project is undergoing a legacy software modernization using the **Migration Guild** kit.
 
@@ -11,7 +11,7 @@ This project is undergoing a legacy software modernization using the **Migration
 
 ## Migration Workflow
 
-Phases run in order. Phases 3–5 are parallelizable across multiple Copilot sessions.
+Phases run in order. Phases 3–5 are parallelizable across multiple Agent sessions.
 
 ```
 1. Inventory — scan legacy/, register all artifacts (status: pending)
@@ -75,5 +75,5 @@ Run each phase with the most cost-effective model for the task:
 | Remediation | `remediation-agent` | `claude-sonnet-4.6` | Failure diagnosis and conservative recovery |
 | Reference | `reference-agent` | `gpt-5-mini`        | Simple pattern retrieval              |
 
-Usage: `copilot --agent <agent-name> --model <model-id> -p "..."`
+Usage: `agent --agent <agent-name> --model <model-id> -p "..."`
 Note: Always use agents with `--yolo` to allow writing and tools execution access.

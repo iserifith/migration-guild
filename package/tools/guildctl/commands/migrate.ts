@@ -3,13 +3,7 @@ import { spawnAgent } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printWavePlan } from "../dashboard";
 import { getLogDir } from "../util";
-import {
-  getConfigPath,
-  loadConfig,
-  requirePhaseFoundryConfig,
-  resolvePhaseModel,
-  resolvePhaseProvider,
-} from "../../foundry/config";
+import { getConfigPath, loadConfig, resolvePhaseModel } from "../config";
 import {
   getClaimabilityStats,
   getStatusCounts,
@@ -138,18 +132,12 @@ export async function runMigrate(
   const codeParallel = Math.max(1, opts.codeParallel ?? opts.parallel ?? 1);
   const waveLabel = opts.wave != null ? ` (wave ${opts.wave})` : "";
   const cfg = loadConfig();
-  const analyzeModel = resolvePhaseModel("analysis", cfg.foundry);
-  const testModel = resolvePhaseModel("test-writing", cfg.foundry);
-  const codeModel = resolvePhaseModel("code-writing", cfg.foundry);
-  const analyzeProvider = resolvePhaseProvider("analysis", cfg.foundry);
-  const testProvider = resolvePhaseProvider("test-writing", cfg.foundry);
-  const codeProvider = resolvePhaseProvider("code-writing", cfg.foundry);
+  const analyzeModel = resolvePhaseModel("analysis", cfg);
+  const testModel = resolvePhaseModel("test-writing", cfg);
+  const codeModel = resolvePhaseModel("code-writing", cfg);
   const runAgent = deps.spawnAgent ?? spawnAgent;
   const poll = deps.startPolling ?? startPolling;
   const logDir = (deps.getLogDir ?? getLogDir)();
-  if (analyzeProvider === "foundry") requirePhaseFoundryConfig("analysis", cfg);
-  if (testProvider === "foundry") requirePhaseFoundryConfig("test-writing", cfg);
-  if (codeProvider === "foundry") requirePhaseFoundryConfig("code-writing", cfg);
   const configPath = getConfigPath();
 
   printPhaseHeader("Phase 4 · Migration");
@@ -158,31 +146,16 @@ export async function runMigrate(
   console.log(`  Pool 2 · Code writers   Agent: code-writer-agent   Model: ${codeModel}   Parallel: ${codeParallel}${waveLabel}\n`);
   printResolvedRuntime({
     phase: "analysis",
-    provider: analyzeProvider,
     model: analyzeModel,
-    configPath,
-    batchEnabled: cfg.foundry?.batchEnabled,
-    providerType: cfg.foundry?.providerType,
-    endpoint: analyzeProvider === "foundry" ? cfg.foundry?.openaiEndpoint : undefined,
-  });
+    configPath,  });
   printResolvedRuntime({
     phase: "test-writing",
-    provider: testProvider,
     model: testModel,
-    configPath,
-    batchEnabled: cfg.foundry?.batchEnabled,
-    providerType: cfg.foundry?.providerType,
-    endpoint: testProvider === "foundry" ? cfg.foundry?.openaiEndpoint : undefined,
-  });
+    configPath,  });
   printResolvedRuntime({
     phase: "code-writing",
-    provider: codeProvider,
     model: codeModel,
-    configPath,
-    batchEnabled: cfg.foundry?.batchEnabled,
-    providerType: cfg.foundry?.providerType,
-    endpoint: codeProvider === "foundry" ? cfg.foundry?.openaiEndpoint : undefined,
-  });
+    configPath,  });
   printWavePlan(db);
   console.log();
 

@@ -17,12 +17,12 @@ The split matters because not everything in this repository ships.
 | --- | --- | --- |
 | `.github/agents/` | Repo-local maintainer agents for working on the kit itself | No |
 | `.github/prompts/` | Repo-local maintainer prompt shortcuts for working on the kit itself | No |
-| `.github/copilot-instructions.md` | Repo-local Copilot context for this repository | No |
+| `.github/agent-instructions.md` | Repo-local Agent context for this repository | No |
 | `package/agents/` | Agent definitions installed into migration workspaces | Yes |
 | `package/skills/` | Skill definitions and shipped skill assets installed into migration workspaces | Yes |
 | `package/prompts/` | Prompt shortcuts installed into migration workspaces | Yes |
 | `package/instructions/` | Path-scoped instructions installed into migration workspaces | Yes |
-| `package/tools/` | Registry CLI, guildctl CLI, Foundry integrations, packaging-time runtime files | Yes |
+| `package/tools/` | Registry CLI, guildctl CLI, OpenAI-compatible runtime files, packaging-time runtime files | Yes |
 | `setup.ts` | Installer entrypoint that copies `package/` into a target workspace | Yes, as compiled `dist/setup.js` |
 | `scripts/build-dist.mjs` | Builds the distributable tarball | Dev tool |
 
@@ -50,7 +50,7 @@ Important consequence:
 
 - `README.md` — user-facing overview
 - `GETTING-STARTED.md` — setup and first-run guide
-- `docs/` — deeper architecture and Copilot customization reference material
+- `docs/` — deeper architecture and Agent customization reference material
 - `DEVELOPMENT.md` — maintainer workflow and packaging rules
 - `CHANGELOGS.MD` — repository-level change log for ongoing development
 
@@ -65,7 +65,7 @@ Important consequence:
 
 ### 1. Update repo-local maintainer behavior
 
-Use the root `.github/` tree only when you are changing how Copilot helps maintain **this repository itself**.
+Use the root `.github/` tree only when you are changing how Agent helps maintain **this repository itself**.
 
 Typical examples:
 
@@ -86,9 +86,9 @@ Common paths:
 - `package/prompts/`
 - `package/instructions/`
 - `package/tools/`
-- `package/copilot-instructions.md`
+- `package/agent-instructions.md`
 
-Do not mirror shipped agents, skills, prompts, or instructions into root `.github/`. `package/` is the source of truth for shipped Copilot runtime behavior.
+Do not mirror shipped agents, skills, prompts, or instructions into root `.github/`. `package/` is the source of truth for shipped Agent runtime behavior.
 
 ### 3. Test shipped behavior
 
@@ -108,7 +108,7 @@ Use `package/mock/` for maintained sample content instead of recreating `legacy/
 
 - copies packaged agents, prompts, skills, and instructions into `.github/`
 - copies `package/tools/` into `migration/`
-- writes `.github/copilot-instructions.md` with the selected target framework
+- writes `.github/agent-instructions.md` with the selected target framework
 - optionally clones or copies legacy source into `legacy/`
 
 If setup behavior changes, update:
@@ -144,7 +144,7 @@ When runtime claim/run behavior changes, keep these pairs aligned in the same co
 - `migration/registry_schema.sql` <-> `package/tools/registry_schema.sql`
 - `migration/test/**` <-> `package/tools/test/**` for behavior-level regression coverage
 
-For Copilot artifacts, `package/` is the shipped source of truth and root `.github/` is repo-only maintainer context. Do not reintroduce mirrored runtime copies under root `.github/`.
+For Agent artifacts, `package/` is the shipped source of truth and root `.github/` is repo-only maintainer context. Do not reintroduce mirrored runtime copies under root `.github/`.
 
 ## Claim lease and run lifecycle notes
 
@@ -195,7 +195,7 @@ Current doc targets:
 ### Run it manually
 
 ```bash
-copilot --agent documentation-agent --yolo -p \
+agent --agent documentation-agent --yolo -p \
   "Review the staged changes for the current commit in this repository. Update only DEVELOPMENT.md and CHANGELOGS.MD when the staged behavior changes require maintainer workflow notes or an unreleased changelog entry grouped under the appropriate human-readable date heading. If no such docs changes are needed, do not edit anything."
 ```
 
@@ -210,14 +210,14 @@ git status --short -- DEVELOPMENT.md CHANGELOGS.MD
 - Preferred end state: run the documentation agent after CI, not in `pre-commit`
 - Until repo/CI provisioning is available, keep this as a manual maintainer step
 
-### Copilot binary selection
+### Agent binary selection
 
-Use `COPILOT_CMD` if you need to point at a non-default Copilot CLI binary.
+Use `AGENT_CMD` if you need to point at a non-default agent CLI binary.
 
 Example:
 
 ```bash
-COPILOT_CMD=/path/to/copilot copilot --agent documentation-agent --yolo -p "<prompt>"
+AGENT_CMD=/path/to/agent agent --agent documentation-agent --yolo -p "<prompt>"
 ```
 
 ## Practical maintainer checklist

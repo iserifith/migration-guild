@@ -15,8 +15,6 @@ import {
   queryOpenIssuesPage,
   queryRunHistory,
   queryRunHistoryPage,
-  queryEvaluationSummary,
-  queryCostSummary,
 } from "./queries";
 
 const MIME: Record<string, string> = {
@@ -173,14 +171,6 @@ export function startServer(db: Database.Database, port = 3322) {
       }));
     }
 
-    if (p === "/api/evaluations") {
-      const artifactId = url.searchParams.get("id") ?? undefined;
-      return json(res, queryEvaluationSummary(db, artifactId));
-    }
-
-    if (p === "/api/cost") {
-      return json(res, queryCostSummary(db));
-    }
 
     // ── Static UI ─────────────────────────────────────────────────────────
     if (p === "/" || p === "/index.html") {

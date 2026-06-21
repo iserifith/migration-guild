@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import BlockersView from "./components/BlockersView";
-import CostView from "./components/CostView";
-import QualityView from "./components/QualityView";
 import RunsView from "./components/RunsView";
 import SessionsView from "./components/SessionsView";
 import { useRunLog } from "./hooks";
@@ -194,45 +192,6 @@ describe("operational tab views", () => {
     expect(onIssueQueryChange).toHaveBeenCalledWith({ severity: "high", page: 1 });
   });
 
-  it("filters cost rows by model", () => {
-    render(
-      <CostView
-        cost={{
-          total_tokens_in: 300,
-          total_tokens_out: 450,
-          total_cost_usd: 2.5,
-          total_calls: 4,
-          by_model: [
-            {
-              model: "gpt-5.4",
-              calls: 3,
-              tokens_in: 200,
-              tokens_out: 300,
-              cost_usd: 2.0,
-            },
-            {
-              model: "gpt-5-mini",
-              calls: 1,
-              tokens_in: 100,
-              tokens_out: 150,
-              cost_usd: 0.5,
-            },
-          ],
-        }}
-        loading={false}
-        error={null}
-        onRetry={vi.fn()}
-      />,
-    );
-
-    fireEvent.change(screen.getByLabelText(/model filter/i), {
-      target: { value: "mini" },
-    });
-
-    expect(screen.getByText("gpt-5-mini")).toBeInTheDocument();
-    expect(screen.queryByText("gpt-5.4")).not.toBeInTheDocument();
-  });
-
   it("filters sessions to stalled rows only", () => {
     const onQueryChange = vi.fn();
 
@@ -282,39 +241,5 @@ describe("operational tab views", () => {
 
     expect(onQueryChange).toHaveBeenCalledWith({ stalled: "stalled", page: 1 });
     expect(screen.getByText(/1-2 of 14 total/i)).toBeInTheDocument();
-  });
-
-  it("filters quality results to failing evaluators", () => {
-    render(
-      <QualityView
-        evaluations={[
-          {
-            evaluator: "groundedness",
-            total: 5,
-            passed: 4,
-            failed: 1,
-            avg_score: 0.88,
-          },
-          {
-            evaluator: "style",
-            total: 5,
-            passed: 5,
-            failed: 0,
-            avg_score: 0.95,
-          },
-        ]}
-        loading={false}
-        error={null}
-        onRetry={vi.fn()}
-      />,
-    );
-
-    fireEvent.change(screen.getByLabelText(/evaluation result filter/i), {
-      target: { value: "failed-only" },
-    });
-
-    const table = screen.getByRole("table");
-    expect(within(table).getByText("groundedness")).toBeInTheDocument();
-    expect(within(table).queryByText("style")).not.toBeInTheDocument();
   });
 });

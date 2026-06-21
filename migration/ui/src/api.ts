@@ -16,8 +16,6 @@ import type {
   BlockerListResult,
   BlockerQuery,
   BlockerEntry,
-  CostSummary,
-  EvaluationSummary,
   IssueFilters,
   IssueListResult,
   IssueQuery,
@@ -173,16 +171,4 @@ export async function fetchRuns(query: RunQuery = {}): Promise<RunListResult> {
 /** GET /api/runs/<runId>/log — plain-text log contents for one run. */
 export function fetchRunLog(runId: string): Promise<string> {
   return getText(`/api/runs/${encodeURIComponent(runId)}/log`);
-}
-
-/** GET /api/evaluations[?id=<artifactId>] — evaluation summary grouped by evaluator. */
-export function fetchEvaluations(
-  artifactId?: string,
-): Promise<EvaluationSummary[]> {
-  return get<EvaluationSummary[]>(buildUrl("/api/evaluations", { id: artifactId }));
-}
-
-/** GET /api/cost — token and spend totals with per-model breakdown. */
-export function fetchCost(): Promise<CostSummary> {
-  return get<CostSummary>("/api/cost");
 }

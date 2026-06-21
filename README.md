@@ -1,6 +1,8 @@
-# Migration Guild — Java Migration Kit
+# Migration Guild — Evidence-first Modernization Kit
 
-**Migrate any legacy Java codebase to a modern framework using GitHub Copilot CLI.**
+**Map, plan, and execute legacy modernization from evidence — with a strict OpenAI-compatible runtime and no vendor-specific dependency.**
+
+Migration Guild is moving to a Hermes-style configuration model: repo-local `.guild/config.yaml`, local secrets in environment variables/`.env`, named profiles, prompt packs, run ledgers, and explicit evidence gates before migration intent. Existing Agent/OpenAI-compatible runtime artifacts remain useful optional integrations, but they are no longer the spine.
 
 The target framework is chosen based on what the legacy code actually is — not assumed upfront:
 
@@ -14,7 +16,7 @@ The target framework is chosen based on what the legacy code actually is — not
 
 ## How it works
 
-Migration Guild installs a set of Copilot agents, skills, and prompts into your project. Each agent handles one phase of the migration. A SQLite registry tracks every file's status so multiple Copilot sessions can run in parallel without stepping on each other.
+Migration Guild installs a set of Agent agents, skills, and prompts into your project. Each agent handles one phase of the migration. A SQLite registry tracks every file's status so multiple Agent sessions can run in parallel without stepping on each other.
 
 ```
 Inventory → Planning → Bootstrap → Migration (parallel) → Review
@@ -26,11 +28,103 @@ Inventory → Planning → Bootstrap → Migration (parallel) → Review
 
 ---
 
+## OpenAI-compatible runtime-neutral quick start
+
+The new Guild path is CLI-first and configurable like Hermes Agent.
+
+```bash
+cd your-modernization-workspace
+node migration/guildctl/cli.ts init
+node migration/guildctl/cli.ts doctor
+node migration/guildctl/cli.ts run init
+```
+
+`init` creates:
+
+```text
+.guild/
+  config.yaml
+  .env.example
+  prompts/default/{init,map,evidence,plan,execute,review}.md
+  runs/
+  evidence/
+```
+
+Secrets stay outside config. Put real keys in your shell or local `.env`, then reference the env var from config:
+
+```yaml
+model:
+  runtime: openai-compatible
+  base_url: https://openrouter.ai/api/v1
+  model: anthropic/claude-sonnet-4
+  api_key_env: OPENROUTER_API_KEY
+```
+
+Local endpoint example:
+
+```yaml
+profiles:
+  local:
+    runtime: openai-compatible
+    base_url: http://localhost:1234/v1
+    model: qwen2.5-coder
+```
+
+Named profiles let you switch cost/role without rewriting config:
+
+```yaml
+profiles:
+  default:
+    runtime: openai-compatible
+    base_url: https://openrouter.ai/api/v1
+    model: anthropic/claude-sonnet-4
+    api_key_env: OPENROUTER_API_KEY
+  cheap:
+    runtime: openai-compatible
+    base_url: https://openrouter.ai/api/v1
+    model: deepseek/deepseek-chat
+    api_key_env: OPENROUTER_API_KEY
+  reviewer:
+    runtime: openai-compatible
+    base_url: https://openrouter.ai/api/v1
+    model: openai/gpt-4.1
+    api_key_env: OPENROUTER_API_KEY
+```
+
+Use them with:
+
+```bash
+node migration/guildctl/cli.ts --profile cheap run init
+node migration/guildctl/cli.ts --profile reviewer config
+```
+
+Evidence-first rule:
+
+1. Run `doctor` to catch missing config/secrets/tooling.
+2. Run `run init` to map the repo and write `.guild/runs/<timestamp>/report.md`.
+3. Inspect the report.
+4. Only then move to planning/execution.
+
+Troubleshooting:
+
+- Missing API key: set the env var named by `model.api_key_env`.
+- Missing prompt pack: rerun `init` or create `.guild/prompts/<active_pack>/<mode>.md`.
+- Unsupported runtime: use `openai-compatible`; the Guild client only targets OpenAI-compatible chat-completions endpoints.
+
+---
+
+## Legacy packaged Java workflow
+
+The existing packaged artifact still contains Java/Agent-oriented setup files for the earlier runtime. Treat this as a legacy compatibility path while the runtime-neutral Guild CLI lands.
+
+---
+
 ## Prerequisites
 
-- [GitHub Copilot CLI](https://docs.github.com/en/copilot/using-github-copilot/using-github-copilot-in-the-command-line) installed and authenticated
 - Node.js 18+
 - Git
+- Optional: agent CLI, if you are using the legacy packaged Agent agent workflow
+
 
 ---
 
@@ -61,18 +155,18 @@ legacy/          ← your original Java source (read-only)
 modern/          ← migration target (starts empty)
 migration/       ← registry CLI and database
 .github/
-  agents/        ← Copilot agents
-  skills/        ← Copilot skills
-  prompts/       ← Copilot prompt shortcuts
-  instructions/  ← file-level Copilot context
-  copilot-instructions.md
+  agents/        ← Agent agents
+  skills/        ← Agent skills
+  prompts/       ← Agent prompt shortcuts
+  instructions/  ← file-level Agent context
+  agent-instructions.md
 ```
 
 ---
 
 ## Using the guildctl CLI (recommended)
 
-The `guildctl` CLI is a one-command orchestrator that drives the full pipeline for you. It spawns Copilot under the hood with the right agent, model, and flags — no manual wiring needed.
+The `guildctl` CLI is a one-command orchestrator that drives the full pipeline for you. It spawns Agent under the hood with the right agent, model, and flags — no manual wiring needed.
 
 ```bash
 # Run the full pipeline (inventory → plan → bootstrap? → migrate → review)
@@ -104,21 +198,21 @@ node __MIGRATION_GUILDCTL__/dist/cli.js status
 - Polls `registry.db` for live progress via SQLite triggers (no agent cooperation needed)
 - Advances phases automatically when the current phase completes
 
-> **Tip:** Set `COPILOT_CMD=gh` (or whatever your Copilot CLI binary is named) if `copilot` doesn't resolve on `PATH`. For example: `COPILOT_CMD=gh node __MIGRATION_GUILDCTL__/dist/cli.js run`
+> **Tip:** Set `AGENT_CMD=gh` (or whatever your agent CLI binary is named) if `agent` doesn't resolve on `PATH`. For example: `AGENT_CMD=gh node __MIGRATION_GUILDCTL__/dist/cli.js run`
 >
 > Set `GUILDCTL_STALL_MINS=<n>` to change the stall warning threshold in `guildctl watch` (default: 10 minutes).
 
 ---
 
-## Manual Copilot invocation (advanced)
+## Manual Agent invocation (advanced)
 
-The steps below describe the same workflow using raw `copilot` CLI commands. Use these when you need fine-grained control, want to target a specific file, or the guildctl CLI doesn't cover your use case.
+The steps below describe the same workflow using raw `agent` CLI commands. Use these when you need fine-grained control, want to target a specific file, or the guildctl CLI doesn't cover your use case.
 
-Open Copilot in your workspace and run the inventory phase. This scans every Java file in `legacy/`, classifies it, and registers it in the registry.
+Open Agent in your workspace and run the inventory phase. This scans every Java file in `legacy/`, classifies it, and registers it in the registry.
 
 ```bash
 cd my-migration
-copilot --agent context-agent --model gpt-5-mini --yolo
+agent --agent context-agent --model gpt-5-mini --yolo
 ```
 
 Then say:
@@ -142,7 +236,7 @@ node migration/registry/dist/cli.js list-artifacts
 Once inventory is complete, run the planner to build the dependency graph and assign wave numbers.
 
 ```bash
-copilot --agent planner-agent --model claude-sonnet-4.6 --yolo
+agent --agent planner-agent --model claude-sonnet-4.6 --yolo
 ```
 
 Then say:
@@ -210,7 +304,7 @@ node __MIGRATION_GUILDCTL__/dist/cli.js bootstrap
 This is the main phase. Each session claims one task atomically — you can run many sessions in parallel.
 
 ```bash
-copilot --agent migration-agent --model gpt-5-mini --yolo
+agent --agent migration-agent --model gpt-5-mini --yolo
 ```
 
 Then say:
@@ -238,13 +332,13 @@ Migrate next task
 
 ```bash
 # Terminal 1
-copilot --agent migration-agent --model gpt-5-mini --yolo -p "Migrate next task"
+agent --agent migration-agent --model gpt-5-mini --yolo -p "Migrate next task"
 
 # Terminal 2
-copilot --agent migration-agent --model gpt-5-mini --yolo -p "Migrate next task"
+agent --agent migration-agent --model gpt-5-mini --yolo -p "Migrate next task"
 
 # Terminal 3
-copilot --agent migration-agent --model gpt-5-mini --yolo -p "Migrate next task"
+agent --agent migration-agent --model gpt-5-mini --yolo -p "Migrate next task"
 ```
 
 Each session will claim a different task — the registry prevents conflicts.
@@ -256,7 +350,7 @@ Each session will claim a different task — the registry prevents conflicts.
 After migration, review each file for correctness.
 
 ```bash
-copilot --agent review-agent --model claude-sonnet-4.6 --yolo
+agent --agent review-agent --model claude-sonnet-4.6 --yolo
 ```
 
 Then say:
@@ -286,7 +380,7 @@ If a file needs rework, run migration again for that file:
 When a background worker fails, a claim stalls, or review sends an artifact back, use the dedicated remediation agent instead of folding recovery policy into the orchestrator.
 
 ```bash
-copilot --agent remediation-agent --model claude-sonnet-4.6 --yolo
+agent --agent remediation-agent --model claude-sonnet-4.6 --yolo
 ```
 
 Then say:
@@ -388,7 +482,7 @@ cd migration && npm install && cd ..
 ## Troubleshooting
 
 **Registry not found**
-Make sure you run Copilot from the workspace root (not inside `legacy/` or `migration/`).
+Make sure you run Agent from the workspace root (not inside `legacy/` or `migration/`).
 
 **"No claimable tasks"**
 All planned artifacts are either in-progress or waiting on dependencies. Check `wave-plan` to see which wave is blocked and why. Use `show-in-progress` to see what agents are holding claims.
@@ -446,4 +540,4 @@ This release only adds the summary plan, not a full CI/CD or deployment implemen
 4. verify the deployed artifact uses the approved modernized dependency set
 
 **Agent doesn't run shell commands**
-Ensure you pass `--yolo` (or `--allow-all-tools`) when starting Copilot. Without it, the agent can't run `node migration/registry/dist/cli.js`.
+Ensure you pass `--yolo` (or `--allow-all-tools`) when starting Agent. Without it, the agent can't run `node migration/registry/dist/cli.js`.

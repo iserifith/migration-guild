@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
-import { isGitWorktree, snapshotChangedFiles, spawnCopilot } from "../guildctl/runner";
+import { isGitWorktree, snapshotChangedFiles, spawnAgent } from "../guildctl/runner";
 import { registerArtifact, setArtifactStatus } from "../registry/commands/artifacts";
 import { startRun, reapDeadRuns } from "../registry/commands/runs";
 import { applySchema } from "../registry/db/schema";
@@ -34,19 +34,19 @@ test("reapDeadRuns marks a missing pid as failed", () => {
   }
 });
 
-test("spawnCopilot records failed stub runs and writes a log file", async () => {
+test("spawnAgent records failed stub runs and writes a log file", async () => {
   const db = createDb();
   const workDir = mkdtempSync(path.join(tmpdir(), "guildctl-runner-"));
-  const stubPath = path.join(workDir, "fake-copilot.sh");
-  const original = process.env["COPILOT_CMD"];
+  const stubPath = path.join(workDir, "fake-agent.sh");
+  const original = process.env["AGENT_CMD"];
 
   try {
     writeFileSync(stubPath, "#!/bin/sh\necho simulated runner failure >&2\nexit 1\n", {
       mode: 0o755,
     });
-    process.env["COPILOT_CMD"] = stubPath;
+    process.env["AGENT_CMD"] = stubPath;
 
-    const result = await spawnCopilot({
+    const result = await spawnAgent({
       agent: "review-agent",
       model: "test-model",
       prompt: "small task",
@@ -64,20 +64,20 @@ test("spawnCopilot records failed stub runs and writes a log file", async () => 
     assert.match(readFileSync(stored.log_file, "utf8"), /simulated runner failure/);
   } finally {
     if (original == null) {
-      delete process.env["COPILOT_CMD"];
+      delete process.env["AGENT_CMD"];
     } else {
-      process.env["COPILOT_CMD"] = original;
+      process.env["AGENT_CMD"] = original;
     }
     rmSync(workDir, { recursive: true, force: true });
     db.close();
   }
 });
 
-test("spawnCopilot auto-releases claimed artifacts after a failed run", async () => {
+test("spawnAgent auto-releases claimed artifacts after a failed run", async () => {
   const db = createDb();
   const workDir = mkdtempSync(path.join(tmpdir(), "guildctl-runner-"));
-  const stubPath = path.join(workDir, "fake-copilot.sh");
-  const original = process.env["COPILOT_CMD"];
+  const stubPath = path.join(workDir, "fake-agent.sh");
+  const original = process.env["AGENT_CMD"];
   const claimOwner = "test-writer-agent:claim-1";
   const artifactId = "legacy-source:com.acme:WidgetService";
 
@@ -94,9 +94,9 @@ test("spawnCopilot auto-releases claimed artifacts after a failed run", async ()
     writeFileSync(stubPath, "#!/bin/sh\necho simulated runner failure >&2\nexit 1\n", {
       mode: 0o755,
     });
-    process.env["COPILOT_CMD"] = stubPath;
+    process.env["AGENT_CMD"] = stubPath;
 
-    const result = await spawnCopilot({
+    const result = await spawnAgent({
       agent: "test-writer-agent",
       model: "test-model",
       prompt: "small task",
@@ -115,20 +115,20 @@ test("spawnCopilot auto-releases claimed artifacts after a failed run", async ()
     assert.equal(artifact.claimed_from, null);
   } finally {
     if (original == null) {
-      delete process.env["COPILOT_CMD"];
+      delete process.env["AGENT_CMD"];
     } else {
-      process.env["COPILOT_CMD"] = original;
+      process.env["AGENT_CMD"] = original;
     }
     rmSync(workDir, { recursive: true, force: true });
     db.close();
   }
 });
 
-test("spawnCopilot treats lingering claimed artifacts after exit 0 as failure", async () => {
+test("spawnAgent treats lingering claimed artifacts after exit 0 as failure", async () => {
   const db = createDb();
   const workDir = mkdtempSync(path.join(tmpdir(), "guildctl-runner-"));
-  const stubPath = path.join(workDir, "fake-copilot.sh");
-  const original = process.env["COPILOT_CMD"];
+  const stubPath = path.join(workDir, "fake-agent.sh");
+  const original = process.env["AGENT_CMD"];
   const claimOwner = "code-writer-agent:claim-1";
   const artifactId = "legacy-source:com.acme:WidgetDto";
 
@@ -145,9 +145,9 @@ test("spawnCopilot treats lingering claimed artifacts after exit 0 as failure", 
     writeFileSync(stubPath, "#!/bin/sh\necho simulated false success >&2\nexit 0\n", {
       mode: 0o755,
     });
-    process.env["COPILOT_CMD"] = stubPath;
+    process.env["AGENT_CMD"] = stubPath;
 
-    const result = await spawnCopilot({
+    const result = await spawnAgent({
       agent: "code-writer-agent",
       model: "test-model",
       prompt: "small task",
@@ -170,9 +170,9 @@ test("spawnCopilot treats lingering claimed artifacts after exit 0 as failure", 
     assert.equal(artifact.claimed_from, null);
   } finally {
     if (original == null) {
-      delete process.env["COPILOT_CMD"];
+      delete process.env["AGENT_CMD"];
     } else {
-      process.env["COPILOT_CMD"] = original;
+      process.env["AGENT_CMD"] = original;
     }
     rmSync(workDir, { recursive: true, force: true });
     db.close();

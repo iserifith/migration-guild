@@ -9,8 +9,8 @@ Multiple agents run in parallel, a SQLite registry tracks every file, and your o
 
 - **Node.js 18+**
 - One of:
-  - **GitHub Copilot CLI** (default) — `copilot` on PATH and authenticated
-  - **Microsoft Foundry** — API key + Azure OpenAI endpoint (see [Configure Foundry](#configure-foundry) below)
+  - **agent CLI** (default) — `agent` on PATH and authenticated
+  - **OpenAI-compatible runtime** — API key + Azure OpenAI endpoint (see [Configure OpenAI-compatible runtime](#configure-openai-compatible-runtime) below)
 
 ---
 
@@ -35,7 +35,7 @@ cd migration && npm install && cd ..
 
 # 5. Copy and fill in your .env
 cp .env.example .env
-#    Edit .env — set FOUNDRY_* keys if using Foundry, or leave defaults for local Copilot CLI
+#    Edit .env — set the API key env var referenced by guildctl.config.json
 #    The CLI loads .env automatically — no need to source it manually
 ```
 
@@ -87,17 +87,16 @@ node __MIGRATION_GUILDCTL__/dist/cli.js run --parallel 3
 
 ---
 
-## Configure Foundry
+## Configure OpenAI-compatible runtime
 
 Edit `.env` and set:
 
 ```env
-FOUNDRY_OPENAI_ENDPOINT=https://<resource>.openai.azure.com/openai/v1
-FOUNDRY_EMBED_ENDPOINT=https://<resource>.cognitiveservices.azure.com/openai/v1
-FOUNDRY_API_KEY=<your-key>
+OPENROUTER_API_KEY=<your-key>
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
 ```
 
-Then in `guildctl.config.json`, set `"llmProvider": "foundry"` and configure per-phase models under `foundry.phaseModels`.
+Then in `guildctl.config.json`, configure `base_url`, `model`, and `api_key_env` for an OpenAI-compatible endpoint.
 For the migration pipeline, the phase keys are `analysis`, `test-writing`, and `code-writing`.
 
 The CLI loads `.env` automatically — no `export` or `source` needed.
@@ -109,10 +108,10 @@ The CLI loads `.env` automatically — no `export` or `source` needed.
 | Problem | Fix |
 |---|---|
 | Agent left a file stuck | `node migration/registry/dist/cli.js release --id "<id>" --agent operator --reason "crashed"` |
-| Background run failed or stalled and the next state is unclear | Run `copilot --agent remediation-agent --model claude-sonnet-4.6 --yolo` |
+| Background run failed or stalled and the next state is unclear | Run `agent --agent remediation-agent --model claude-sonnet-4.6 --yolo` |
 | Nothing to claim | `node migration/registry/dist/cli.js wave-plan` |
 | Files need rework | `node migration/registry/dist/cli.js list-artifacts --status needs-rework` |
-| Foundry env not picked up | Ensure `.env` is in the project root (`my-migration/`), not a subdirectory |
+| OpenAI-compatible runtime env not picked up | Ensure `.env` is in the project root (`my-migration/`), not a subdirectory |
 
 Full CLI reference: see `README.md`.
 

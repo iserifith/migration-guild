@@ -124,8 +124,6 @@ CREATE TABLE IF NOT EXISTS events (
                      'evaluated',
                      'auto-completed',
                      'auto-rework',
-                     'batch-submitted',
-                     'batch-applied',
                       'thread-created',
                       'dependency-strategy-set'
                   )),
@@ -379,79 +377,6 @@ BEGIN
     OLD.status || ' → ' || NEW.status
   );
 END;
-
--- ─── Foundry: Evaluation Results ─────────────────────────────────────────────
--- One row per evaluator per artifact run. Multiple rows if re-evaluated.
-
-CREATE TABLE IF NOT EXISTS evaluations (
-    eval_id      TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-    artifact_id  TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
-    evaluator    TEXT NOT NULL CHECK (evaluator IN (
-                     'no-legacy-imports',
-                     'signature-preservation',
-                     'test-coverage',
-                     'correctness'
-                 )),
-    score        REAL,            -- 0.0–1.0; NULL if evaluator is rule-based pass/fail only
-    pass         INTEGER NOT NULL CHECK (pass IN (0, 1)),
-    feedback     TEXT,            -- human-readable explanation from the evaluator
-    model        TEXT,            -- LLM model used (NULL for rule-based evaluators)
-    eval_at      TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_evaluations_artifact ON evaluations(artifact_id);
-CREATE INDEX IF NOT EXISTS idx_evaluations_pass     ON evaluations(artifact_id, pass);
-
--- ─── Foundry: Batch Jobs ──────────────────────────────────────────────────────
--- Tracks async batch inference jobs submitted to Foundry.
-
-CREATE TABLE IF NOT EXISTS batch_jobs (
-    job_id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-    foundry_job_id TEXT,          -- Foundry-assigned job ID (populated after submission)
-    type           TEXT NOT NULL CHECK (type IN ('inventory', 'embed', 'evaluate')),
-    wave           INTEGER,
-    status         TEXT NOT NULL DEFAULT 'submitted' CHECK (status IN (
-                       'submitted', 'running', 'completed', 'failed'
-                   )),
-    artifact_ids   TEXT NOT NULL, -- JSON array of artifact IDs in this batch
-    submitted_at   TEXT NOT NULL DEFAULT (datetime('now')),
-    completed_at   TEXT,
-    result_path    TEXT           -- local path where Foundry wrote output JSONL
-);
-
-CREATE INDEX IF NOT EXISTS idx_batch_jobs_status ON batch_jobs(status);
-CREATE INDEX IF NOT EXISTS idx_batch_jobs_type   ON batch_jobs(type);
-
--- ─── Foundry: LLM Traces ──────────────────────────────────────────────────────
--- One row per LLM API call. Written by the Foundry client wrapper.
-
-CREATE TABLE IF NOT EXISTS traces (
-    trace_id     TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-    run_id       TEXT REFERENCES runs(run_id) ON DELETE SET NULL,
-    artifact_id  TEXT REFERENCES artifacts(id) ON DELETE SET NULL,
-    span_name    TEXT NOT NULL,   -- 'inventory' | 'migration' | 'review' | 'evaluation' | 'embed'
-    model        TEXT,
-    tokens_in    INTEGER,
-    tokens_out   INTEGER,
-    latency_ms   INTEGER,
-    cost_usd     REAL,
-    ts           TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_traces_run      ON traces(run_id);
-CREATE INDEX IF NOT EXISTS idx_traces_artifact ON traces(artifact_id);
-CREATE INDEX IF NOT EXISTS idx_traces_ts       ON traces(ts);
-
--- ─── Foundry: Azure AI Agent Threads ──────────────────────────────────────────
--- One persistent thread per artifact, shared across migration + review agents.
-
-CREATE TABLE IF NOT EXISTS agent_threads (
-    artifact_id     TEXT PRIMARY KEY REFERENCES artifacts(id) ON DELETE CASCADE,
-    thread_id       TEXT NOT NULL,   -- Azure AI Agents thread ID
-    agent_type      TEXT NOT NULL CHECK (agent_type IN ('migration', 'review', 'context')),
-    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    last_message_at TEXT
-);
 
 -- ─── Migrations for existing databases ───────────────────────────────────────
 

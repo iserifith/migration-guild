@@ -563,7 +563,7 @@ program
   .command("finish-run")
   .description("Record the end of an agent run (called by run-agent.sh)")
   .requiredOption("--run-id <id>", "Run ID returned by start-run")
-  .requiredOption("--exit-code <n>", "Exit code of the copilot process", parseInt)
+  .requiredOption("--exit-code <n>", "Exit code of the agent process", parseInt)
   .option("--reason <reason>", "Optional termination reason")
   .action((opts) => run(() => finishRun(db(), {
     runId: opts.runId,

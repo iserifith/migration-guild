@@ -82,8 +82,6 @@ export type EventType =
   | "evaluated"
   | "auto-completed"
   | "auto-rework"
-  | "batch-submitted"
-  | "batch-applied"
   | "thread-created"
   | "dependency-strategy-set";
 
@@ -119,10 +117,6 @@ export const TAG_VOCABULARY = [
   "blocked-external",
   "blocked-human-decision",
   "eval-passed",
-  "eval-failed",
-  "eval-partial",
-  "batch-analyzed",
-  "thread-active",
 ] as const;
 
 export type Tag = (typeof TAG_VOCABULARY)[number];
@@ -392,63 +386,6 @@ export function validateId(id: string): void {
   }
 }
 
-// ─── Foundry types ────────────────────────────────────────────────────────────
-
-export type EvaluatorName =
-  | "no-legacy-imports"
-  | "signature-preservation"
-  | "test-coverage"
-  | "correctness";
-
-export interface Evaluation {
-  eval_id: string;
-  artifact_id: string;
-  evaluator: EvaluatorName;
-  score: number | null;
-  pass: 0 | 1;
-  feedback: string | null;
-  model: string | null;
-  eval_at: string;
-}
-
-export type BatchJobType = "inventory" | "embed" | "evaluate";
-export type BatchJobStatus = "submitted" | "running" | "completed" | "failed";
-
-export interface BatchJob {
-  job_id: string;
-  foundry_job_id: string | null;
-  type: BatchJobType;
-  wave: number | null;
-  status: BatchJobStatus;
-  artifact_ids: string; // JSON array
-  submitted_at: string;
-  completed_at: string | null;
-  result_path: string | null;
-}
-
-export interface Trace {
-  trace_id: string;
-  run_id: string | null;
-  artifact_id: string | null;
-  span_name: string;
-  model: string | null;
-  tokens_in: number | null;
-  tokens_out: number | null;
-  latency_ms: number | null;
-  cost_usd: number | null;
-  ts: string;
-}
-
-export type AgentThreadType = "migration" | "review" | "context";
-
-export interface AgentThread {
-  artifact_id: string;
-  thread_id: string;
-  agent_type: AgentThreadType;
-  created_at: string;
-  last_message_at: string | null;
-}
-
 // ─── Monitoring Dashboard API DTOs ────────────────────────────────────────────
 // Stable response shapes for the monitoring dashboard HTTP endpoints.
 // All future feature slices MUST extend these rather than invent new shapes.
@@ -491,6 +428,12 @@ export interface ApiStatusResponse {
   next: unknown | null;
   open_blockers: ApiBlockerRow[];
   open_issues: ApiIssueRow[];
+  evidence_gate: {
+    migrated_pending_evidence: number;
+    evidence_passed_awaiting_arbitration: number;
+    approved_arbitration_count: number;
+    rejected_arbitration_count: number;
+  };
 }
 
 /** One entry in GET /api/wave-plan. */
@@ -581,31 +524,4 @@ export interface ApiRunFilters {
   agents: string[];
   statuses: string[];
   models: string[];
-}
-
-/** One row in GET /api/evaluations — aggregated per evaluator. */
-export interface ApiEvalSummary {
-  evaluator: EvaluatorName;
-  total: number;
-  passed: number;
-  failed: number;
-  avg_score: number | null;
-}
-
-/** Top-level shape of GET /api/cost. */
-export interface ApiCostSummary {
-  total_tokens_in: number;
-  total_tokens_out: number;
-  total_cost_usd: number;
-  total_calls: number;
-  by_model: ApiCostByModel[];
-}
-
-/** Per-model cost breakdown inside GET /api/cost. */
-export interface ApiCostByModel {
-  model: string;
-  calls: number;
-  tokens_in: number;
-  tokens_out: number;
-  cost_usd: number;
 }
