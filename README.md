@@ -1,6 +1,8 @@
-# Migration Guild — Java Migration Kit
+# Migration Guild — Evidence-first Modernization Kit
 
-**Migrate any legacy Java codebase to a modern framework using GitHub Copilot CLI.**
+**Map, plan, and execute legacy modernization from evidence — with configurable model providers and no required Copilot/Foundry dependency.**
+
+Migration Guild is moving to a Hermes-style configuration model: repo-local `.guild/config.yaml`, local secrets in environment variables/`.env`, named profiles, prompt packs, run ledgers, and explicit evidence gates before migration intent. Existing Copilot/Foundry artifacts remain useful optional integrations, but they are no longer the spine.
 
 The target framework is chosen based on what the legacy code actually is — not assumed upfront:
 
@@ -26,11 +28,103 @@ Inventory → Planning → Bootstrap → Migration (parallel) → Review
 
 ---
 
+## Provider-neutral quick start
+
+The new Guild path is CLI-first and configurable like Hermes Agent.
+
+```bash
+cd your-modernization-workspace
+node migration/guildctl/cli.ts init
+node migration/guildctl/cli.ts doctor
+node migration/guildctl/cli.ts run init
+```
+
+`init` creates:
+
+```text
+.guild/
+  config.yaml
+  .env.example
+  prompts/default/{init,map,evidence,plan,execute,review}.md
+  runs/
+  evidence/
+```
+
+Secrets stay outside config. Put real keys in your shell or local `.env`, then reference the env var from config:
+
+```yaml
+model:
+  provider: openai-compatible
+  base_url: https://openrouter.ai/api/v1
+  model: anthropic/claude-sonnet-4
+  api_key_env: OPENROUTER_API_KEY
+```
+
+Local endpoint example:
+
+```yaml
+profiles:
+  local:
+    provider: openai-compatible
+    base_url: http://localhost:1234/v1
+    model: qwen2.5-coder
+```
+
+Named profiles let you switch cost/role without rewriting config:
+
+```yaml
+profiles:
+  default:
+    provider: openai-compatible
+    base_url: https://openrouter.ai/api/v1
+    model: anthropic/claude-sonnet-4
+    api_key_env: OPENROUTER_API_KEY
+  cheap:
+    provider: openai-compatible
+    base_url: https://openrouter.ai/api/v1
+    model: deepseek/deepseek-chat
+    api_key_env: OPENROUTER_API_KEY
+  reviewer:
+    provider: openai-compatible
+    base_url: https://openrouter.ai/api/v1
+    model: openai/gpt-4.1
+    api_key_env: OPENROUTER_API_KEY
+```
+
+Use them with:
+
+```bash
+node migration/guildctl/cli.ts --profile cheap run init
+node migration/guildctl/cli.ts --profile reviewer config
+```
+
+Evidence-first rule:
+
+1. Run `doctor` to catch missing config/secrets/tooling.
+2. Run `run init` to map the repo and write `.guild/runs/<timestamp>/report.md`.
+3. Inspect the report.
+4. Only then move to planning/execution.
+
+Troubleshooting:
+
+- Missing API key: set the env var named by `model.api_key_env`.
+- Missing prompt pack: rerun `init` or create `.guild/prompts/<active_pack>/<mode>.md`.
+- Unsupported provider: use `openai-compatible` first; Copilot/Foundry are optional future/provider integrations, not required setup.
+
+---
+
+## Legacy packaged Java workflow
+
+The existing packaged artifact still contains Java/Copilot-oriented setup files for the earlier runtime. Treat this as a legacy compatibility path while the provider-neutral Guild CLI lands.
+
+---
+
 ## Prerequisites
 
-- [GitHub Copilot CLI](https://docs.github.com/en/copilot/using-github-copilot/using-github-copilot-in-the-command-line) installed and authenticated
 - Node.js 18+
 - Git
+- Optional: GitHub Copilot CLI, if you are using the legacy packaged Copilot agent workflow
+
 
 ---
 
