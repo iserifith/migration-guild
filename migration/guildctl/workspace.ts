@@ -108,7 +108,6 @@ export function collectInitEvidence(root: string): EvidenceReport {
   ];
   const inferredRisks: string[] = [];
   if (!packageScripts.test) inferredRisks.push("No root package.json test script detected; verification command may need explicit config.");
-  if (files.some((f) => f.includes("provider"))) inferredRisks.push("Provider-specific code exists; provider-neutral path must avoid depending on it.");
   if (files.some((f) => f.includes("agent") || f.includes("agents/"))) inferredRisks.push("Existing Agent artifact packaging exists; keep it optional and avoid hard prerequisites.");
   return {
     observedFacts,

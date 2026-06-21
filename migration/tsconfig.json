@@ -11,6 +11,6 @@
     "resolveJsonModule": true,
     "skipLibCheck": true
   },
-  "include": ["registry/**/*", "guildctl/**/*", "provider/**/*"],
+  "include": ["registry/**/*", "guildctl/**/*"],
   "exclude": ["node_modules", "dist", "*/dist"]
 }

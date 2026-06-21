@@ -5,16 +5,7 @@ import { spawnAgent } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printStatusSummary } from "../dashboard";
 import { getLogDir } from "../util";
-import {
-  loadConfig,
-  requireProviderConfig,
-  resolvePhaseModel,
-  resolvePhaseProvider,
-} from "../../provider/config";
-import { ProviderClient } from "../../provider/provider-client";
-import { submitBatch } from "../../provider/batch/submit";
-import { waitForBatch } from "../../provider/batch/poll";
-import { applyInventoryResults } from "../../provider/batch/apply";
+import { loadConfig, resolvePhaseModel } from "../config";
 import { registerArtifact } from "../../registry/commands/artifacts";
 import { setNext } from "../../registry/commands/operator";
 import { applySchema } from "../../registry/db/schema";
@@ -99,27 +90,6 @@ function scanAndRegister(db: Database.Database, projectRoot: string): number {
   return registered;
 }
 
-// ─── Batch path (Provider) ────────────────────────────────────────────────────
-
-async function runInventoryBatch(db: Database.Database): Promise<void> {
-  const cfg = loadConfig();
-  const provider = requireProviderConfig(cfg);
-  const client = new ProviderClient(provider);
-
-  process.stdout.write("  Provider: provider (batch)\n\n");
-
-  const job = await submitBatch(db, client, provider, "inventory");
-  process.stdout.write(`  Batch job submitted: ${job.job_id} — waiting for completion…\n`);
-
-  const completed = await waitForBatch(db, client, job.job_id);
-  if (completed.status === "failed") {
-    process.stderr.write(`\n  ✗ Provider batch job failed: ${completed.job_id}\n`);
-    process.exit(1);
-  }
-
-  await applyInventoryResults(db, client, completed);
-}
-
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export async function runInventory(db: Database.Database): Promise<void> {
@@ -141,33 +111,25 @@ export async function runInventory(db: Database.Database): Promise<void> {
   });
 
   const cfg = loadConfig();
-  const inventoryProvider = resolvePhaseProvider("inventory", cfg.provider);
-
-  if (inventoryProvider === "provider" && cfg.provider?.batchEnabled) {
-    // Step 2a: Provider batch — classify all registered artifacts
-    await runInventoryBatch(db);
-  } else {
-    // Step 2b: local Agent agent — classify each artifact (role, framework, etc.)
-    const model = resolvePhaseModel("inventory", cfg.provider);
-    console.log(`  Agent: context-agent   Model: ${model}\n`);
-    const result = await spawnAgent({
-      agent: "context-agent",
-      model,
-      prompt:
+  const model = resolvePhaseModel("inventory", cfg);
+  console.log(`  Agent: context-agent   Model: ${model}\n`);
+  const result = await spawnAgent({
+    agent: "context-agent",
+    model,
+    prompt:
         "Classify each artifact in the registry: set its role, framework, and any relevant tags. " +
         "Use `node migration/registry/dist/cli.js list-artifacts --status pending` to see what needs classifying. " +
         "Then use `node migration/registry/dist/cli.js update-artifact --id <artifact-id> --module <module> --role <role> --framework <framework>` " +
         "to write classifications, and `node migration/registry/dist/cli.js add-tag --id <artifact-id> --tag <tag>` for any relevant tags.",
-      db,
-      logDir: getLogDir(),
-      phase: "inventory",
-    });
+    db,
+    logDir: getLogDir(),
+    phase: "inventory",
+  });
 
-    if (result.exitCode !== 0) {
-      stopPolling();
-      process.stderr.write(`\n  ✗ Classification agent exited with code ${result.exitCode}\n`);
-      process.exit(result.exitCode);
-    }
+  if (result.exitCode !== 0) {
+    stopPolling();
+    process.stderr.write(`\n  ✗ Classification agent exited with code ${result.exitCode}\n`);
+    process.exit(result.exitCode);
   }
 
   stopPolling();
@@ -180,7 +142,7 @@ export async function runInventory(db: Database.Database): Promise<void> {
       summary: blockMessage.summary,
       reason: blockMessage.reason,
       recommendedCommand: blockMessage.command,
-    });
+  });
     console.log(`  ⚠ ${blockMessage.summary}`);
     console.log(`    ${blockMessage.reason}`);
     console.log(`    Run: ${blockMessage.command}\n`);

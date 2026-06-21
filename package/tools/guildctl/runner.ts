@@ -4,16 +4,10 @@ import * as fs from "fs";
 import * as path from "path";
 import { Transform } from "stream";
 import type Database from "better-sqlite3";
+import type { PhaseKey } from "./config";
 import { releaseClaimedArtifactsForOwner } from "../registry/commands/artifacts";
 import { releaseClaimsForRun } from "../registry/commands/claim";
 import { startRun, finishRun, setRunPid } from "../registry/commands/runs";
-import {
-  loadConfig,
-  requireProviderConfig,
-  requirePhaseProviderConfig,
-  resolvePhaseProvider,
-} from "../provider/config";
-import type { PhaseKey } from "../provider/config";
 
 export interface SpawnAgentOpts {
   agent: string;
@@ -239,7 +233,7 @@ export function summarizeRunFailures(results: AgentRunResult[]): string | null {
   return `${failed.length} agent run(s) failed: ${sample}${extra}`;
 }
 
-function spawnAgentProcess(opts: SpawnAgentOpts): Promise<AgentRunResult> {
+export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   const { agent, model, prompt, db } = opts;
   const claimOwner = opts.claimOwner ?? `${agent}:${randomUUID()}`;
   const runId = randomUUID().replace(/-/g, "").slice(0, 16);
@@ -535,44 +529,4 @@ function spawnAgentProcess(opts: SpawnAgentOpts): Promise<AgentRunResult> {
       finalize(1);
     });
   });
-}
-
-/**
- * Spawn a agent CLI agent, routing LLM calls through OpenAI-compatible provider when
- * the resolved provider for this phase is "provider". All agent execution,
- * tool use, file I/O and registry access remain local — only the model
- * endpoint changes.
- */
-export async function spawnAgent(
-  opts: SpawnAgentOpts & { phase?: PhaseKey },
-): Promise<AgentRunResult> {
-  const cfg = loadConfig();
-  const phase = opts.phase;
-
-  // Determine provider for this phase
-  const provider = phase
-    ? resolvePhaseProvider(phase, cfg.provider)
-    : cfg.llmProvider; // fallback to global when no phase given
-
-  if (provider === "provider") {
-    const f = phase
-      ? requirePhaseProviderConfig(phase, cfg)
-      : requireProviderConfig(cfg);
-    process.env["AGENT_PROVIDER_BASE_URL"] = f.openaiEndpoint;
-    process.env["AGENT_PROVIDER_TYPE"] = f.providerType;
-    process.env["AGENT_PROVIDER_API_KEY"] = f.apiKey;
-    process.stderr.write(
-      `[guildctl] Phase "${phase ?? "unknown"}" → provider (${f.providerType} @ ${f.openaiEndpoint}, model: ${opts.model})\n`,
-    );
-  } else {
-    // Ensure Provider env vars are cleared so Agent uses its own routing
-    delete process.env["AGENT_PROVIDER_BASE_URL"];
-    delete process.env["AGENT_PROVIDER_TYPE"];
-    delete process.env["AGENT_PROVIDER_API_KEY"];
-    process.stderr.write(
-      `[guildctl] Phase "${phase ?? "unknown"}" → agent (model: ${opts.model})\n`,
-    );
-  }
-
-  return spawnAgentProcess(opts);
 }

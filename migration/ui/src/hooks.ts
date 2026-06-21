@@ -16,8 +16,6 @@ import {
 import {
   fetchArtifacts,
   fetchBlockers,
-  fetchCost,
-  fetchEvaluations,
   fetchEvents,
   fetchIssues,
   fetchRunLog,
@@ -33,8 +31,6 @@ import type {
   BlockerListResult,
   BlockerQuery,
   BlockerEntry,
-  CostSummary,
-  EvaluationSummary,
   IssueListResult,
   IssueQuery,
   IssueEntry,
@@ -403,50 +399,6 @@ export function useRunLog(runId: string | null): UseRunLogResult {
   return { log, loading, error, reload: load };
 }
 
-export interface UseEvaluationsResult {
-  evaluations: EvaluationSummary[];
-  loading: boolean;
-  error: Error | null;
-  reload: () => void;
-}
-
-export function useEvaluations(): UseEvaluationsResult {
-  const state = useLoadableData(
-    () => fetchEvaluations(),
-    [] as EvaluationSummary[],
-    [],
-  );
-
-  return {
-    evaluations: state.data,
-    loading: state.loading,
-    error: state.error,
-    reload: state.reload,
-  };
-}
-
-export interface UseCostResult {
-  cost: CostSummary | null;
-  loading: boolean;
-  error: Error | null;
-  reload: () => void;
-}
-
-export function useCost(): UseCostResult {
-  const state = useLoadableData(
-    () => fetchCost(),
-    null as CostSummary | null,
-    [],
-  );
-
-  return {
-    cost: state.data,
-    loading: state.loading,
-    error: state.error,
-    reload: state.reload,
-  };
-}
-
 // ── useRegistryData ───────────────────────────────────────────────────────────
 
 export interface UseRegistryDataResult {
@@ -457,8 +409,6 @@ export interface UseRegistryDataResult {
   blockers: UseBlockersResult;
   issues: UseIssuesResult;
   runs: UseRunsResult;
-  evaluations: UseEvaluationsResult;
-  cost: UseCostResult;
   loading: boolean;
   error: Error | null;
   reload: () => void;
@@ -486,8 +436,6 @@ export function useRegistryData(
   const blockers = useBlockers(queries.blockers);
   const issues = useIssues(queries.issues);
   const runs = useRuns(queries.runs);
-  const evaluations = useEvaluations();
-  const cost = useCost();
 
   const reload = useCallback(() => {
     artifacts.reload();
@@ -497,8 +445,6 @@ export function useRegistryData(
     blockers.reload();
     issues.reload();
     runs.reload();
-    evaluations.reload();
-    cost.reload();
   }, [
     artifacts.reload,
     status.reload,
@@ -507,8 +453,6 @@ export function useRegistryData(
     blockers.reload,
     issues.reload,
     runs.reload,
-    evaluations.reload,
-    cost.reload,
   ]);
 
   return {
@@ -519,8 +463,6 @@ export function useRegistryData(
     blockers,
     issues,
     runs,
-    evaluations,
-    cost,
     loading: artifacts.loading || status.loading,
     error: artifacts.error ?? status.error,
     reload,

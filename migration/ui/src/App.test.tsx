@@ -156,40 +156,6 @@ function mockRegistryData(
       error: null,
       reload: vi.fn(),
     },
-    evaluations: {
-      evaluations: [
-        {
-          evaluator: "groundedness",
-          total: 4,
-          passed: 3,
-          failed: 1,
-          avg_score: 0.87,
-        },
-      ],
-      loading: false,
-      error: null,
-      reload: vi.fn(),
-    },
-    cost: {
-      cost: {
-        total_tokens_in: 120,
-        total_tokens_out: 240,
-        total_cost_usd: 1.25,
-        total_calls: 3,
-        by_model: [
-          {
-            model: "gpt-5.4",
-            calls: 3,
-            tokens_in: 120,
-            tokens_out: 240,
-            cost_usd: 1.25,
-          },
-        ],
-      },
-      loading: false,
-      error: null,
-      reload: vi.fn(),
-    },
     loading: false,
     error: null,
     reload: vi.fn(),
@@ -243,8 +209,6 @@ describe("App shell", () => {
       "Sessions",
       "Blockers",
       "Runs",
-      "Quality",
-      "Cost",
     ]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
@@ -284,12 +248,6 @@ describe("App shell", () => {
 
     fireEvent.click(screen.getByText("Runs"));
     expect(screen.getByRole("heading", { name: /run log/i })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText("Quality"));
-    expect(screen.getByRole("columnheader", { name: /avg score/i })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText("Cost"));
-    expect(screen.getAllByText(/\$1\.2500/)).toHaveLength(2);
   });
 
   it("passes updated run query state back into the hook when filters change", () => {

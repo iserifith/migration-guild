@@ -14,8 +14,6 @@
 import React from "react";
 import ArtifactList from "./components/ArtifactList";
 import BlockersView from "./components/BlockersView";
-import CostView from "./components/CostView";
-import QualityView from "./components/QualityView";
 import RunsView from "./components/RunsView";
 import SessionsView from "./components/SessionsView";
 import WavePlan from "./components/WavePlan";
@@ -39,8 +37,6 @@ export interface TabProps {
   blockers: UseRegistryDataResult["blockers"];
   issues: UseRegistryDataResult["issues"];
   runs: UseRegistryDataResult["runs"];
-  evaluations: UseRegistryDataResult["evaluations"];
-  cost: UseRegistryDataResult["cost"];
   timeMode: TimeDisplayMode;
   sessionQuery: SessionQuery;
   updateSessionQuery: (updates: Partial<SessionQuery>) => void;
@@ -164,30 +160,6 @@ const TABS: TabDef[] = [
       />
     ),
   },
-  {
-    id: "Quality",
-    label: "Quality",
-    render: ({ evaluations }) => (
-      <QualityView
-        evaluations={evaluations.evaluations}
-        loading={evaluations.loading}
-        error={evaluations.error}
-        onRetry={evaluations.reload}
-      />
-    ),
-  },
-  {
-    id: "Cost",
-    label: "Cost",
-    render: ({ cost }) => (
-      <CostView
-        cost={cost.cost}
-        loading={cost.loading}
-        error={cost.error}
-        onRetry={cost.reload}
-      />
-    ),
-  },
 ];
 
 // ── App shell ─────────────────────────────────────────────────────────────────
@@ -230,8 +202,6 @@ export default function App() {
     blockers,
     issues,
     runs,
-    evaluations,
-    cost,
     reload,
   } = useRegistryData({
     sessions: sessionQuery,
@@ -322,8 +292,6 @@ export default function App() {
           blockers,
           issues,
           runs,
-          evaluations,
-          cost,
           timeMode,
           sessionQuery,
           updateSessionQuery,

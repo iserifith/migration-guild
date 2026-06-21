@@ -220,29 +220,3 @@ export interface RunEntry {
 }
 
 export type RunListResult = PagedResult<RunEntry, RunFilters>;
-
-/** Shape of each element returned by GET /api/evaluations. */
-export interface EvaluationSummary {
-  evaluator: string;
-  total: number;
-  passed: number;
-  failed: number;
-  avg_score: number | null;
-}
-
-export interface CostByModelEntry {
-  model: string;
-  calls: number;
-  tokens_in: number;
-  tokens_out: number;
-  cost_usd: number;
-}
-
-/** Shape returned by GET /api/cost. */
-export interface CostSummary {
-  total_tokens_in: number;
-  total_tokens_out: number;
-  total_cost_usd: number;
-  total_calls: number;
-  by_model: CostByModelEntry[];
-}

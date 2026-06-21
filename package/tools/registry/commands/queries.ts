@@ -399,9 +399,6 @@ import type {
   ApiIssueFilters,
   ApiRunRow,
   ApiRunFilters,
-  ApiEvalSummary,
-  ApiCostSummary,
-  ApiCostByModel,
 } from "../types";
 
 /** Safe JSON.parse — returns the raw string if the value is not valid JSON. */
@@ -1069,69 +1066,4 @@ export function queryRunHistoryPage(
       `,
     ),
   });
-}
-
-// ── /api/evaluations ────────────────────────────────────────────────────────
-
-/**
- * Returns evaluation pass/fail/score summary grouped by evaluator.
- * Optionally scope to a single artifact by passing its ID.
- */
-export function queryEvaluationSummary(
-  db: Database.Database,
-  artifactId?: string,
-): ApiEvalSummary[] {
-  const conditions: string[] = [];
-  const params: string[] = [];
-  if (artifactId) {
-    conditions.push("artifact_id = ?");
-    params.push(artifactId);
-  }
-  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-  const sql = `
-    SELECT
-      evaluator,
-      COUNT(*)                                        AS total,
-      SUM(CASE WHEN pass = 1 THEN 1 ELSE 0 END)      AS passed,
-      SUM(CASE WHEN pass = 0 THEN 1 ELSE 0 END)      AS failed,
-      AVG(score)                                      AS avg_score
-    FROM evaluations
-    ${where}
-    GROUP BY evaluator
-    ORDER BY evaluator
-  `;
-  return db.prepare(sql).all(...params) as ApiEvalSummary[];
-}
-
-// ── /api/cost ───────────────────────────────────────────────────────────────
-
-/** Returns token-usage and cost totals, broken down by model. */
-export function queryCostSummary(db: Database.Database): ApiCostSummary {
-  const totals = db.prepare(`
-    SELECT
-      COALESCE(SUM(tokens_in),  0) AS total_tokens_in,
-      COALESCE(SUM(tokens_out), 0) AS total_tokens_out,
-      COALESCE(SUM(cost_usd),   0) AS total_cost_usd,
-      COUNT(*)                     AS total_calls
-    FROM traces
-  `).get() as {
-    total_tokens_in: number;
-    total_tokens_out: number;
-    total_cost_usd: number;
-    total_calls: number;
-  };
-
-  const by_model = db.prepare(`
-    SELECT
-      COALESCE(model, '(unknown)') AS model,
-      COUNT(*)                     AS calls,
-      COALESCE(SUM(tokens_in),  0) AS tokens_in,
-      COALESCE(SUM(tokens_out), 0) AS tokens_out,
-      COALESCE(SUM(cost_usd),   0) AS cost_usd
-    FROM traces
-    GROUP BY model
-    ORDER BY cost_usd DESC
-  `).all() as ApiCostByModel[];
-
-  return { ...totals, by_model };
 }

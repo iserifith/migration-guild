@@ -79,5 +79,4 @@ export const STATUS_COLOR_FALLBACK = "#888";
 //
 // Planned (not yet implemented):
 //   "Claimability" — artifacts ready-to-claim per wave (no unresolved deps)
-//   "Batch Jobs"   — provider batch job queue
 //   "Dependencies" — artifact dependency graph

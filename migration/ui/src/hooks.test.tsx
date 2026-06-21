@@ -9,8 +9,6 @@ import {
 import {
   fetchArtifacts,
   fetchBlockers,
-  fetchCost,
-  fetchEvaluations,
   fetchIssues,
   fetchRunLog,
   fetchRuns,
@@ -29,8 +27,6 @@ import type {
 vi.mock("./api", () => ({
   fetchArtifacts: vi.fn(),
   fetchBlockers: vi.fn(),
-  fetchCost: vi.fn(),
-  fetchEvaluations: vi.fn(),
   fetchEvents: vi.fn(),
   fetchIssues: vi.fn(),
   fetchRunLog: vi.fn(),
@@ -96,14 +92,6 @@ describe("hooks", () => {
     vi.mocked(fetchRuns).mockResolvedValue(
       paged<RunEntry>([], { total: 0, total_pages: 1 }),
     );
-    vi.mocked(fetchEvaluations).mockResolvedValue([]);
-    vi.mocked(fetchCost).mockResolvedValue({
-      total_tokens_in: 0,
-      total_tokens_out: 0,
-      total_cost_usd: 0,
-      total_calls: 0,
-      by_model: [],
-    });
     vi.mocked(fetchRunLog).mockResolvedValue("log output");
   });
 
@@ -274,7 +262,5 @@ describe("hooks", () => {
     expect(vi.mocked(fetchBlockers).mock.calls.length).toBeGreaterThan(1);
     expect(vi.mocked(fetchIssues).mock.calls.length).toBeGreaterThan(1);
     expect(vi.mocked(fetchRuns).mock.calls.length).toBeGreaterThan(1);
-    expect(vi.mocked(fetchEvaluations).mock.calls.length).toBeGreaterThan(1);
-    expect(vi.mocked(fetchCost).mock.calls.length).toBeGreaterThan(1);
   });
 });

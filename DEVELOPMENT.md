@@ -22,7 +22,7 @@ The split matters because not everything in this repository ships.
 | `package/skills/` | Skill definitions and shipped skill assets installed into migration workspaces | Yes |
 | `package/prompts/` | Prompt shortcuts installed into migration workspaces | Yes |
 | `package/instructions/` | Path-scoped instructions installed into migration workspaces | Yes |
-| `package/tools/` | Registry CLI, guildctl CLI, Provider integrations, packaging-time runtime files | Yes |
+| `package/tools/` | Registry CLI, guildctl CLI, OpenAI-compatible runtime files, packaging-time runtime files | Yes |
 | `setup.ts` | Installer entrypoint that copies `package/` into a target workspace | Yes, as compiled `dist/setup.js` |
 | `scripts/build-dist.mjs` | Builds the distributable tarball | Dev tool |
 

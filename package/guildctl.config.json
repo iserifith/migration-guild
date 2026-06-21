@@ -1,49 +1,6 @@
 {
-  "llmProvider": "agent",
-  "provider": {
-    "openaiEndpoint": "${PROVIDER_OPENAI_ENDPOINT}",
-    "embedEndpoint": "${PROVIDER_EMBED_ENDPOINT}",
-    "projectEndpoint": "${PROVIDER_PROJECT_ENDPOINT}",
-    "apiKey": "${PROVIDER_API_KEY}",
-    "chatModel": "gpt-5.4-mini",
-    "embeddingModel": "text-embedding-ada-002",
-    "batchEnabled": false,
-    "providerType": "openai",
-    "modelTokenLimits": {
-      "gpt-oss-120b": 8000,
-      "gpt-5.4-mini": 2000
-    },
-    "phaseModels": {
-      "inventory": "gpt-5.4-mini",
-      "planning": "claude-sonnet-4.6",
-      "analysis": "gpt-5.4-mini",
-      "test-writing": "gpt-5.4-mini",
-      "code-writing": "gpt-oss-120b",
-      "review": "claude-sonnet-4.6",
-      "eval": "gpt-5.4-mini"
-    },
-    "phaseProviders": {
-      "inventory": "provider",
-      "planning": "agent",
-      "analysis": "provider",
-      "test-writing": "provider",
-      "code-writing": "provider",
-      "review": "agent",
-      "eval": "provider"
-    }
-  },
-  "eval": {
-    "autoAdvance": true,
-    "passThreshold": 0.85,
-    "evaluators": [
-      "no-legacy-imports",
-      "signature-preservation",
-      "test-coverage",
-      "correctness"
-    ]
-  },
-  "tracing": {
-    "enabled": true,
-    "localOnly": false
-  }
+  "runtime": "openai-compatible",
+  "model": "anthropic/claude-sonnet-4",
+  "base_url": "https://openrouter.ai/api/v1",
+  "api_key_env": "OPENROUTER_API_KEY"
 }

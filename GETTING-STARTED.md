@@ -10,7 +10,7 @@ Multiple agents run in parallel, a SQLite registry tracks every file, and your o
 - **Node.js 18+**
 - One of:
   - **agent CLI** (default) — `agent` on PATH and authenticated
-  - **Microsoft Provider** — API key + Azure OpenAI endpoint (see [Configure Provider](#configure-provider) below)
+  - **OpenAI-compatible runtime** — API key + Azure OpenAI endpoint (see [Configure OpenAI-compatible runtime](#configure-openai-compatible-runtime) below)
 
 ---
 
@@ -35,7 +35,7 @@ cd migration && npm install && cd ..
 
 # 5. Copy and fill in your .env
 cp .env.example .env
-#    Edit .env — set PROVIDER_* keys if using Provider, or leave defaults for local agent CLI
+#    Edit .env — set the API key env var referenced by guildctl.config.json
 #    The CLI loads .env automatically — no need to source it manually
 ```
 
@@ -87,17 +87,16 @@ node __MIGRATION_GUILDCTL__/dist/cli.js run --parallel 3
 
 ---
 
-## Configure Provider
+## Configure OpenAI-compatible runtime
 
 Edit `.env` and set:
 
 ```env
-PROVIDER_OPENAI_ENDPOINT=https://<resource>.openai.azure.com/openai/v1
-PROVIDER_EMBED_ENDPOINT=https://<resource>.cognitiveservices.azure.com/openai/v1
-PROVIDER_API_KEY=<your-key>
+OPENROUTER_API_KEY=<your-key>
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
 ```
 
-Then in `guildctl.config.json`, set `"llmProvider": "provider"` and configure per-phase models under `provider.phaseModels`.
+Then in `guildctl.config.json`, configure `base_url`, `model`, and `api_key_env` for an OpenAI-compatible endpoint.
 For the migration pipeline, the phase keys are `analysis`, `test-writing`, and `code-writing`.
 
 The CLI loads `.env` automatically — no `export` or `source` needed.
@@ -112,7 +111,7 @@ The CLI loads `.env` automatically — no `export` or `source` needed.
 | Background run failed or stalled and the next state is unclear | Run `agent --agent remediation-agent --model claude-sonnet-4.6 --yolo` |
 | Nothing to claim | `node migration/registry/dist/cli.js wave-plan` |
 | Files need rework | `node migration/registry/dist/cli.js list-artifacts --status needs-rework` |
-| Provider env not picked up | Ensure `.env` is in the project root (`my-migration/`), not a subdirectory |
+| OpenAI-compatible runtime env not picked up | Ensure `.env` is in the project root (`my-migration/`), not a subdirectory |
 
 Full CLI reference: see `README.md`.
 

@@ -9,8 +9,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fetchArtifacts,
   fetchBlockers,
-  fetchCost,
-  fetchEvaluations,
   fetchEvents,
   fetchIssues,
   fetchRunLog,
@@ -24,8 +22,6 @@ import type {
   ArtifactEvent,
   BlockerEntry,
   BlockerListResult,
-  CostSummary,
-  EvaluationSummary,
   IssueListResult,
   IssueEntry,
   RunEntry,
@@ -352,33 +348,7 @@ describe("fetchRunLog", () => {
   });
 });
 
-describe("fetchEvaluations", () => {
-  it("calls /api/evaluations with no query string by default", async () => {
-    const spy = mockJsonFetch<EvaluationSummary[]>([]);
-    await fetchEvaluations();
-    expect(spy).toHaveBeenCalledWith("/api/evaluations");
-  });
 
-  it("appends id when provided", async () => {
-    const spy = mockJsonFetch<EvaluationSummary[]>([]);
-    await fetchEvaluations("legacy-source:m:C");
-    expect(spy).toHaveBeenCalledWith("/api/evaluations?id=legacy-source%3Am%3AC");
-  });
-});
-
-describe("fetchCost", () => {
-  it("calls /api/cost", async () => {
-    const spy = mockJsonFetch<CostSummary>({
-      total_tokens_in: 0,
-      total_tokens_out: 0,
-      total_cost_usd: 0,
-      total_calls: 0,
-      by_model: [],
-    });
-    await fetchCost();
-    expect(spy).toHaveBeenCalledWith("/api/cost");
-  });
-});
 
 describe("API error handling", () => {
   it("throws an Error with the status code when the server returns non-2xx", async () => {

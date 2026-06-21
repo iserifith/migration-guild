@@ -4,7 +4,7 @@ import { spawnAgent, summarizeRunFailures } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent } from "../dashboard";
 import { getLogDir } from "../util";
-import { loadConfig, resolvePhaseModel } from "../../provider/config";
+import { loadConfig, resolvePhaseModel } from "../config";
 import { getStatusCounts } from "../monitoring";
 
 const REMEDIATION_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["GUILDCTL_REMEDIATION_TIMEOUT_MINS"] ?? "15", 10));
@@ -81,7 +81,7 @@ export async function runRemediate(
   deps: RemediateDeps = {},
 ): Promise<void> {
   const cfg = loadConfig();
-  const model = opts.model ?? resolvePhaseModel("review", cfg.provider);
+  const model = opts.model ?? resolvePhaseModel("review", cfg);
   const timeoutMins = Math.max(1, opts.timeoutMins ?? REMEDIATION_TIMEOUT_MINUTES);
   const prompt = makeRemediationPrompt(opts.id, opts.prompt);
   const runAgent = deps.spawnAgent ?? spawnAgent;

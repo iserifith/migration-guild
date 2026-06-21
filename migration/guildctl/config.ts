@@ -7,7 +7,7 @@ export type JsonMap = Record<string, unknown>;
 export interface GuildConfig {
   version: number;
   workspace: { name: string; root: string };
-  model: { provider: string; model: string; base_url?: string | null; api_key_env?: string | null; context_length?: number };
+  model: { model: string; base_url?: string | null; api_key_env?: string | null; context_length?: number };
   agents: Record<string, JsonMap>;
   tools: Record<string, boolean>;
   prompts: { directory: string; active_pack: string };
@@ -27,16 +27,15 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   version: 1,
   workspace: { name: "migration-guild-workspace", root: "." },
   model: {
-    provider: "openai-compatible",
     model: "anthropic/claude-sonnet-4",
     base_url: "https://openrouter.ai/api/v1",
     api_key_env: "OPENROUTER_API_KEY",
     context_length: 200000,
   },
   agents: {
-    default: { provider: "openai-compatible", model: "anthropic/claude-sonnet-4", temperature: 0.2 },
-    cheap: { provider: "openai-compatible", model: "deepseek/deepseek-chat", temperature: 0.2 },
-    reviewer: { provider: "openai-compatible", model: "openai/gpt-4.1", temperature: 0.1 },
+    default: { model: "anthropic/claude-sonnet-4", temperature: 0.2 },
+    cheap: { model: "deepseek/deepseek-chat", temperature: 0.2 },
+    reviewer: { model: "openai/gpt-4.1", temperature: 0.1 },
   },
   tools: { terminal: true, git: true, filesystem: true, web: false },
   prompts: { directory: ".guild/prompts", active_pack: "default" },
@@ -44,10 +43,10 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   approval: { mode: "manual", destructive_commands: "manual" },
   migration: { default_mode: "init", require_evidence_before_intent: true, max_autonomous_steps: 3 },
   profiles: {
-    default: { provider: "openai-compatible", base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-4", api_key_env: "OPENROUTER_API_KEY" },
-    local: { provider: "openai-compatible", base_url: "http://localhost:1234/v1", model: "qwen2.5-coder" },
-    cheap: { provider: "openai-compatible", base_url: "https://openrouter.ai/api/v1", model: "deepseek/deepseek-chat", api_key_env: "OPENROUTER_API_KEY" },
-    reviewer: { provider: "openai-compatible", base_url: "https://openrouter.ai/api/v1", model: "openai/gpt-4.1", api_key_env: "OPENROUTER_API_KEY" },
+    default: { base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-4", api_key_env: "OPENROUTER_API_KEY" },
+    local: { base_url: "http://localhost:1234/v1", model: "qwen2.5-coder" },
+    cheap: { base_url: "https://openrouter.ai/api/v1", model: "deepseek/deepseek-chat", api_key_env: "OPENROUTER_API_KEY" },
+    reviewer: { base_url: "https://openrouter.ai/api/v1", model: "openai/gpt-4.1", api_key_env: "OPENROUTER_API_KEY" },
   },
 };
 
@@ -209,4 +208,32 @@ export function scaffoldGuildConfig(root = process.cwd(), force = false): string
   const envExample = path.join(guildDir, ".env.example");
   if (!fs.existsSync(envExample) || force) fs.writeFileSync(envExample, "OPENROUTER_API_KEY=\nOPENAI_API_KEY=\nANTHROPIC_API_KEY=\n", "utf8");
   return configPath;
+}
+
+
+export type PhaseKey = "inventory" | "planning" | "analysis" | "test-writing" | "code-writing" | "review" | string;
+
+export function loadConfig(): ResolvedGuildConfig {
+  return resolveGuildConfig();
+}
+
+export function getConfigPath(): string {
+  return guildConfigPath();
+}
+
+export function resolvePhaseModel(phase: PhaseKey, config: ResolvedGuildConfig | GuildConfig = loadConfig()): string {
+  const agents = config.agents ?? {};
+  const modelConfig = config.model;
+  const byPhase: Record<string, string> = {
+    inventory: "cheap",
+    planning: "default",
+    analysis: "cheap",
+    "test-writing": "default",
+    "code-writing": "default",
+    review: "reviewer",
+  };
+  const agentKey = byPhase[String(phase)] ?? "default";
+  const agent = agents[agentKey];
+  const agentModel = agent && typeof agent["model"] === "string" ? String(agent["model"]) : undefined;
+  return agentModel ?? modelConfig.model;
 }

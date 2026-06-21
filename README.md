@@ -1,8 +1,8 @@
 # Migration Guild — Evidence-first Modernization Kit
 
-**Map, plan, and execute legacy modernization from evidence — with configurable model providers and no required Agent/Provider dependency.**
+**Map, plan, and execute legacy modernization from evidence — with a strict OpenAI-compatible runtime and no vendor-specific dependency.**
 
-Migration Guild is moving to a Hermes-style configuration model: repo-local `.guild/config.yaml`, local secrets in environment variables/`.env`, named profiles, prompt packs, run ledgers, and explicit evidence gates before migration intent. Existing Agent/Provider artifacts remain useful optional integrations, but they are no longer the spine.
+Migration Guild is moving to a Hermes-style configuration model: repo-local `.guild/config.yaml`, local secrets in environment variables/`.env`, named profiles, prompt packs, run ledgers, and explicit evidence gates before migration intent. Existing Agent/OpenAI-compatible runtime artifacts remain useful optional integrations, but they are no longer the spine.
 
 The target framework is chosen based on what the legacy code actually is — not assumed upfront:
 
@@ -28,7 +28,7 @@ Inventory → Planning → Bootstrap → Migration (parallel) → Review
 
 ---
 
-## Provider-neutral quick start
+## OpenAI-compatible runtime-neutral quick start
 
 The new Guild path is CLI-first and configurable like Hermes Agent.
 
@@ -54,7 +54,7 @@ Secrets stay outside config. Put real keys in your shell or local `.env`, then r
 
 ```yaml
 model:
-  provider: openai-compatible
+  runtime: openai-compatible
   base_url: https://openrouter.ai/api/v1
   model: anthropic/claude-sonnet-4
   api_key_env: OPENROUTER_API_KEY
@@ -65,7 +65,7 @@ Local endpoint example:
 ```yaml
 profiles:
   local:
-    provider: openai-compatible
+    runtime: openai-compatible
     base_url: http://localhost:1234/v1
     model: qwen2.5-coder
 ```
@@ -75,17 +75,17 @@ Named profiles let you switch cost/role without rewriting config:
 ```yaml
 profiles:
   default:
-    provider: openai-compatible
+    runtime: openai-compatible
     base_url: https://openrouter.ai/api/v1
     model: anthropic/claude-sonnet-4
     api_key_env: OPENROUTER_API_KEY
   cheap:
-    provider: openai-compatible
+    runtime: openai-compatible
     base_url: https://openrouter.ai/api/v1
     model: deepseek/deepseek-chat
     api_key_env: OPENROUTER_API_KEY
   reviewer:
-    provider: openai-compatible
+    runtime: openai-compatible
     base_url: https://openrouter.ai/api/v1
     model: openai/gpt-4.1
     api_key_env: OPENROUTER_API_KEY
@@ -109,13 +109,13 @@ Troubleshooting:
 
 - Missing API key: set the env var named by `model.api_key_env`.
 - Missing prompt pack: rerun `init` or create `.guild/prompts/<active_pack>/<mode>.md`.
-- Unsupported provider: use `openai-compatible` first; Agent/Provider are optional future/provider integrations, not required setup.
+- Unsupported runtime: use `openai-compatible`; the Guild client only targets OpenAI-compatible chat-completions endpoints.
 
 ---
 
 ## Legacy packaged Java workflow
 
-The existing packaged artifact still contains Java/Agent-oriented setup files for the earlier runtime. Treat this as a legacy compatibility path while the provider-neutral Guild CLI lands.
+The existing packaged artifact still contains Java/Agent-oriented setup files for the earlier runtime. Treat this as a legacy compatibility path while the runtime-neutral Guild CLI lands.
 
 ---
 

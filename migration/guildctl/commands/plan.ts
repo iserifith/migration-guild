@@ -5,7 +5,7 @@ import { spawnAgent } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printWavePlan } from "../dashboard";
 import { getLogDir } from "../util";
-import { loadConfig, resolvePhaseModel } from "../../provider/config";
+import { loadConfig, resolvePhaseModel } from "../config";
 import { setNext } from "../../registry/commands/operator";
 import { refreshCompatibilityAudits } from "../audit";
 import { evaluatePlanningReadiness, formatPlanningBlockMessage } from "../readiness";
@@ -85,7 +85,7 @@ export async function runPlan(
   deps: PlanDeps = {},
 ): Promise<void> {
   const cfg = loadConfig();
-  const planningModel = resolvePhaseModel("planning", cfg.provider);
+  const planningModel = resolvePhaseModel("planning", cfg);
   const projectRoot = path.resolve(__dirname, "..", "..", "..");
   const refreshAudits = deps.refreshCompatibilityAudits ?? refreshCompatibilityAudits;
   const runAgent = deps.spawnAgent ?? spawnAgent;

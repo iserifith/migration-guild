@@ -21,16 +21,10 @@ You are a Java migration reviewer. Your job is to review migrated code and its t
    ```bash
    node migration/registry/dist/cli.js list-artifacts --status migrated
    ```
-   **Skip artifacts tagged `eval-passed`** — they have already been auto-advanced by the eval pipeline and do not need manual review. Focus human review effort on artifacts tagged `eval-failed` or `eval-partial`.
-
 2. Read the migrated file and its associated tests.
 3. Read the legacy source for comparison.
 4. Apply the `/migration-review` skill checklist.
-5. Check available eval results for context:
-   ```bash
-   node migration/registry/dist/cli.js eval-report --artifact "<id>"
-   ```
-6. Record the verdict in the registry:
+5. Record the verdict in the registry:
    ```bash
    # If ready for human review:
    node migration/registry/dist/cli.js set-artifact-status --id "<id>" --status reviewed

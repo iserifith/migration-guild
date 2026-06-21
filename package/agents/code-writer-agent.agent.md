@@ -56,7 +56,6 @@ You are a Java migration engineer in a split migration pipeline. Your sole respo
   - the main implementation focus implied by the tests or analyzed context
   Example shape: `Working on Order.java, a value object whose contract is to preserve the constructor-supplied amount and return it unchanged. I’m implementing the minimal production class needed to satisfy the tests for constructor/getter behavior.`
 
-6. Do **not** run `search-similar` using shell expansion and do **not** browse unrelated queue items. If you need a convention reference, read at most one directly relevant migrated file by explicit path.
 
 7. Write the complete production file to `modern/src/main/java/...`:
     - The implementation must make every test in the test file pass
@@ -86,9 +85,8 @@ You are a Java migration engineer in a split migration pipeline. Your sole respo
      --claim-token "<claim_token>"
    ```
 
-10. **Trigger automated evaluation** (if Provider eval is configured):
+10. **Trigger automated evaluation** (if automated review is configured):
    ```bash
-   node migration/registry/dist/cli.js evaluate-artifact --id "<id>" --auto-advance
    ```
     - Exit code 0 → artifact auto-advanced to `completed` or `needs-rework`. Skip manual review queue.
     - Exit code non-zero or command not found → artifact remains in `migrated` state for manual review.

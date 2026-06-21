@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import type Database from "better-sqlite3";
-import type { PhaseKey } from "../provider/config";
+import type { PhaseKey } from "./config";
 import type { AgentRunResult } from "./runner";
 
 const R = "\x1b[0m";
@@ -26,7 +26,7 @@ interface LogSignals {
   rateLimited: number;
   transientRetries: number;
   serverInterrupts: number;
-  provider404s: number;
+  model404s: number;
   authFailures: number;
 }
 
@@ -41,19 +41,12 @@ const TERMINAL_DEP_STATUSES = "'migrated', 'reviewed', 'completed', 'skipped'";
 
 export function printResolvedRuntime(opts: {
   phase: PhaseKey;
-  provider: string;
   model: string;
   configPath: string;
-  batchEnabled?: boolean;
-  providerType?: string;
-  endpoint?: string;
 }): void {
   const configPath = path.relative(process.cwd(), opts.configPath) || opts.configPath;
-  const batch = opts.batchEnabled == null ? "n/a" : opts.batchEnabled ? "on" : "off";
-  const endpoint = opts.endpoint ? `  endpoint: ${opts.endpoint}` : "";
-  const providerType = opts.providerType ? `  provider-type: ${opts.providerType}` : "";
-  console.log(`  Runtime: phase=${opts.phase}  provider=${opts.provider}  model=${opts.model}  batch=${batch}`);
-  console.log(`  Config: ${configPath}${providerType}${endpoint}`);
+  console.log(`  Runtime: phase=${opts.phase}  runtime=openai-compatible  model=${opts.model}`);
+  console.log(`  Config: ${configPath}`);
 }
 
 export function getStatusCounts(db: Database.Database, wave?: number): StatusCounts {
@@ -144,7 +137,7 @@ function analyzeLogFile(logFile: string | null): { signals: LogSignals; summary:
     rateLimited: 0,
     transientRetries: 0,
     serverInterrupts: 0,
-    provider404s: 0,
+    model404s: 0,
     authFailures: 0,
   };
   if (!logFile || !fs.existsSync(logFile)) {
@@ -158,14 +151,14 @@ function analyzeLogFile(logFile: string | null): { signals: LogSignals; summary:
     /Failed to get response from the AI model/i,
     /Request failed due to a transient API error/i,
     /Response was interrupted due to a server error/i,
-    /Model '.+' not found on provider/i,
+    /Model '.+' not found in OpenAI-compatible runtime/i,
     /HTTP 404/i,
     /\bUnauthorized\b/i,
     /\bForbidden\b/i,
     /No claimable tasks/i,
     /All tasks complete/i,
     /Nothing planned or in-progress remains/i,
-    /Check that the model is available on your provider/i,
+    /Check that the model is available in your OpenAI-compatible runtime/i,
   ];
 
   const summary = [...lines].reverse().find((line) => summaryPatterns.some((re) => re.test(line))) ?? null;
@@ -176,7 +169,7 @@ function analyzeLogFile(logFile: string | null): { signals: LogSignals; summary:
       rateLimited: (text.match(/429 Too Many Requests/gi) ?? []).length,
       transientRetries: (text.match(/Request failed due to a transient API error|Failed to get response from the AI model/gi) ?? []).length,
       serverInterrupts: (text.match(/Response was interrupted due to a server error/gi) ?? []).length,
-      provider404s: (text.match(/HTTP 404|Model '.+' not found on provider/gi) ?? []).length,
+      model404s: (text.match(/HTTP 404|Model '.+' not found in OpenAI-compatible runtime/gi) ?? []).length,
       authFailures: (text.match(/\bUnauthorized\b|\bForbidden\b|HTTP 401|HTTP 403/gi) ?? []).length,
     },
     summary,
@@ -190,14 +183,14 @@ function aggregateSignals(results: AgentRunResult[]): LogSignals {
     acc.rateLimited += signals.rateLimited;
     acc.transientRetries += signals.transientRetries;
     acc.serverInterrupts += signals.serverInterrupts;
-    acc.provider404s += signals.provider404s;
+    acc.model404s += signals.model404s;
     acc.authFailures += signals.authFailures;
     return acc;
   }, {
     rateLimited: 0,
     transientRetries: 0,
     serverInterrupts: 0,
-    provider404s: 0,
+    model404s: 0,
     authFailures: 0,
   });
 }
@@ -238,12 +231,12 @@ export function printPoolSummary(opts: {
     console.log(`  Artifacts advanced to ${opts.advancedStatus}: ${advanced > 0 ? `${GREEN}+${advanced}${R}` : `${YELLOW}0${R}`}`);
   }
 
-  if (signals.rateLimited || signals.transientRetries || signals.serverInterrupts || signals.provider404s || signals.authFailures) {
+  if (signals.rateLimited || signals.transientRetries || signals.serverInterrupts || signals.model404s || signals.authFailures) {
     const parts: string[] = [];
     if (signals.rateLimited) parts.push(`429=${signals.rateLimited}`);
     if (signals.transientRetries) parts.push(`transient=${signals.transientRetries}`);
     if (signals.serverInterrupts) parts.push(`interrupts=${signals.serverInterrupts}`);
-    if (signals.provider404s) parts.push(`404=${signals.provider404s}`);
+    if (signals.model404s) parts.push(`404=${signals.model404s}`);
     if (signals.authFailures) parts.push(`auth=${signals.authFailures}`);
     console.log(`  API pressure: ${YELLOW}${parts.join("  ")}${R}`);
   }

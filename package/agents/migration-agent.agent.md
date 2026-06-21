@@ -24,14 +24,7 @@ You are a Java migration engineer executing a migration pipeline. Each run: clai
 
 2. Read the claimed file from `legacy/`.
 
-3. **Find similar migrated artifacts as reference.** Before writing any code, search for already-migrated files that share the same role or patterns:
-   ```bash
-   node migration/guildctl/dist/cli.js search-similar \
-     --query "$(head -40 <claimed-legacy-path>)" \
-     --top-k 3 \
-     --min-score 0.75
-   ```
-   For each result where `status` is `migrated` or `completed` and `target_path` is non-null: read the file at `target_path` directly — do not derive the modern path manually — and use it as a reference for package structure, annotations, and DI style. This step is optional — skip it if the command exits non-zero (Provider not configured or unavailable), returns `[]` (embeddings not yet populated — run `node migration/guildctl/dist/cli.js batch-submit --type embed` first, then `batch-wait --job-id <id>`), or no results meet the `--min-score` threshold.
+3. Find one directly relevant migrated artifact or target-framework neighbor by explicit path if you need a style reference. Do not browse unrelated queue items.
 
 4. **Resolve second-class dependencies inline.** Before writing any code, check for linked config/descriptor/SQL artifacts:
    ```bash
@@ -53,11 +46,4 @@ You are a Java migration engineer executing a migration pipeline. Each run: clai
 
 8. Update registry: `set-artifact-status --id "<id>" --status migrated`
 
-9. **Trigger automated evaluation** (if Provider eval is configured):
-   ```bash
-   node migration/registry/dist/cli.js evaluate-artifact --id "<id>" --auto-advance
-   ```
-   - Exit code 0 → artifact auto-advanced to `completed` or `needs-rework`. Skip step 10.
-   - Exit code non-zero or command not found → continue to step 10 (manual review queue).
-
-10. Go back to step 1 and claim the next task.
+9. Go back to step 1 and claim the next task.

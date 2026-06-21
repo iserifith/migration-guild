@@ -3,13 +3,7 @@ import { spawnAgent } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printWavePlan } from "../dashboard";
 import { getLogDir } from "../util";
-import {
-  getConfigPath,
-  loadConfig,
-  requirePhaseProviderConfig,
-  resolvePhaseModel,
-  resolvePhaseProvider,
-} from "../../provider/config";
+import { getConfigPath, loadConfig, resolvePhaseModel } from "../config";
 import {
   getClaimabilityStats,
   getStatusCounts,
@@ -138,18 +132,12 @@ export async function runMigrate(
   const codeParallel = Math.max(1, opts.codeParallel ?? opts.parallel ?? 1);
   const waveLabel = opts.wave != null ? ` (wave ${opts.wave})` : "";
   const cfg = loadConfig();
-  const analyzeModel = resolvePhaseModel("analysis", cfg.provider);
-  const testModel = resolvePhaseModel("test-writing", cfg.provider);
-  const codeModel = resolvePhaseModel("code-writing", cfg.provider);
-  const analyzeProvider = resolvePhaseProvider("analysis", cfg.provider);
-  const testProvider = resolvePhaseProvider("test-writing", cfg.provider);
-  const codeProvider = resolvePhaseProvider("code-writing", cfg.provider);
+  const analyzeModel = resolvePhaseModel("analysis", cfg);
+  const testModel = resolvePhaseModel("test-writing", cfg);
+  const codeModel = resolvePhaseModel("code-writing", cfg);
   const runAgent = deps.spawnAgent ?? spawnAgent;
   const poll = deps.startPolling ?? startPolling;
   const logDir = (deps.getLogDir ?? getLogDir)();
-  if (analyzeProvider === "provider") requirePhaseProviderConfig("analysis", cfg);
-  if (testProvider === "provider") requirePhaseProviderConfig("test-writing", cfg);
-  if (codeProvider === "provider") requirePhaseProviderConfig("code-writing", cfg);
   const configPath = getConfigPath();
 
   printPhaseHeader("Phase 4 · Migration");
@@ -158,31 +146,16 @@ export async function runMigrate(
   console.log(`  Pool 2 · Code writers   Agent: code-writer-agent   Model: ${codeModel}   Parallel: ${codeParallel}${waveLabel}\n`);
   printResolvedRuntime({
     phase: "analysis",
-    provider: analyzeProvider,
     model: analyzeModel,
-    configPath,
-    batchEnabled: cfg.provider?.batchEnabled,
-    providerType: cfg.provider?.providerType,
-    endpoint: analyzeProvider === "provider" ? cfg.provider?.openaiEndpoint : undefined,
-  });
+    configPath,  });
   printResolvedRuntime({
     phase: "test-writing",
-    provider: testProvider,
     model: testModel,
-    configPath,
-    batchEnabled: cfg.provider?.batchEnabled,
-    providerType: cfg.provider?.providerType,
-    endpoint: testProvider === "provider" ? cfg.provider?.openaiEndpoint : undefined,
-  });
+    configPath,  });
   printResolvedRuntime({
     phase: "code-writing",
-    provider: codeProvider,
     model: codeModel,
-    configPath,
-    batchEnabled: cfg.provider?.batchEnabled,
-    providerType: cfg.provider?.providerType,
-    endpoint: codeProvider === "provider" ? cfg.provider?.openaiEndpoint : undefined,
-  });
+    configPath,  });
   printWavePlan(db);
   console.log();
 

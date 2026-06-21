@@ -22,11 +22,6 @@ import { runEvidenceAdd, runEvidenceList } from "./commands/evidence";
 import { runArbitrate } from "./commands/arbitrate";
 import { runSocietyReport } from "./commands/society-report";
 import { runBenchmarkCompare, runBenchmarkRecord, runBenchmarkReport } from "./commands/benchmark";
-import { loadConfig, requireProviderConfig } from "../provider/config";
-import { ProviderClient } from "../provider/provider-client";
-import { registerTracingCommands } from "../provider/tracing/commands";
-import { registerBatchCommands } from "../provider/batch/commands";
-import { registerEvalCommands } from "../provider/eval/commands";
 import {
   readGuildConfig,
   resolveGuildConfig,
@@ -82,7 +77,7 @@ program
 
 program
   .command("doctor")
-  .description("Validate Guild config, provider env, prompt pack, git, and run directories")
+  .description("Validate Guild config, OpenAI-compatible env, prompt pack, git, and run directories")
   .action(() => {
     const checks: Array<[boolean, string]> = [];
     let cfg;
@@ -93,7 +88,6 @@ program
       process.stderr.write(`✗ ${(err as Error).message}\n`);
       process.exit(1);
     }
-    checks.push([!!cfg.model.provider, `provider configured: ${cfg.model.provider || "missing"}`]);
     checks.push([!!cfg.model.model, `model configured: ${cfg.model.model || "missing"}`]);
     checks.push([!cfg.model.api_key_env || !!process.env[cfg.model.api_key_env], cfg.model.api_key_env ? `${cfg.model.api_key_env} ${process.env[cfg.model.api_key_env] ? "present" : "missing"}` : "no API key env required"]);
     checks.push([fs.existsSync(path.resolve(cfg.guildRoot, cfg.prompts.directory, cfg.prompts.active_pack)) || true, `prompt pack: ${path.resolve(cfg.guildRoot, cfg.prompts.directory, cfg.prompts.active_pack)}`]);
@@ -107,12 +101,6 @@ program
 const db = () => getDb(program.opts()["db"] as string | undefined);
 const dbPath = () => program.opts()["db"] as string | undefined;
 
-/** Lazily build a ProviderClient — only succeeds when provider config is present. */
-function getProviderClient(): ProviderClient {
-  const cfg = loadConfig();
-  const provider = requireProviderConfig(cfg);
-  return new ProviderClient(provider);
-}
 
 // ─── inventory ────────────────────────────────────────────────────────────────
 
@@ -331,7 +319,7 @@ benchmark
 
 program
   .command("run [phase]")
-  .description("Run a phase: init | inventory | plan | bootstrap | migrate | review | remediate. init is provider-neutral evidence mapping; legacy phases use registry.")
+  .description("Run a phase: init | inventory | plan | bootstrap | migrate | review | remediate. init performs evidence mapping; legacy phases use registry.")
   .option("-p, --parallel <n>", "Number of parallel sessions (migrate / review)", parseInt)
   .option("-w, --wave <n>", "Only migrate artifacts in this wave number (migrate only)", parseInt)
   .action(async (phase: string | undefined, opts) => {
@@ -378,39 +366,5 @@ program
     }
   });
 
-// ─── search-similar ───────────────────────────────────────────────────────────
-
-program
-  .command("search-similar")
-  .description("Find artifacts semantically similar to a query using stored embeddings (requires guildctl batch-submit --type embed)")
-  .requiredOption("--query <text>", "Natural language or code query")
-  .option("--top-k <n>", "Number of results to return (default: 5)", parseInt)
-  .option("--min-score <f>", "Minimum cosine similarity threshold 0–1 (default: 0)", parseFloat)
-  .action(async (opts) => {
-    assertDbExists(dbPath());
-    const { searchSimilar } = await import("../provider/retrieval");
-    const results = await searchSimilar(db(), getProviderClient(), opts.query as string, {
-      topK: (opts.topK as number | undefined) ?? 5,
-      minScore: (opts.minScore as number | undefined) ?? 0,
-    });
-    process.stdout.write(JSON.stringify(results, null, 2) + "\n");
-  });
-
-// ─── Provider: batch ───────────────────────────────────────────────────────────
-
-registerBatchCommands(
-  program,
-  db,
-  () => getProviderClient(),
-  () => requireProviderConfig(loadConfig()),
-);
-
-// ─── Provider: tracing / cost ──────────────────────────────────────────────────
-
-registerTracingCommands(program, db);
-
-// ─── Provider: eval ────────────────────────────────────────────────────────────
-
-registerEvalCommands(program, db, () => getProviderClient());
 
 program.parse();

@@ -11,7 +11,7 @@ Migration Guild is **not** one long in-process migration engine. It is an **orch
 1. A local workspace with `legacy/`, `modern/`, and `migration/`
 2. A SQLite registry (`migration/registry.db`)
 3. agent CLI subprocesses spawned for each phase
-4. Optional Microsoft Provider integrations for batch, eval, tracing, and retrieval
+4. Optional Microsoft OpenAI-compatible runtime files for batch, eval, tracing, and retrieval
 
 The registry is the source of truth. Agents are disposable workers.
 
@@ -76,7 +76,6 @@ Inventory has three parts:
 Classification can happen in two modes:
 
 - **Local Agent agent**: `context-agent`
-- **Provider batch**: if inventory provider is configured as Provider and batch is enabled
 
 After inventory, artifacts usually have:
 
@@ -265,8 +264,8 @@ Implemented in `__MIGRATION_GUILDCTL__/runner.ts`.
 
 For each spawned worker, Migration Guild:
 
-1. chooses the effective provider for the phase (`agent` or `provider`)
-2. sets provider environment variables if Provider is selected
+1. resolves the strict OpenAI-compatible runtime config for the phase
+2. sets the configured API key/base URL/model environment
 3. spawns the agent CLI as a child process
 4. records the run in `runs`
 5. optionally writes stdout/stderr to a log file
@@ -384,27 +383,15 @@ The modernization gates are also explicit operator-visible failures:
 
 ---
 
-## Optional Provider features
+## OpenAI-compatible runtime
 
-Provider is an integration layer, not a separate orchestration model.
+The runtime layer is intentionally narrow:
 
-When enabled, it can provide:
-
-- per-phase model/provider routing
-- batch inventory or embedding jobs
-- evaluation scoring and auto-advance
-- tracing for token/cost visibility
-- semantic retrieval via stored embeddings
-- Azure AI agent threads
-
-The orchestration pattern stays the same:
-
+- config resolves one OpenAI-compatible `base_url`, `model`, and `api_key_env`
 - registry remains local
 - file I/O remains local
 - claims and status updates remain local
-- only model execution is routed to Provider
-
-See also: `docs/provider-api-reference.md`
+- no batch queue, eval scoring, tracing, embeddings, or vendor-specific agent threads
 
 ---
 

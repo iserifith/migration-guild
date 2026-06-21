@@ -20,7 +20,7 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 - Changed bootstrap scaffolding to prefer packaged skill assets, emit deterministic Spring app/resource files for non-library modules, return structured bootstrap results, and treat already-scaffolded targets as an explicit skip result.
 - Changed runner execution logging to use stable timestamped log naming plus richer run headers/footers (owner, phase, command, claim summaries, and written-file snapshots).
 - Changed timeout handling to terminate timed-out agent processes (SIGTERM then SIGKILL) instead of leaving them alive for manual stuck-process triage.
-- Added Provider batch input model overrides and batch preflight validation plumbing in migration runtime, plus Provider env interpolation warning behavior that only warns when Provider is actually selected by provider/phase.
+- Replaced vendor-specific runtime plumbing with strict OpenAI-compatible configuration and client behavior.
 - Changed registry query/API surface by removing run-log-file endpoint plumbing and simplifying several SQL/query helpers while preserving paged monitoring query contracts.
 - Changed the migration inspector UI back to a lighter Artifacts/Wave Plan experience, removing the extended multi-tab monitoring surfaces and shared async state wrappers.
 - Changed tool dependency policy in both migration and packaged runtime manifests to fully pinned versions plus explicit `overrides`, with corresponding lockfile refreshes.
@@ -68,4 +68,4 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 - Changed the repository layout to stop dogfooding a repo-root migration workspace: shipped Agent runtime artifacts now live only under `package/`, root `.github/` is maintainer-only, and kit testing should happen in a separate external workspace.
 - Changed migration runs to surface per-phase runtime details, queue summaries, stale-session warnings, and clearer follow-up commands when work remains or runs fail.
 - Changed run handling to auto-release lingering claims and treat false-success exits that leave claimed artifacts behind as failed runs.
-- Changed Provider embedding and semantic-search behavior to index target-side files, persist resolved target paths, and return an empty result set when no embedding corpus has been built yet.
+- Removed semantic-search behavior; agents now use explicit file/context references.
