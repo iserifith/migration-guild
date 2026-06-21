@@ -27,15 +27,15 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   version: 1,
   workspace: { name: "migration-guild-workspace", root: "." },
   model: {
-    model: "anthropic/claude-sonnet-4",
-    base_url: "https://openrouter.ai/api/v1",
-    api_key_env: "OPENROUTER_API_KEY",
-    context_length: 200000,
+    model: "deepseek-v4-pro",
+    base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    api_key_env: "DASHSCOPE_API_KEY",
+    context_length: 131072,
   },
   agents: {
-    default: { model: "anthropic/claude-sonnet-4", temperature: 0.2 },
-    cheap: { model: "deepseek/deepseek-chat", temperature: 0.2 },
-    reviewer: { model: "openai/gpt-4.1", temperature: 0.1 },
+    default: { model: "deepseek-v4-pro", temperature: 0.2 },
+    cheap: { model: "deepseek-v4-flash", temperature: 0.2 },
+    reviewer: { model: "glm-5.1", temperature: 0.1 },
   },
   tools: { terminal: true, git: true, filesystem: true, web: false },
   prompts: { directory: ".guild/prompts", active_pack: "default" },
@@ -43,10 +43,12 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   approval: { mode: "manual", destructive_commands: "manual" },
   migration: { default_mode: "init", require_evidence_before_intent: true, max_autonomous_steps: 3 },
   profiles: {
-    default: { base_url: "https://openrouter.ai/api/v1", model: "anthropic/claude-sonnet-4", api_key_env: "OPENROUTER_API_KEY" },
+    default: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "deepseek-v4-pro", api_key_env: "DASHSCOPE_API_KEY" },
+    dashscope: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "deepseek-v4-pro", api_key_env: "DASHSCOPE_API_KEY" },
+    cheap: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "deepseek-v4-flash", api_key_env: "DASHSCOPE_API_KEY" },
+    reviewer: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "glm-5.1", api_key_env: "DASHSCOPE_API_KEY" },
+    qwen: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "qwen3.7-max", api_key_env: "DASHSCOPE_API_KEY" },
     local: { base_url: "http://localhost:1234/v1", model: "qwen2.5-coder" },
-    cheap: { base_url: "https://openrouter.ai/api/v1", model: "deepseek/deepseek-chat", api_key_env: "OPENROUTER_API_KEY" },
-    reviewer: { base_url: "https://openrouter.ai/api/v1", model: "openai/gpt-4.1", api_key_env: "OPENROUTER_API_KEY" },
   },
 };
 

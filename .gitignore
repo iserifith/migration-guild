@@ -8,3 +8,4 @@ dist/
 .tmp-test-runtime/
 temp/
 docs/presentation
+.test-workspace
