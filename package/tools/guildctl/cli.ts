@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import * as path from "path";
 import * as fs from "fs";
+import { execFileSync } from "child_process";
 // Auto-load .env from project root (my-migration/) — works regardless of CWD
 // so users don't need to `set -a && source .env && set +a` before every command.
 import { config as dotenvConfig } from "dotenv";
@@ -33,6 +34,17 @@ import {
 import { collectInitEvidence, createRunLedger, renderPrompt, scaffoldDefaultPrompts } from "./workspace";
 
 const program = new Command();
+
+function isInsideGitWorkTree(root: string): boolean {
+  try {
+    return execFileSync("git", ["-C", root, "rev-parse", "--is-inside-work-tree"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim() === "true";
+  } catch {
+    return false;
+  }
+}
 
 program
   .name("guildctl")
@@ -90,8 +102,17 @@ program
     }
     checks.push([!!cfg.model.model, `model configured: ${cfg.model.model || "missing"}`]);
     checks.push([!cfg.model.api_key_env || !!process.env[cfg.model.api_key_env], cfg.model.api_key_env ? `${cfg.model.api_key_env} ${process.env[cfg.model.api_key_env] ? "present" : "missing"}` : "no API key env required"]);
-    checks.push([fs.existsSync(path.resolve(cfg.guildRoot, cfg.prompts.directory, cfg.prompts.active_pack)) || true, `prompt pack: ${path.resolve(cfg.guildRoot, cfg.prompts.directory, cfg.prompts.active_pack)}`]);
-    checks.push([fs.existsSync(path.join(cfg.guildRoot, ".git")), "git repo detected"]);
+    const promptPackPath = path.resolve(cfg.guildRoot, cfg.prompts.directory, cfg.prompts.active_pack);
+    checks.push([fs.existsSync(promptPackPath), `prompt pack: ${promptPackPath}`]);
+    const gitDetected = isInsideGitWorkTree(cfg.guildRoot);
+    checks.push([
+      gitDetected || !cfg.evidence.include_git_diff,
+      gitDetected
+        ? "git repo detected"
+        : cfg.evidence.include_git_diff
+          ? "git repo not detected; run git init or set evidence.include_git_diff false"
+          : "git repo not detected; git diff evidence disabled",
+    ]);
     fs.mkdirSync(path.join(cfg.guildRoot, ".guild", "runs"), { recursive: true });
     checks.push([fs.existsSync(path.join(cfg.guildRoot, ".guild", "runs")), "run ledger directory writable"]);
     for (const [ok, message] of checks) process.stdout.write(`${ok ? "✓" : "✗"} ${message}\n`);
