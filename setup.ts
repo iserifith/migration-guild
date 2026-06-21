@@ -203,16 +203,13 @@ async function runInstall() {
   if (repoUrl) {
     console.log(`\nCloning legacy repo into legacy/...`);
     try {
-      const tmpDir = path.join(CWD, ".guildctl-clone-tmp");
-      if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true });
-      execSync(`git clone --depth 1 ${repoUrl} "${tmpDir}"`, { stdio: "inherit" });
       const legacyDir = path.join(CWD, "legacy");
-      fs.mkdirSync(legacyDir, { recursive: true });
-      for (const entry of fs.readdirSync(tmpDir)) {
-        if (entry === ".git") continue;
-        fs.renameSync(path.join(tmpDir, entry), path.join(legacyDir, entry));
-      }
-      fs.rmSync(tmpDir, { recursive: true });
+      // Clone straight into legacy/ — the old temp-dir + per-entry rename threw
+      // EPERM on Windows. force:true ignores a missing/empty scaffold dir.
+      fs.rmSync(legacyDir, { recursive: true, force: true });
+      execSync(`git clone --depth 1 ${repoUrl} "${legacyDir}"`, { stdio: "inherit" });
+      // Drop history; maxRetries lets Node retry past Windows' read-only .git pack locks.
+      fs.rmSync(path.join(legacyDir, ".git"), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
       console.log(`✓ Legacy source cloned into legacy/`);
     } catch (err) {
       console.error(`✗ Clone failed: ${(err as Error).message}`);

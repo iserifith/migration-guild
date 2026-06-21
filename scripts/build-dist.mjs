@@ -27,7 +27,9 @@ function run(command, args, options = {}) {
     const child = spawn(resolveCommand(command), args, {
       cwd: options.cwd ?? repoRoot,
       env: process.env,
-      stdio: "inherit"
+      stdio: "inherit",
+      // Windows cannot spawn .cmd shims (npm/npx/tsup) directly — needs a shell.
+      shell: process.platform === "win32"
     });
 
     child.on("error", reject);
