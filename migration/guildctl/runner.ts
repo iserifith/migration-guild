@@ -40,6 +40,21 @@ function getAgentCommand(): string {
   return process.env["AGENT_CMD"] ?? "agent";
 }
 
+/**
+ * Decide how to spawn the agent CLI cross-platform.
+ * - A `.mjs`/`.cjs`/`.js` AGENT_CMD (a Node shim) is run via the current Node
+ *   binary with no shell — this avoids Windows' inability to spawn .cmd shims
+ *   and, crucially, avoids passing the (large, untrusted) prompt arg through
+ *   cmd.exe where shell metacharacters would break or inject.
+ * - Anything else (a bare command or a .cmd/.bat) needs a shell on Windows.
+ */
+function resolveAgentSpawn(agentCmd: string, agentArgs: string[]): { command: string; args: string[]; shell: boolean } {
+  if (/\.(mjs|cjs|js)$/i.test(agentCmd)) {
+    return { command: process.execPath, args: [agentCmd, ...agentArgs], shell: false };
+  }
+  return { command: agentCmd, args: agentArgs, shell: process.platform === "win32" };
+}
+
 const LOG_SEP = "=".repeat(72);
 
 function formatLocalClockTime(now = new Date()): string {
@@ -342,7 +357,8 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
 
   // Always run from the project root (my-migration/) so agent shell commands
   // like `node migration/registry/dist/cli.js ...` resolve correctly.
-  const proc = spawn(getAgentCommand(), args, {
+  const agentSpawn = resolveAgentSpawn(getAgentCommand(), args);
+  const proc = spawn(agentSpawn.command, agentSpawn.args, {
     cwd: projectRoot,
     env: {
       ...process.env,
@@ -356,6 +372,7 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
       } : {}),
     },
     stdio: logStream ? ["ignore", "pipe", "pipe"] : "inherit",
+    shell: agentSpawn.shell,
   });
   setRunPid(db, run.run_id, proc.pid ?? null);
 

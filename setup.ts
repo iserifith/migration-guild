@@ -190,7 +190,7 @@ async function runInstall() {
   }
 
   // Copy .env.example and guildctl.config.json to workspace root
-  for (const f of [".env.example", "guildctl.config.json"]) {
+  for (const f of [".env.example", "guildctl.config.json", "agent-shim.mjs"]) {
     const src  = path.join(PKG_DIR, f);
     const dest = path.join(CWD, f);
     if (fs.existsSync(src) && !fs.existsSync(dest)) {
