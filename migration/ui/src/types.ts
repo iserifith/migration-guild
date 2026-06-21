@@ -47,6 +47,11 @@ export type ArtifactRole =
   | "transformer"
   | "interface";
 
+export type AcceptanceState = "Proposed" | "Evidence Passed" | "Rejected" | "Accepted";
+
+export interface AcceptanceEvidenceRow { evidence_id: string; artifact_id: string; run_id: string | null; produced_by: string; evidence_type: string; command: string | null; exit_code: number | null; pass: 0 | 1; summary: string; output_path: string | null; output_excerpt: string | null; created_at: string; }
+export interface ArbitrationDecisionRow { decision_id: string; artifact_id: string; arbiter: string; decision: "approved" | "rejected"; reason: string; evidence_ids: string; decided_at: string; }
+
 // ── Live endpoint shapes ───────────────────────────────────────────────────────
 
 /** Shape of each element returned by GET /api/artifacts. */
@@ -66,6 +71,9 @@ export interface Artifact {
   claimed_at: string | null;
   created_at: string;
   updated_at: string;
+  acceptance_state?: AcceptanceState;
+  evidence?: AcceptanceEvidenceRow[];
+  latest_arbitration?: ArbitrationDecisionRow | null;
 }
 
 /** Shape of each element returned by GET /api/events?id=<artifactId>. */
@@ -152,6 +160,7 @@ export interface StatusResponse {
   next: unknown | null;
   open_blockers: BlockerEntry[];
   open_issues: IssueEntry[];
+  evidence_gate?: { migrated_pending_evidence: number; evidence_passed_awaiting_arbitration: number; approved_arbitration_count: number; rejected_arbitration_count: number };
 }
 
 /** Shape of each element returned by GET /api/wave-plan. */

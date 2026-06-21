@@ -22,6 +22,8 @@ Inventory → Planning → Bootstrap → Migration (parallel) → Review
 
 **Want the internals?** See [__HOW_GUILDCTL_DOC__](__HOW_GUILDCTL_DOC__) for the registry model, phase orchestration, agent spawning, failure handling, and recovery flow.
 
+**Agent Society demo:** See [docs/agent-society-demo-script.md](docs/agent-society-demo-script.md) for the judge-safe Builder → Critic → Arbiter evidence-gate walkthrough and benchmark comparison script.
+
 ---
 
 ## Prerequisites

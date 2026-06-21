@@ -228,6 +228,30 @@ CREATE TABLE IF NOT EXISTS arbitration_decisions (
 
 CREATE INDEX IF NOT EXISTS idx_arbitration_decisions_artifact ON arbitration_decisions(artifact_id);
 
+-- ─── Benchmark Runs ───────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS benchmark_runs (
+    benchmark_id        TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+    mode                TEXT NOT NULL CHECK (mode IN ('single-agent', 'guild')),
+    fixture             TEXT NOT NULL,
+    started_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    elapsed_ms          INTEGER NOT NULL CHECK (elapsed_ms >= 0),
+    total_runs          INTEGER NOT NULL CHECK (total_runs >= 0),
+    failed_runs         INTEGER NOT NULL CHECK (failed_runs >= 0),
+    artifacts_planned   INTEGER NOT NULL CHECK (artifacts_planned >= 0),
+    artifacts_completed INTEGER NOT NULL CHECK (artifacts_completed >= 0),
+    evidence_pass_rate  REAL NOT NULL CHECK (evidence_pass_rate >= 0 AND evidence_pass_rate <= 1),
+    rework_count        INTEGER NOT NULL CHECK (rework_count >= 0),
+    total_cost_usd      REAL,
+    verdict             TEXT NOT NULL CHECK (verdict IN ('pass', 'fail')),
+    notes               TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_benchmark_runs_mode ON benchmark_runs(mode);
+CREATE INDEX IF NOT EXISTS idx_benchmark_runs_fixture ON benchmark_runs(fixture);
+CREATE INDEX IF NOT EXISTS idx_benchmark_runs_started ON benchmark_runs(started_at);
+
 -- ─── Claim Attempts ───────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS artifact_claims (

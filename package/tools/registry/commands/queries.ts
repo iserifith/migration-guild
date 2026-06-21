@@ -461,6 +461,24 @@ function distinctStrings(
     .sort((left, right) => left.localeCompare(right));
 }
 
+
+function classifyAcceptanceState(artifact: { status: string }, evidence: Array<{ pass: 0 | 1; evidence_type: string }>, decision: { decision: string } | null): "Proposed" | "Evidence Passed" | "Rejected" | "Accepted" {
+  if (decision?.decision === "rejected" || artifact.status === "needs-rework") return "Rejected";
+  if ((artifact.status === "reviewed" || artifact.status === "completed") && decision?.decision === "approved") return "Accepted";
+  const hasPassingExecutable = evidence.some((e) => e.pass === 1 && ["test-command", "build-command", "static-check"].includes(e.evidence_type));
+  if (artifact.status === "migrated" && hasPassingExecutable) return "Evidence Passed";
+  return "Proposed";
+}
+
+function evidenceGateCounts(db: Database.Database) {
+  return {
+    migrated_pending_evidence: (db.prepare(`SELECT COUNT(*) AS n FROM artifacts a WHERE a.status = 'migrated' AND NOT EXISTS (SELECT 1 FROM acceptance_evidence e WHERE e.artifact_id = a.id)`).get() as { n: number }).n,
+    evidence_passed_awaiting_arbitration: (db.prepare(`SELECT COUNT(*) AS n FROM artifacts a WHERE a.status = 'migrated' AND EXISTS (SELECT 1 FROM acceptance_evidence e WHERE e.artifact_id = a.id AND e.pass = 1 AND e.evidence_type IN ('test-command','build-command','static-check')) AND NOT EXISTS (SELECT 1 FROM arbitration_decisions d WHERE d.artifact_id = a.id AND d.decision = 'approved')`).get() as { n: number }).n,
+    approved_arbitration_count: (db.prepare(`SELECT COUNT(*) AS n FROM arbitration_decisions WHERE decision = 'approved'`).get() as { n: number }).n,
+    rejected_arbitration_count: (db.prepare(`SELECT COUNT(*) AS n FROM arbitration_decisions WHERE decision = 'rejected'`).get() as { n: number }).n,
+  };
+}
+
 // ── /api/artifacts ─────────────────────────────────────────────────────────
 
 /** Returns all artifacts, optionally filtered. Typed as the stable DTO. */
@@ -479,7 +497,17 @@ export function queryArtifactsForUI(
     WHERE ${conditions.join(" AND ")}
     ORDER BY wave ASC NULLS LAST, id ASC
   `;
-  return db.prepare(sql).all(...params) as ApiArtifactRow[];
+  const rows = db.prepare(sql).all(...params) as ApiArtifactRow[];
+  return rows.map((row) => {
+    const evidence = db.prepare(`SELECT * FROM acceptance_evidence WHERE artifact_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 10`).all(row.id) as ApiArtifactRow["evidence"];
+    const latest = db.prepare(`SELECT * FROM arbitration_decisions WHERE artifact_id = ? ORDER BY decided_at DESC, rowid DESC LIMIT 1`).get(row.id) as ApiArtifactRow["latest_arbitration"] | undefined;
+    return {
+      ...row,
+      evidence,
+      latest_arbitration: latest ?? null,
+      acceptance_state: classifyAcceptanceState(row, evidence ?? [], latest ?? null),
+    };
+  });
 }
 
 // ── /api/status ─────────────────────────────────────────────────────────────
@@ -521,6 +549,7 @@ export function queryStatusSummary(db: Database.Database): ApiStatusResponse {
     next:          stateVal("next"),            // ← correct key (was "next_action")
     open_blockers: queryOpenBlockers(db),
     open_issues:   queryOpenIssues(db),
+    evidence_gate: evidenceGateCounts(db),
   };
 }
 
