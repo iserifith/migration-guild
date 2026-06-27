@@ -1,11 +1,10 @@
-import * as path from "path";
 import * as readline from "readline";
 import type Database from "better-sqlite3";
 import { spawnAgent } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printWavePlan } from "../dashboard";
 import { getLogDir } from "../util";
-import { loadConfig, resolvePhaseModel } from "../config";
+import { resolveGuildConfig, resolvePhaseModel, resolveWorkspaceRoot } from "../config";
 import { setNext } from "../../registry/commands/operator";
 import { refreshCompatibilityAudits } from "../audit";
 import { loadActiveStack, readStackInstruction } from "../stack";
@@ -95,9 +94,9 @@ export async function runPlan(
   db: Database.Database,
   deps: PlanDeps = {},
 ): Promise<void> {
-  const cfg = loadConfig();
+  const projectRoot = resolveWorkspaceRoot();
+  const cfg = resolveGuildConfig({ cwd: projectRoot });
   const planningModel = resolvePhaseModel("planning", cfg);
-  const projectRoot = path.resolve(__dirname, "..", "..", "..");
   const pack = loadActiveStack(cfg, projectRoot);
   const refreshAudits = deps.refreshCompatibilityAudits ?? refreshCompatibilityAudits;
   const runAgent = deps.spawnAgent ?? spawnAgent;

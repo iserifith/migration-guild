@@ -5,7 +5,7 @@ import { spawnAgent } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printStatusSummary } from "../dashboard";
 import { getLogDir } from "../util";
-import { loadConfig, resolvePhaseModel } from "../config";
+import { resolveGuildConfig, resolvePhaseModel, resolveWorkspaceRoot } from "../config";
 import { registerArtifact } from "../../registry/commands/artifacts";
 import { setNext } from "../../registry/commands/operator";
 import { applySchema } from "../../registry/db/schema";
@@ -35,7 +35,7 @@ function scanAndRegister(db: Database.Database, projectRoot: string): number {
   process.stdout.write(`  [scan] legacyDir   : ${legacyDir}\n`);
   process.stdout.write(`  [scan] legacyDir exists: ${fs.existsSync(legacyDir)}\n`);
 
-  const cfg = loadConfig();
+  const cfg = resolveGuildConfig({ cwd: projectRoot });
   const pack = loadActiveStack(cfg, projectRoot);
   const files = findMatchingFiles(legacyDir, pack.manifest.source_globs);
   process.stdout.write(`  [scan] source files found: ${files.length}\n`);
@@ -77,14 +77,13 @@ function scanAndRegister(db: Database.Database, projectRoot: string): number {
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
-export async function runInventory(db: Database.Database): Promise<void> {
+export async function runInventory(db: Database.Database, workspaceRoot = resolveWorkspaceRoot()): Promise<void> {
   printPhaseHeader("Phase 1 · Inventory");
 
   // Ensure schema exists (idempotent)
   applySchema(db);
 
-  // Always resolve project root from __dirname (migration/guildctl/dist → my-migration/)
-  const projectRoot = path.resolve(__dirname, "..", "..", "..");
+  const projectRoot = workspaceRoot;
 
   // Step 1: scan source files directly — no agent needed
   process.stdout.write("  Scanning legacy/ for source files…\n");
@@ -95,7 +94,7 @@ export async function runInventory(db: Database.Database): Promise<void> {
     for (const e of events) printEvent(e);
   });
 
-  const cfg = loadConfig();
+  const cfg = resolveGuildConfig({ cwd: projectRoot });
   const model = resolvePhaseModel("inventory", cfg);
   console.log(`  Agent: context-agent   Model: ${model}\n`);
   const result = await spawnAgent({
