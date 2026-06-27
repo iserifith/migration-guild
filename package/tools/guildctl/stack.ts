@@ -100,7 +100,11 @@ function validateTemplates(value: unknown): void {
 }
 
 function packRoots(workspaceRoot: string): string[] {
-  return [path.join(workspaceRoot, "stacks"), path.join(workspaceRoot, "package", "stacks")];
+  return [...new Set([
+    path.join(workspaceRoot, "stacks"),
+    path.join(workspaceRoot, "package", "stacks"),
+    path.resolve(__dirname, "..", "..", "stacks"),
+  ])];
 }
 
 export function listStackPacks(workspaceRoot: string): LoadedStackPack[] {
@@ -123,6 +127,10 @@ export function loadStackPack(id: string, workspaceRoot: string): LoadedStackPac
 
 export function loadActiveStack(config: GuildConfig | ResolvedGuildConfig, workspaceRoot: string): LoadedStackPack {
   return loadStackPack(config.stack, workspaceRoot);
+}
+
+export function readStackInstruction(pack: LoadedStackPack, kind: keyof StackManifest["instructions"]): string {
+  return fs.readFileSync(path.join(pack.dir, pack.manifest.instructions[kind]), "utf8").trim();
 }
 
 function globRegex(glob: string): RegExp {

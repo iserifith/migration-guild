@@ -17,6 +17,7 @@ import {
 import { reconcileStaleClaims } from "../../registry/commands/claim";
 import { setNext } from "../../registry/commands/operator";
 import { needsBootstrap, runBootstrap } from "./bootstrap";
+import { loadActiveStack, readStackInstruction } from "../stack";
 import { evaluateMigrationReadiness, formatMigrationBlockMessage } from "../readiness";
 
 const ANALYZE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["GUILDCTL_ANALYZE_TIMEOUT_MINS"] ?? "10", 10));
@@ -132,6 +133,7 @@ export async function runMigrate(
   const codeParallel = Math.max(1, opts.codeParallel ?? opts.parallel ?? 1);
   const waveLabel = opts.wave != null ? ` (wave ${opts.wave})` : "";
   const cfg = loadConfig();
+  const pack = loadActiveStack(cfg, cfg.guildRoot);
   const analyzeModel = resolvePhaseModel("analysis", cfg);
   const testModel = resolvePhaseModel("test-writing", cfg);
   const codeModel = resolvePhaseModel("code-writing", cfg);
@@ -167,8 +169,8 @@ export async function runMigrate(
     ? `Analyze next task from wave ${opts.wave}`
     : "Analyze next task";
   const testPrompt = opts.wave != null
-    ? `Write tests for next analyzed task from wave ${opts.wave}`
-    : "Write tests for next analyzed task";
+    ? `Write tests for next analyzed task from wave ${opts.wave}\n\n${readStackInstruction(pack, "tests")}`
+    : `Write tests for next analyzed task\n\n${readStackInstruction(pack, "tests")}`;
   const codePrompt = opts.wave != null
     ? `Write production code for next tests-written task from wave ${opts.wave}`
     : "Write production code for next tests-written task";

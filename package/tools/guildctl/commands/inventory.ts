@@ -11,7 +11,7 @@ import { setNext } from "../../registry/commands/operator";
 import { applySchema } from "../../registry/db/schema";
 import { refreshCompatibilityAudits } from "../audit";
 import { evaluatePlanningReadiness, formatPlanningBlockMessage } from "../readiness";
-import { findMatchingFiles, loadActiveStack } from "../stack";
+import { findMatchingFiles, loadActiveStack, readStackInstruction } from "../stack";
 
 // ─── File scanner ────────────────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ function deriveArtifactId(filePath: string, legacyRoot: string, sourceExtension:
   return `legacy-source:${module}:${className}`;
 }
 
-function scanAndRegister(db: Database.Database, projectRoot: string): number {
+export function scanAndRegister(db: Database.Database, projectRoot: string): number {
   const legacyDir = path.join(projectRoot, "legacy");
   process.stdout.write(`  [scan] projectRoot : ${projectRoot}\n`);
   process.stdout.write(`  [scan] legacyDir   : ${legacyDir}\n`);
@@ -95,6 +95,7 @@ export async function runInventory(db: Database.Database, workspaceRoot = resolv
   });
 
   const cfg = resolveGuildConfig({ cwd: projectRoot });
+  const pack = loadActiveStack(cfg, projectRoot);
   const model = resolvePhaseModel("inventory", cfg);
   console.log(`  Agent: context-agent   Model: ${model}\n`);
   const result = await spawnAgent({
@@ -104,7 +105,8 @@ export async function runInventory(db: Database.Database, workspaceRoot = resolv
         "Classify each artifact in the registry: set its role, framework, and any relevant tags. " +
         "Use `node migration/registry/dist/cli.js list-artifacts --status pending` to see what needs classifying. " +
         "Then use `node migration/registry/dist/cli.js update-artifact --id <artifact-id> --module <module> --role <role> --framework <framework>` " +
-        "to write classifications, and `node migration/registry/dist/cli.js add-tag --id <artifact-id> --tag <tag>` for any relevant tags.",
+        "to write classifications, and `node migration/registry/dist/cli.js add-tag --id <artifact-id> --tag <tag>` for any relevant tags.\n\n" +
+        readStackInstruction(pack, "classify"),
     db,
     logDir: getLogDir(),
     phase: "inventory",

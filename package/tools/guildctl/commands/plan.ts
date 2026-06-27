@@ -7,6 +7,7 @@ import { getLogDir } from "../util";
 import { resolveGuildConfig, resolvePhaseModel, resolveWorkspaceRoot } from "../config";
 import { setNext } from "../../registry/commands/operator";
 import { refreshCompatibilityAudits } from "../audit";
+import { loadActiveStack, readStackInstruction } from "../stack";
 import { evaluatePlanningReadiness, formatPlanningBlockMessage } from "../readiness";
 
 async function confirmMappings(
@@ -96,6 +97,7 @@ export async function runPlan(
   const projectRoot = resolveWorkspaceRoot();
   const cfg = resolveGuildConfig({ cwd: projectRoot });
   const planningModel = resolvePhaseModel("planning", cfg);
+  const pack = loadActiveStack(cfg, projectRoot);
   const refreshAudits = deps.refreshCompatibilityAudits ?? refreshCompatibilityAudits;
   const runAgent = deps.spawnAgent ?? spawnAgent;
   const poll = deps.startPolling ?? startPolling;
@@ -140,7 +142,7 @@ export async function runPlan(
   let result = await runAgent({
     agent: "stack-advisor",
     model: planningModel,
-    prompt: "Analyze all registered artifacts and propose a legacy→target framework mapping table.",
+    prompt: "Analyze all registered artifacts and propose a legacy→target framework mapping table.\n\n" + readStackInstruction(pack, "mappings"),
     db,
     logDir,
     phase: "planning",
