@@ -39,6 +39,14 @@ cp .env.example .env
 #    The CLI loads .env automatically — no need to source it manually
 ```
 
+### Repository test setup
+
+From the Migration Guild repository root, install both test suites and run them with one command:
+
+```bash
+(cd migration && npm install) && (cd migration/ui && npm install) && npm test
+```
+
 ---
 
 ## Smoke test (verify setup before running the full pipeline)
