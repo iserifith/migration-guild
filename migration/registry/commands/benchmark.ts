@@ -25,6 +25,41 @@ export interface ListBenchmarkRunsFilters {
   fixture?: string;
 }
 
+export interface DerivedBenchmarkMetrics {
+  totalRuns: number;
+  failedRuns: number;
+  artifactsPlanned: number;
+  artifactsCompleted: number;
+  evidencePassRate: number;
+  reworkCount: number;
+  verdict: BenchmarkVerdict;
+}
+
+/** Derive benchmark measurements exclusively from the registry's terminal state. */
+export function deriveBenchmarkMetrics(
+  db: Database.Database,
+  mode: BenchmarkMode,
+): DerivedBenchmarkMetrics {
+  assertMode(mode);
+  const count = (sql: string): number => (db.prepare(sql).get() as { n: number }).n;
+  const totalRuns = count("SELECT COUNT(*) AS n FROM runs");
+  const failedRuns = count("SELECT COUNT(*) AS n FROM runs WHERE status = 'failed' OR (exit_code IS NOT NULL AND exit_code != 0)");
+  const artifactsPlanned = count("SELECT COUNT(*) AS n FROM artifacts");
+  const artifactsCompleted = count("SELECT COUNT(*) AS n FROM artifacts WHERE status = 'reviewed'");
+  const evidenceTotal = count("SELECT COUNT(*) AS n FROM acceptance_evidence");
+  const evidencePassed = count("SELECT COUNT(*) AS n FROM acceptance_evidence WHERE pass = 1");
+  const evidencePassRate = evidenceTotal === 0 ? 0 : evidencePassed / evidenceTotal;
+  const reworkCount = count(`
+    SELECT COUNT(*) AS n FROM events
+    WHERE json_extract(event_data, '$.new_status') = 'needs-rework'
+       OR json_extract(event_data, '$.target_status') = 'needs-rework'
+  `);
+  const completed = artifactsPlanned > 0 && artifactsCompleted === artifactsPlanned;
+  const evidenceSatisfied = mode === "single-agent" || evidencePassed > 0;
+  const verdict: BenchmarkVerdict = completed && failedRuns === 0 && evidenceSatisfied ? "pass" : "fail";
+  return { totalRuns, failedRuns, artifactsPlanned, artifactsCompleted, evidencePassRate, reworkCount, verdict };
+}
+
 function assertMode(mode: string): asserts mode is BenchmarkMode {
   if (mode !== "single-agent" && mode !== "guild") throw new RegistryError(1, "Benchmark mode must be single-agent or guild");
 }
