@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import type Database from "better-sqlite3";
 import { printPhaseHeader } from "../dashboard";
-import { resolveGuildConfig } from "../config";
+import { resolveGuildConfig, resolveWorkspaceRoot } from "../config";
 import { loadActiveStack, type LoadedStackPack } from "../stack";
 
 export type BootstrapProjectType = "web" | "service" | "library";
@@ -25,7 +25,7 @@ function listFirstClassArtifacts(db: Database.Database): BootstrapArtifactSignal
   return db.prepare(`SELECT path, module, role, framework FROM artifacts WHERE tier = 'first-class' ORDER BY path`).all() as BootstrapArtifactSignal[];
 }
 
-export function detectBootstrapProjectType(artifacts: BootstrapArtifactSignal[], pack = activePack(process.cwd())): BootstrapProjectType {
+export function detectBootstrapProjectType(artifacts: BootstrapArtifactSignal[], pack = activePack(resolveWorkspaceRoot())): BootstrapProjectType {
   const descriptions = pack.manifest.project_types;
   for (const [name, description] of Object.entries(descriptions)) {
     if (!description.any) continue;
@@ -64,7 +64,7 @@ function sanitizePackage(input: string, fallback: string): string {
   return cleaned.length > 0 ? cleaned.join(".") : fallback;
 }
 
-export function deriveBootstrapBasePackage(artifacts: BootstrapArtifactSignal[], fallback = activePack(process.cwd()).manifest.scaffold.default_package): string {
+export function deriveBootstrapBasePackage(artifacts: BootstrapArtifactSignal[], fallback = activePack(resolveWorkspaceRoot()).manifest.scaffold.default_package): string {
   const moduleParts = artifacts.map((artifact) => artifact.module).filter((module): module is string => Boolean(module)).map((module) => module.split(".").filter(Boolean));
   const prefix = commonPrefix(moduleParts);
   const candidate = prefix.length > 0 ? prefix.join(".") : artifacts.find((artifact) => artifact.module)?.module ?? fallback;
@@ -110,7 +110,7 @@ export function isBootstrapComplete(workspaceRoot: string, projectType: Bootstra
     && hasSource(path.join(modernRoot, scaffold.main_source_dir), scaffold.source_extension);
 }
 
-export function needsBootstrap(db: Database.Database, workspaceRoot = process.cwd()): boolean {
+export function needsBootstrap(db: Database.Database, workspaceRoot = resolveWorkspaceRoot()): boolean {
   const pack = activePack(workspaceRoot);
   return !isBootstrapComplete(workspaceRoot, detectBootstrapProjectType(listFirstClassArtifacts(db), pack));
 }
@@ -148,7 +148,7 @@ export function bootstrapTargetModule(workspaceRoot: string, artifacts: Bootstra
   return { projectType, template, moduleRoot: modernRoot, basePackage, appName, created, skipped };
 }
 
-export async function runBootstrap(db: Database.Database, workspaceRoot = process.cwd()): Promise<BootstrapResult> {
+export async function runBootstrap(db: Database.Database, workspaceRoot = resolveWorkspaceRoot()): Promise<BootstrapResult> {
   printPhaseHeader("Phase 3 · Bootstrap");
   const pack = activePack(workspaceRoot);
   const artifacts = listFirstClassArtifacts(db);

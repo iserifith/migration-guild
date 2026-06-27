@@ -5,7 +5,7 @@ import * as path from "path";
 import { Transform } from "stream";
 import type Database from "better-sqlite3";
 import type { PhaseKey } from "./config";
-import { loadConfig } from "./config";
+import { resolveGuildConfig, resolveWorkspaceRoot } from "./config";
 import { resolveHarness } from "./harness";
 import { releaseClaimedArtifactsForOwner } from "../registry/commands/artifacts";
 import { releaseClaimsForRun } from "../registry/commands/claim";
@@ -252,8 +252,8 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   const runId = randomUUID().replace(/-/g, "").slice(0, 16);
   const startMs = Date.now();
   const startedIso = new Date(startMs).toISOString();
-  const projectRoot = path.resolve(__dirname, "..", "..", "..");
-  const config = loadConfig();
+  const projectRoot = resolveWorkspaceRoot();
+  const config = resolveGuildConfig({ cwd: projectRoot });
   const agentCommand = resolveHarness(config, projectRoot).command;
   const beforeFiles = snapshotChangedFiles(projectRoot);
 

@@ -26,6 +26,7 @@ import { runBenchmarkBaselineWorker, runBenchmarkCompare, runBenchmarkGuildRevie
 import {
   readGuildConfig,
   resolveGuildConfig,
+  resolveWorkspaceRoot,
   scaffoldGuildConfig,
   setDottedPath,
   writeGuildConfig,
@@ -55,6 +56,27 @@ program
 
 program.option("--db <path>", "Path to registry.db (overrides REGISTRY_DB env)");
 program.option("--profile <name>", "Guild configuration profile to use", "default");
+program.option("--workspace <path>", "Workspace root for migration phases (overrides cwd/.guild detection)");
+
+// Bridge --workspace to GUILD_WORKSPACE before any command action runs, so the
+// resolver (resolveWorkspaceRoot) and every cwd-defaulting helper agree on the
+// same root without threading the flag through every signature.
+program.hook("preAction", () => {
+  const ws = program.opts()["workspace"] as string | undefined;
+  if (ws) process.env.GUILD_WORKSPACE = path.resolve(ws);
+});
+
+// Resolve the active workspace root honoring --workspace / GUILD_WORKSPACE.
+const workspaceRoot = () => resolveWorkspaceRoot({ workspace: program.opts()["workspace"] as string | undefined });
+
+// `init` *creates* the workspace, so it can't rely on .guild detection or the
+// CLI-install fallback — default to cwd, honoring an explicit --workspace/env.
+const initRoot = () => {
+  const flag = program.opts()["workspace"] as string | undefined;
+  if (flag) return path.resolve(flag);
+  if (process.env.GUILD_WORKSPACE) return path.resolve(process.env.GUILD_WORKSPACE);
+  return process.cwd();
+};
 
 // ─── configurable Guild workspace ─────────────────────────────────────────────
 
@@ -64,12 +86,13 @@ program
   .option("--force", "Overwrite existing generated Guild config/prompts")
   .option("--stack <id>", "Select a stack pack instead of auto-detecting legacy/")
   .action((opts) => {
-    const configPath = scaffoldGuildConfig(process.cwd(), Boolean(opts.force));
-    const stack = opts.stack ? loadStackPack(String(opts.stack), process.cwd()).manifest.id : detectStack(process.cwd());
+    const root = initRoot();
+    const configPath = scaffoldGuildConfig(root, Boolean(opts.force));
+    const stack = opts.stack ? loadStackPack(String(opts.stack), root).manifest.id : detectStack(root);
     const raw = readGuildConfig(configPath);
     raw["stack"] = stack;
     writeGuildConfig(raw, configPath);
-    const cfg = resolveGuildConfig({ cwd: process.cwd(), profile: program.opts()["profile"] as string | undefined });
+    const cfg = resolveGuildConfig({ cwd: root, profile: program.opts()["profile"] as string | undefined });
     scaffoldDefaultPrompts(cfg);
     process.stdout.write(`✓ Guild config ready: ${configPath}\n`);
   });
@@ -78,7 +101,7 @@ program
   .command("config")
   .description("Print the resolved Guild config")
   .action(() => {
-    const cfg = resolveGuildConfig({ cwd: process.cwd(), profile: program.opts()["profile"] as string | undefined });
+    const cfg = resolveGuildConfig({ cwd: workspaceRoot(), profile: program.opts()["profile"] as string | undefined });
     process.stdout.write(stringifySimpleYaml(cfg as unknown as Record<string, unknown>));
   });
 
@@ -87,7 +110,7 @@ program
   .alias("config:set")
   .description("Set a dotted key in .guild/config.yaml")
   .action((key, value) => {
-    const cfg = resolveGuildConfig({ cwd: process.cwd(), profile: "default" });
+    const cfg = resolveGuildConfig({ cwd: workspaceRoot(), profile: "default" });
     const raw = readGuildConfig(cfg.configPath);
     setDottedPath(raw, key, value);
     writeGuildConfig(raw, cfg.configPath);
@@ -101,7 +124,7 @@ program
     const checks: Array<[boolean, string]> = [];
     let cfg;
     try {
-      cfg = resolveGuildConfig({ cwd: process.cwd(), profile: program.opts()["profile"] as string | undefined });
+      cfg = resolveGuildConfig({ cwd: workspaceRoot(), profile: program.opts()["profile"] as string | undefined });
       checks.push([true, `config loaded: ${cfg.configPath}`]);
     } catch (err) {
       process.stderr.write(`✗ ${(err as Error).message}\n`);
@@ -382,7 +405,7 @@ program
   .action(async (phase: string | undefined, opts) => {
     switch (phase) {
       case "init": {
-        const cfg = resolveGuildConfig({ cwd: process.cwd(), profile: program.opts()["profile"] as string | undefined });
+        const cfg = resolveGuildConfig({ cwd: initRoot(), profile: program.opts()["profile"] as string | undefined });
         scaffoldDefaultPrompts(cfg);
         const evidence = collectInitEvidence(cfg.guildRoot);
         const prompt = renderPrompt({ cfg, mode: "init", evidenceSummary: evidence.observedFacts.join("\n"), input: { phase } });

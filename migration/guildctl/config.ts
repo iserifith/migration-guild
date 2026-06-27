@@ -70,6 +70,19 @@ export function ensureGuildRoot(startDir = process.cwd()): string {
   return findGuildRoot(startDir) ?? path.resolve(startDir);
 }
 
+// Single source of truth for "which directory is the migration workspace".
+// Precedence (first match wins): explicit --workspace flag, GUILD_WORKSPACE env,
+// a .guild/ found by walking up from cwd, then the CLI install location (the
+// shipped-kit default, preserved for backward compatibility).
+export function resolveWorkspaceRoot(opts: { workspace?: string } = {}): string {
+  if (opts.workspace) return path.resolve(opts.workspace);
+  const env = process.env.GUILD_WORKSPACE;
+  if (env) return path.resolve(env);
+  const detected = findGuildRoot(process.cwd());
+  if (detected) return detected;
+  return path.resolve(__dirname, "..", "..", "..");
+}
+
 export function guildConfigPath(root = ensureGuildRoot()): string {
   return path.join(root, ".guild", "config.yaml");
 }
