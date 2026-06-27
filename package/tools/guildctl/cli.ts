@@ -22,7 +22,7 @@ import { runRemediate } from "./commands/remediate";
 import { runEvidenceAdd, runEvidenceList } from "./commands/evidence";
 import { runArbitrate } from "./commands/arbitrate";
 import { runSocietyReport } from "./commands/society-report";
-import { runBenchmarkCompare, runBenchmarkRecord, runBenchmarkReport } from "./commands/benchmark";
+import { runBenchmarkBaselineWorker, runBenchmarkCompare, runBenchmarkGuildReviewWorker, runBenchmarkGuildReworkWorker, runBenchmarkRecord, runBenchmarkReport, runBenchmarkRun } from "./commands/benchmark";
 import {
   readGuildConfig,
   resolveGuildConfig,
@@ -299,6 +299,29 @@ program
 const benchmark = program
   .command("benchmark")
   .description("Record, report, and compare single-agent vs guild benchmark runs");
+
+benchmark
+  .command("run")
+  .description("Execute a fixture as a single-agent baseline, guild pipeline, or both")
+  .requiredOption("--fixture <id>", "Fixture ID (for example: legacy-customer-utils)")
+  .option("--mode <mode>", "guild | baseline | both", "both")
+  .action(async (opts) => {
+    await runBenchmarkRun(db(), opts);
+  });
+
+benchmark
+  .command("baseline-worker", { hidden: true })
+  .action(async () => {
+    await runBenchmarkBaselineWorker(db());
+  });
+
+benchmark.command("guild-review-worker", { hidden: true }).action(async () => {
+  await runBenchmarkGuildReviewWorker(db());
+});
+
+benchmark.command("guild-rework-worker", { hidden: true }).action(async () => {
+  await runBenchmarkGuildReworkWorker(db());
+});
 
 benchmark
   .command("record")

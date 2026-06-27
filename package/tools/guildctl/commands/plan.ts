@@ -17,6 +17,16 @@ async function confirmMappings(
   const unconfirmed = mappings.filter((m) => !m.confirmed);
   if (unconfirmed.length === 0) return;
 
+  if (process.env["GUILDCTL_AUTO_CONFIRM_MAPPINGS"] === "1") {
+    const confirm = db.prepare(`
+      UPDATE stack_mappings SET confirmed = 1, confirmed_by = 'benchmark-runner', confirmed_at = datetime('now')
+      WHERE id = ?
+    `);
+    for (const mapping of unconfirmed) confirm.run(mapping.id);
+    process.stdout.write(`  ✓ Auto-confirmed ${unconfirmed.length} benchmark mapping(s)\n`);
+    return;
+  }
+
   console.log("\n  Proposed framework mappings — confirm each before planning proceeds:\n");
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });

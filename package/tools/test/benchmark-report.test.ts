@@ -40,3 +40,8 @@ test("benchmark CLI record/report/compare JSON is parseable", () => { const fx=f
   const rr=run(fx,["benchmark","report","--json"]); assert.equal(rr.status,0,rr.stderr); assert.equal(JSON.parse(rr.stdout).length,2);
   const rc=run(fx,["benchmark","compare","--baseline",ba.benchmark_id,"--guild",gb.benchmark_id,"--json"]); assert.equal(rc.status,0,rc.stderr); assert.equal(JSON.parse(rc.stdout).deltas.failed_runs,-1);
 } finally { rmSync(fx.dir,{recursive:true,force:true}); } });
+
+test("benchmark run help documents fixture and execution modes", () => { const fx=fixture(); try {
+  const result=run(fx,["benchmark","run","--help"]); assert.equal(result.status,0,result.stderr);
+  assert.match(result.stdout,/--fixture <id>/); assert.match(result.stdout,/guild \| baseline \| both/);
+} finally { rmSync(fx.dir,{recursive:true,force:true}); } });
