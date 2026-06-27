@@ -5,6 +5,8 @@ import * as path from "path";
 import { Transform } from "stream";
 import type Database from "better-sqlite3";
 import type { PhaseKey } from "./config";
+import { loadConfig } from "./config";
+import { resolveHarness } from "./harness";
 import { releaseClaimedArtifactsForOwner } from "../registry/commands/artifacts";
 import { releaseClaimsForRun } from "../registry/commands/claim";
 import { startRun, finishRun, setRunPid } from "../registry/commands/runs";
@@ -34,10 +36,6 @@ export interface AgentRunResult {
   prompt: string;
   logFile?: string;
   exitCode: number;
-}
-
-function getAgentCommand(): string {
-  return process.env["AGENT_CMD"] ?? "agent";
 }
 
 /**
@@ -255,6 +253,8 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   const startMs = Date.now();
   const startedIso = new Date(startMs).toISOString();
   const projectRoot = path.resolve(__dirname, "..", "..", "..");
+  const config = loadConfig();
+  const agentCommand = resolveHarness(config, projectRoot).command;
   const beforeFiles = snapshotChangedFiles(projectRoot);
 
   const logFile = opts.logDir
@@ -296,7 +296,7 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
         `Model:      ${model}`,
         `Started:    ${startedIso}`,
         `Cwd:        ${projectRoot}`,
-        `Command:    ${getAgentCommand()} --agent ${agent} --model ${model} --yolo -p <prompt:${prompt.length} chars>`,
+        `Command:    ${agentCommand} --agent ${agent} --model ${model} --yolo -p <prompt:${prompt.length} chars>`,
         `Prompt:     ${promptPreview}`,
         LOG_SEP,
         "",
@@ -357,11 +357,13 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
 
   // Always run from the project root (my-migration/) so agent shell commands
   // like `node migration/registry/dist/cli.js ...` resolve correctly.
-  const agentSpawn = resolveAgentSpawn(getAgentCommand(), args);
+  const agentSpawn = resolveAgentSpawn(agentCommand, args);
   const proc = spawn(agentSpawn.command, agentSpawn.args, {
     cwd: projectRoot,
     env: {
       ...process.env,
+      ...(config.model.base_url ? { AGENT_PROVIDER_BASE_URL: config.model.base_url } : {}),
+      ...(config.model.api_key_env ? { AGENT_PROVIDER_API_KEY_ENV: config.model.api_key_env } : {}),
       GUILDCTL_AGENT_NAME: claimOwner,
       GUILDCTL_AGENT_KIND: agent,
       GUILDCTL_RUN_ID: run.run_id,

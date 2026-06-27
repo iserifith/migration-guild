@@ -32,6 +32,7 @@ import {
   stringifySimpleYaml,
 } from "./config";
 import { collectInitEvidence, createRunLedger, renderPrompt, scaffoldDefaultPrompts } from "./workspace";
+import { checkHarness, resolveHarness } from "./harness";
 
 const program = new Command();
 
@@ -101,6 +102,12 @@ program
       process.exit(1);
     }
     checks.push([!!cfg.model.model, `model configured: ${cfg.model.model || "missing"}`]);
+    try {
+      const harnessCheck = checkHarness(resolveHarness(cfg, cfg.guildRoot));
+      checks.push([harnessCheck.ok, harnessCheck.message]);
+    } catch (err) {
+      checks.push([false, (err as Error).message]);
+    }
     checks.push([!cfg.model.api_key_env || !!process.env[cfg.model.api_key_env], cfg.model.api_key_env ? `${cfg.model.api_key_env} ${process.env[cfg.model.api_key_env] ? "present" : "missing"}` : "no API key env required"]);
     const promptPackPath = path.resolve(cfg.guildRoot, cfg.prompts.directory, cfg.prompts.active_pack);
     checks.push([fs.existsSync(promptPackPath), `prompt pack: ${promptPackPath}`]);

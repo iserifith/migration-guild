@@ -53,12 +53,21 @@ node migration/guildctl/cli.ts run init
 Secrets stay outside config. Put real keys in your shell or local `.env`, then reference the env var from config:
 
 ```yaml
+harness: codex
 model:
   runtime: openai-compatible
   base_url: https://openrouter.ai/api/v1
   model: anthropic/claude-sonnet-4
   api_key_env: OPENROUTER_API_KEY
 ```
+
+## Agent harness adapters
+
+`harness: codex` is the default. `AGENT_CMD` overrides it with an arbitrary executable or Node shim. The bundled but unsupported Copilot example remains selectable with `harness: copilot`.
+
+Every first-party adapter implements the stable guildctl call `<harness> --agent <persona> --model <model> --yolo -p <prompt>`: it parses those flags, strips frontmatter from `.github/agents/<persona>.agent.md`, prepends the persona to the prompt, configures its CLI from `model.base_url` and `model.api_key_env`, runs non-interactively with full workspace tool permissions, inherits stdout/stderr, and exits with the child process status. New Claude Code, opencode, or Copilot adapters should follow this contract; v1 does not load external plugins.
+
+The Codex adapter translates the call to `codex exec --skip-git-repo-check`, uses the `workspace-write` sandbox with approvals disabled, and supplies a temporary `migration_guild` model-provider configuration. The environment variable named by `model.api_key_env` must contain the provider key.
 
 Local endpoint example:
 
