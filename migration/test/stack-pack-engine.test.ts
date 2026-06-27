@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -51,4 +52,56 @@ test("Java pack drives detection, inventory, audit, and scaffold without executa
 test("stack interpolation rejects vocabulary outside the locked set", () => {
   assert.equal(interpolate("{symbol} L{line}", { symbol: "x", line: 4 }), "x L4");
   assert.throws(() => interpolate("{project}", {}), /Unsupported stack-pack placeholder/);
+});
+
+test("Python pack selects the fixture and drives inventory, audit, and library scaffold as pure data", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "guild-python-pack-"));
+  fs.cpSync(path.join(repoRoot, "stacks"), path.join(root, "stacks"), { recursive: true });
+  fs.cpSync(path.join(repoRoot, "package", "mock", "legacy-python-utils"), path.join(root, "legacy"), { recursive: true });
+
+  assert.equal(detectStack(root), "python");
+  const init = spawnSync(process.execPath, ["--import", path.join(repoRoot, "migration", "node_modules", "tsx", "dist", "loader.mjs"), path.join(repoRoot, "migration", "guildctl", "cli.ts"), "init"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(init.status, 0, init.stderr);
+  const configPath = path.join(root, ".guild", "config.yaml");
+  assert.match(fs.readFileSync(configPath, "utf8"), /^stack: python$/m);
+
+  const pack = loadStackPack("python", root);
+  assert.equal(pack.manifest.test_framework, "pytest");
+  assert.deepEqual(pack.manifest.source_globs, ["**/*.py"]);
+  assert.equal(pack.rules.length, 7);
+
+  const previousCwd = process.cwd();
+  process.chdir(root);
+  const db = new Database(":memory:");
+  try {
+    applySchema(db);
+    assert.equal(scanAndRegister(db, root), 3);
+    assert.deepEqual(
+      db.prepare("SELECT path FROM artifacts ORDER BY path").pluck().all(),
+      [
+        "legacy/src/legacy_python_utils/__init__.py",
+        "legacy/src/legacy_python_utils/names.py",
+        "legacy/tests/test_names.py",
+      ],
+    );
+
+    const source = path.join(root, "legacy", "src", "legacy_python_utils", "names.py");
+    fs.appendFileSync(source, "\nfor index in xrange(3):\n    print index\n");
+    const audit = refreshCompatibilityAudits(db, root);
+    assert.deepEqual(audit.jvm, { critical: 1, warnings: 1 });
+
+    const artifacts = [{ path: "legacy/src/legacy_python_utils/names.py", module: "legacy_python_utils", role: "utility", framework: null }];
+    const result = bootstrapTargetModule(root, artifacts);
+    assert.equal(result.projectType, "library");
+    assert.equal(result.template, "pyproject.library.toml.template");
+    assert.ok(fs.existsSync(path.join(root, "modern", "pyproject.toml")));
+    assert.ok(fs.existsSync(path.join(root, "modern", "src", "legacy_python_utils")));
+    assert.ok(fs.existsSync(path.join(root, "modern", "tests", "legacy_python_utils")));
+  } finally {
+    db.close();
+    process.chdir(previousCwd);
+  }
 });
