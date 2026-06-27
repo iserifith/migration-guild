@@ -8,6 +8,8 @@ ui-dist/
 .DS_Store
 .env
 .tmp-test-runtime/
+migration/logs/
+.guild/
 temp/
 docs/presentation
 .test-workspace
