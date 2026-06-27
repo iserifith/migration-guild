@@ -1,0 +1,67 @@
+- id: python2-print-statement
+  finding: jvm
+  category: removed-api
+  severity: critical
+  match: '^\s*print\s+(?!\().+'
+  flags: g
+  summary_template: 'Python 2 print statement detected: {symbol}'
+  remediation: Replace the statement with Python 3 print() syntax and preserve output behavior with tests.
+- id: python2-except-syntax
+  finding: jvm
+  category: removed-api
+  severity: critical
+  match: '^\s*except\s+[^:\n]+,\s*[A-Za-z_]\w*\s*:'
+  flags: g
+  summary_template: 'Python 2 exception syntax detected: {symbol}'
+  remediation: Replace comma exception binding with `except Exception as name` syntax.
+- id: python2-xrange
+  finding: jvm
+  category: removed-api
+  severity: warning
+  match: '\bxrange\s*\('
+  flags: g
+  summary_template: 'Python 2 xrange usage detected at line {line}'
+  remediation: Replace xrange with range and verify any code that relies on list materialization.
+- id: python-deprecated-stdlib
+  finding: jvm
+  category: deprecated-api
+  severity: warning
+  match: '\b(?:imp|optparse|distutils)\b'
+  flags: g
+  summary_template: 'Deprecated Python standard-library API detected: {symbol}'
+  remediation: Replace the deprecated module with importlib, argparse, or standards-based packaging APIs as appropriate.
+- id: dependency-flask-legacy
+  finding: dependency
+  dependency_name: Flask
+  target_hint: FastAPI or current Flask
+  category: outdated
+  severity: warning
+  match: '\b(?:from\s+flask\s+import|import\s+flask)\b'
+  flags: g
+  summary_template: 'Legacy Flask application surface detected{version}'
+  remediation: Upgrade Flask or approve a tested migration to FastAPI based on the application requirements.
+  details_template: 'Flask usage requires an explicit target-framework decision. Evidence: L{line}: {text}'
+  coordinate_hints: [Flask:==]
+- id: dependency-pyyaml-unsafe-load
+  finding: dependency
+  dependency_name: PyYAML
+  target_hint: current PyYAML with safe_load
+  category: incompatible
+  severity: critical
+  match: '\byaml\.load\s*\('
+  flags: g
+  summary_template: 'Unsafe PyYAML load call detected{version}'
+  remediation: Use yaml.safe_load or an explicitly safe loader and add tests for untrusted input.
+  details_template: 'Unsafe deserialization can execute attacker-controlled constructors. Evidence: L{line}: {text}'
+  coordinate_hints: [PyYAML:==]
+- id: dependency-unpinned-requirement
+  finding: dependency
+  dependency_name: unpinned-requirement
+  target_hint: exact or constrained dependency version
+  category: outdated
+  severity: warning
+  match: '^\s*(?:requirements|dependencies)\s*=\s*\['
+  flags: g
+  summary_template: 'Dependency declaration needs a reviewed version policy at line {line}'
+  remediation: Use reviewed bounds or a lock file so builds are reproducible and dependency updates remain deliberate.
+  details_template: 'A dependency collection was declared; verify every runtime dependency is constrained. Evidence: L{line}: {text}'

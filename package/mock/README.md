@@ -18,3 +18,7 @@ It is intentionally dated in a few ways:
 - Mutable beans, raw collections, and `SimpleDateFormat`
 
 Because it is a library rather than a web app or service, the expected migration target is plain Java 17+ with JUnit 5.
+
+### `legacy-python-utils/`
+
+A tiny Python library with one module and one pytest test. It provides a marker-based fixture for exercising Python stack detection, inventory, and migration without making live model calls.

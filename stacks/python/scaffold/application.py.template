@@ -1,0 +1,6 @@
+"""Application entry point for the migrated service."""
+
+
+class Application:
+    """Replace with the approved framework or service entry point."""
+

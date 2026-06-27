@@ -1,0 +1,67 @@
+id: python
+display_name: Python 3
+detect:
+  markers: [pyproject.toml, setup.py, requirements.txt, "**/*.py"]
+source_globs: ["**/*.py"]
+manifest_globs: ["**/requirements.txt", "**/pyproject.toml"]
+dependency_parsers:
+  - match: requirements.txt
+    pattern: '^([A-Za-z0-9_.-]+)\s*(==)\s*([^\s;#]+)'
+    flags: gm
+  - match: pyproject.toml
+    pattern: '["'']([A-Za-z0-9_.-]+)\s*(==)\s*([^"'']+)["'']'
+    flags: g
+test_framework: pytest
+project_types:
+  web:
+    template: scaffold/pyproject.web.toml.template
+    any:
+      roles: [rest-endpoint, controller, view]
+      frameworks: [django, flask, fastapi, starlette]
+      paths: [/web/, /views/, /api/]
+  library:
+    template: scaffold/pyproject.library.toml.template
+    all_roles: [utility, model, transformer, interface, test, module, package, library]
+  service:
+    template: scaffold/pyproject.service.toml.template
+audit:
+  rules_file: audit.rules.yaml
+  external_probes:
+    - name: pip-check
+      cmd: pip
+      availability_args: [--version]
+      args: [check]
+      targets: [.]
+      available_note: pip is available for installed-distribution compatibility checks.
+      fallback_note: pip is unavailable; dependency compatibility was not externally checked.
+    - name: pyupgrade
+      cmd: pyupgrade
+      availability_args: [--version]
+      args: [--diff, "{target}"]
+      targets: []
+      target_suffixes: ["**/*.py"]
+      available_note: Python sources are available for optional pyupgrade inspection.
+      fallback_note: No Python sources were found under legacy/; source-scan heuristics were used instead.
+instructions:
+  classify: classify.md
+  mappings: mappings.md
+  tests: test-convention.md
+scaffold:
+  default_project_type: service
+  library_project_type: library
+  source_extension: .py
+  default_package: migrated
+  default_app_name: migrated-app
+  main_source_dir: src
+  test_source_dir: tests
+  resources_dir: resources
+  resources_file: .env.example
+  build_file: pyproject.toml
+  settings_file: README.md
+  application_template: scaffold/application.py.template
+  settings_template: scaffold/README.md.template
+  resources_template: scaffold/env.example.template
+  package_marker: migrated
+  app_name_marker: migrated-app
+  app_class_marker: Application
+  group_marker: migrated-package
