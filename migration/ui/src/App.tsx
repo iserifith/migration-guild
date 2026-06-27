@@ -14,6 +14,7 @@
 import React from "react";
 import ArtifactList from "./components/ArtifactList";
 import BlockersView from "./components/BlockersView";
+import MissionControl from "./components/MissionControl";
 import RunsView from "./components/RunsView";
 import SessionsView from "./components/SessionsView";
 import WavePlan from "./components/WavePlan";
@@ -57,6 +58,11 @@ interface TabDef {
 }
 
 const TABS: TabDef[] = [
+  {
+    id: "Mission Control",
+    label: "Mission Control",
+    render: () => <MissionControl />,
+  },
   {
     id: "Artifacts",
     label: "Artifacts",
