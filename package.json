@@ -8,6 +8,7 @@
   "scripts": {
     "build": "tsup setup.ts --format cjs --out-dir dist",
     "dev": "tsx setup.ts",
+    "test": "npm --prefix migration test && npm --prefix migration/ui test",
     "build:dist": "node ./scripts/build-dist.mjs",
     "build:dist:version": "node ./scripts/build-dist.mjs --version"
   },
