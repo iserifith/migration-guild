@@ -1,9 +1,9 @@
 import React from "react";
-import { societyFixture, type SocietyFixture } from "../fixtures/society";
-import type { LifecycleStep, SocietyRole } from "../types";
+import { useArtifacts, useEvents, useSessions, useSociety } from "../hooks";
+import type { LifecycleStep, SocietyRole, SocietyViewData } from "../types";
 
 export interface SocietyViewProps {
-  data?: SocietyFixture;
+  data?: SocietyViewData;
 }
 
 const roleTokens: Record<SocietyRole, string> = {
@@ -20,9 +20,64 @@ const stepToken = (kind: LifecycleStep["kind"]) => {
 
 const roleLabel = (role: SocietyRole) => role[0].toUpperCase() + role.slice(1);
 
-export default function SocietyView({ data = societyFixture }: SocietyViewProps) {
+function relativeTime(value: string): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+  return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m` : `${Math.floor(seconds / 3600)}h`;
+}
+
+function classifyRole(agent: string | null): SocietyRole {
+  if (/critic|review|test/i.test(agent ?? "")) return "critic";
+  if (/arbiter/i.test(agent ?? "")) return "arbiter";
+  return "builder";
+}
+
+function LiveSocietyView() {
+  const { artifacts } = useArtifacts();
+  const { sessions } = useSessions();
+  const [selectedArtifactId, setSelectedArtifactId] = React.useState("");
+  const { society } = useSociety(selectedArtifactId || undefined);
+  const { events } = useEvents(selectedArtifactId);
+  React.useEffect(() => {
+    if (!selectedArtifactId) setSelectedArtifactId(sessions[0]?.id ?? artifacts[0]?.id ?? "");
+  }, [artifacts, selectedArtifactId, sessions]);
+
+  const artifact = artifacts.find((item) => item.id === selectedArtifactId);
+  const detail = society?.artifact;
+  const steps: LifecycleStep[] = [
+    ...events.map((event) => ({
+      id: event.id,
+      kind: (/reject|rework/i.test(event.event_type) ? "rejection" : classifyRole(event.agent)) as LifecycleStep["kind"],
+      title: event.event_type.split("-").map((word) => word[0]?.toUpperCase() + word.slice(1)).join(" "),
+      relativeTime: relativeTime(event.created_at),
+      description: event.note,
+    })),
+    ...(detail?.evidence ?? []).map((evidence) => ({ id: evidence.evidence_id, kind: "critic" as const, title: "Critic submitted evidence", relativeTime: relativeTime(evidence.created_at), evidence: [evidence] })),
+    ...(detail?.arbitration ?? []).map((decision) => ({ id: decision.decision_id, kind: decision.decision === "rejected" ? "rejection" as const : "arbiter" as const, title: decision.decision === "rejected" ? "Arbiter rejected" : "Arbiter accepted", relativeTime: relativeTime(decision.decided_at), decision })),
+  ].sort((left, right) => (left.relativeTime ?? "").localeCompare(right.relativeTime ?? ""));
+  if ((detail?.evidence ?? []).some((row) => row.pass) && (detail?.arbitration ?? []).some((row) => row.decision === "approved")) {
+    steps.splice(Math.max(0, steps.length - 1), 0, { id: "evidence-gate", kind: "gate", title: "Gate: independent passing evidence" });
+  }
+  const roleTotal = (role: SocietyRole) => Object.entries(society?.roles ?? {}).reduce((sum, [agent, count]) => sum + (classifyRole(agent) === role ? count : 0), 0);
+  const lanes = (["builder", "critic", "arbiter"] as SocietyRole[]).map((role) => ({
+    role,
+    activeLabel: role === "arbiter" ? `${society?.evidence.artifacts_awaiting_arbitration ?? 0} pending` : `${roleTotal(role)} active`,
+    artifacts: sessions.filter((session) => classifyRole(session.claimed_by) === role).map((session) => ({ artifactId: session.id, name: session.path.split("/").pop() ?? session.id, agentId: session.claimed_by, state: session.stalled ? `claimed ${session.claimed_minutes_ago ?? 0}m · stalled` : `claimed ${session.claimed_minutes_ago ?? 0}m` })),
+  }));
+  if (selectedArtifactId && !lanes.some((lane) => lane.artifacts.some((item) => item.artifactId === selectedArtifactId))) {
+    lanes[0].artifacts.unshift({ artifactId: selectedArtifactId, name: artifact?.path.split("/").pop() ?? selectedArtifactId, agentId: artifact?.claimed_by ?? null, state: artifact?.status ?? "recorded" });
+  }
+  const data: SocietyViewData = {
+    initialArtifactId: selectedArtifactId,
+    lanes,
+    lifecycles: selectedArtifactId ? [{ artifactId: selectedArtifactId, artifactName: artifact?.path.split("/").pop() ?? selectedArtifactId, status: artifact?.acceptance_state?.toLowerCase() ?? artifact?.status ?? "recorded", steps }] : [],
+  };
+  return <SocietyViewContent data={data} selectedId={selectedArtifactId} onSelect={setSelectedArtifactId} />;
+}
+
+function SocietyViewContent({ data, selectedId, onSelect }: { data: SocietyViewData; selectedId?: string; onSelect?: (id: string) => void }) {
   const [selectedArtifactId, setSelectedArtifactId] = React.useState(data.initialArtifactId);
-  const lifecycle = data.lifecycles.find((item) => item.artifactId === selectedArtifactId);
+  const effectiveId = selectedId ?? selectedArtifactId;
+  const lifecycle = data.lifecycles.find((item) => item.artifactId === effectiveId);
 
   return (
     <section className="society-view" aria-labelledby="society-title">
@@ -88,10 +143,10 @@ export default function SocietyView({ data = societyFixture }: SocietyViewProps)
             </div>
             {lane.artifacts.map((artifact) => (
               <button
-                aria-pressed={selectedArtifactId === artifact.artifactId}
-                className={`society-chip ${selectedArtifactId === artifact.artifactId ? "selected" : ""}`}
+                aria-pressed={effectiveId === artifact.artifactId}
+                className={`society-chip ${effectiveId === artifact.artifactId ? "selected" : ""}`}
                 key={`${lane.role}-${artifact.artifactId}`}
-                onClick={() => setSelectedArtifactId(artifact.artifactId)}
+                onClick={() => onSelect ? onSelect(artifact.artifactId) : setSelectedArtifactId(artifact.artifactId)}
                 type="button"
               >
                 <span className="society-chip-name">
@@ -151,4 +206,8 @@ export default function SocietyView({ data = societyFixture }: SocietyViewProps)
       <p className="society-footnote">The rejection and rework loop back to Builder are the conflict-resolution path — acceptance only follows independent, passing, executable proof.</p>
     </section>
   );
+}
+
+export default function SocietyView({ data }: SocietyViewProps) {
+  return data ? <SocietyViewContent data={data} /> : <LiveSocietyView />;
 }

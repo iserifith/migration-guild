@@ -1,42 +1,5 @@
-export type MissionRole = "builder" | "critic" | "arbiter";
-export type MetricTone = "neutral" | "success" | "warning";
-export type WaveTone = "success" | "accent" | "warning";
-export type ActivityTone = MissionRole | "danger";
-
-export interface MissionMetric {
-  label: string;
-  value: string;
-  suffix?: string;
-  detail: string;
-  tone: MetricTone;
-}
-
-export interface SocietyRole {
-  role: MissionRole;
-  action: string;
-  count: string;
-}
-
-export interface MissionWave {
-  label: string;
-  status: string;
-  progress: number;
-  tone: WaveTone;
-}
-
-export interface MissionActivity {
-  role: string;
-  message: string;
-  relativeTime: string;
-  tone: ActivityTone;
-}
-
-export interface MissionControlFixture {
-  metrics: MissionMetric[];
-  society: SocietyRole[];
-  waves: MissionWave[];
-  activity: MissionActivity[];
-}
+import type { MissionControlData } from "../types";
+export type MissionControlFixture = MissionControlData;
 
 export const missionControlFixture: MissionControlFixture = {
   metrics: [

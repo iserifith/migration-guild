@@ -1,12 +1,9 @@
 import React from "react";
-import {
-  missionControlFixture,
-  type MissionControlFixture,
-  type MissionRole,
-} from "../fixtures/mission-control";
+import { useArtifacts, useEvents, useSessions, useSociety, useStatus, useWavePlan } from "../hooks";
+import type { ActivityTone, MissionControlData, SocietyRole } from "../types";
 
 export interface MissionControlProps {
-  data?: MissionControlFixture;
+  data?: MissionControlData;
 }
 
 const toneToken = {
@@ -20,13 +17,60 @@ const toneToken = {
   danger: "var(--text-danger)",
 } as const;
 
-const roleTokens: Record<MissionRole, { foreground: string; background: string }> = {
+const roleTokens: Record<SocietyRole, { foreground: string; background: string }> = {
   builder: { foreground: "var(--text-accent)", background: "var(--bg-accent)" },
   critic: { foreground: "var(--text-warning)", background: "var(--bg-warning)" },
   arbiter: { foreground: "var(--text-pro)", background: "var(--bg-pro)" },
 };
 
-export default function MissionControl({ data = missionControlFixture }: MissionControlProps) {
+function relativeTime(value: string): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+  return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m` : `${Math.floor(seconds / 3600)}h`;
+}
+
+function roleFor(agent: string): SocietyRole {
+  if (/critic|review|test/i.test(agent)) return "critic";
+  if (/arbiter/i.test(agent)) return "arbiter";
+  return "builder";
+}
+
+function LiveMissionControl() {
+  const { status } = useStatus();
+  const { society } = useSociety();
+  const { wavePlan } = useWavePlan();
+  const { sessions } = useSessions();
+  const { artifacts } = useArtifacts();
+  const activityArtifactId = sessions[0]?.id ?? artifacts[0]?.id ?? "";
+  const { events } = useEvents(activityArtifactId);
+  const total = status?.files.total ?? 0;
+  const completed = status?.files.completed ?? 0;
+  const roleCount = (role: SocietyRole) => Object.entries(society?.roles ?? {}).reduce((sum, [agent, count]) => sum + (roleFor(agent) === role ? count : 0), 0);
+  const data: MissionControlData = {
+    metrics: [
+      { label: "Completion", value: `${total ? Math.round(completed / total * 100) : 0}%`, detail: `${completed} / ${total} artifacts`, tone: "neutral" },
+      { label: "Evidence pass rate", value: `${Math.round((society?.evidence.pass_rate ?? 0) * 100)}%`, detail: `${society?.evidence.passed ?? 0} of ${society?.evidence.total ?? 0} proofs`, tone: "success" },
+      { label: "Awaiting arbitration", value: String(society?.evidence.artifacts_awaiting_arbitration ?? 0), detail: "Proof ready, unjudged", tone: "warning" },
+      { label: "In progress", value: String(status?.files.in_progress ?? 0), detail: `${sessions.length} active claims`, tone: "neutral" },
+    ],
+    society: [
+      { role: "builder", action: "Proposes → migrated", count: `${roleCount("builder")} active` },
+      { role: "critic", action: "Runs tests → evidence", count: `${roleCount("critic")} active` },
+      { role: "arbiter", action: "Accepts from proof", count: `${society?.evidence.artifacts_awaiting_arbitration ?? 0} pending` },
+    ],
+    waves: wavePlan.map((wave) => {
+      const done = (wave.by_status.completed ?? 0) + (wave.by_status.reviewed ?? 0);
+      const progress = wave.total ? Math.round(done / wave.total * 100) : 0;
+      return { label: `Wave ${wave.wave}`, status: `${done}/${wave.total} done`, progress, tone: progress === 100 ? "success" : progress === 0 ? "warning" : "accent" };
+    }),
+    activity: events.slice(0, 6).map((event) => {
+      const role = roleFor(event.agent);
+      return { role: role[0].toUpperCase() + role.slice(1), message: event.note, relativeTime: relativeTime(event.created_at), tone: (/reject|fail/i.test(event.event_type) ? "danger" : role) as ActivityTone };
+    }),
+  };
+  return <MissionControlView data={data} />;
+}
+
+function MissionControlView({ data }: { data: MissionControlData }) {
   return (
     <section className="mission-control" aria-label="Mission Control overview">
       <style>{`
@@ -152,4 +196,8 @@ export default function MissionControl({ data = missionControlFixture }: Mission
       </div>
     </section>
   );
+}
+
+export default function MissionControl({ data }: MissionControlProps) {
+  return data ? <MissionControlView data={data} /> : <LiveMissionControl />;
 }

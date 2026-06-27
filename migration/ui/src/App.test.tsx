@@ -14,6 +14,12 @@ import type { Artifact, StatusResponse } from "./types";
 vi.mock("./hooks", () => ({
   useRegistryData: vi.fn(),
   useRunLog: vi.fn(),
+  useStatus: () => ({ status: null, loading: false, error: null, reload: vi.fn() }),
+  useSociety: () => ({ society: null, loading: false, error: null, reload: vi.fn() }),
+  useWavePlan: () => ({ wavePlan: [], loading: false, error: null, reload: vi.fn() }),
+  useSessions: () => ({ sessions: [], loading: false, error: null, reload: vi.fn() }),
+  useArtifacts: () => ({ artifacts: [], loading: false, error: null, reload: vi.fn() }),
+  useEvents: () => ({ events: [], loading: false, error: null, reload: vi.fn() }),
 }));
 
 const MOCK_ARTIFACT: Artifact = {

@@ -3,6 +3,10 @@ import * as fs from "fs";
 import * as path from "path";
 import type Database from "better-sqlite3";
 import {
+  querySocietyArtifactReport,
+  querySocietyReport,
+} from "../../guildctl/commands/society-report";
+import {
   queryArtifactsForUI,
   queryStatusSummary,
   queryWavePlanForUI,
@@ -76,6 +80,14 @@ export function startServer(db: Database.Database, port = 3322) {
 
     if (p === "/api/status") {
       return json(res, queryStatusSummary(db));
+    }
+
+    if (req.method === "GET" && p === "/api/society") {
+      const report = querySocietyReport(db);
+      const id = url.searchParams.get("id");
+      return json(res, id
+        ? { ...report, artifact: querySocietyArtifactReport(db, id) }
+        : report);
     }
 
     if (p === "/api/wave-plan") {
@@ -190,12 +202,16 @@ export function startServer(db: Database.Database, port = 3322) {
   });
 
   server.listen(port, "127.0.0.1", () => {
-    const url = `http://localhost:${port}`;
+    const address = server.address();
+    const actualPort = address && typeof address === "object" ? address.port : port;
+    const url = `http://localhost:${actualPort}`;
     console.log(`\n  Migration Guild registry inspector\n  ${url}\n`);
+    if (port === 0) return;
     // Try to open browser
     const open = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
     require("child_process").exec(`${open} ${url}`);
   });
 
   process.on("SIGINT", () => { server.close(); process.exit(0); });
+  return server;
 }

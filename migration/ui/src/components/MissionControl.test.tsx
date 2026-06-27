@@ -17,7 +17,7 @@ describe("MissionControl", () => {
   });
 
   it("shows role counts, the evidence gate, wave progress, and recent activity", () => {
-    render(<MissionControl />);
+    render(<MissionControl data={missionControlFixture} />);
 
     expect(screen.getByText("3 active")).toBeInTheDocument();
     expect(screen.getByText("2 active")).toBeInTheDocument();

@@ -19,7 +19,6 @@ import RunsView from "./components/RunsView";
 import SessionsView from "./components/SessionsView";
 import SocietyView from "./components/SocietyView";
 import WavePlan from "./components/WavePlan";
-import { societyFixture } from "./fixtures/society";
 import { useRegistryData, type UseRegistryDataResult } from "./hooks";
 import type {
   BlockerQuery,
@@ -68,7 +67,7 @@ const TABS: TabDef[] = [
   {
     id: "Society",
     label: "Society",
-    render: () => <SocietyView data={societyFixture} />,
+    render: () => <SocietyView />,
   },
   {
     id: "Artifacts",
