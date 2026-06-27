@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import type { AcceptanceEvidence, ArbitrationDecision } from "../../registry/types";
 
 const DIALOGUE_TYPES = [
   "proposal-submitted",
@@ -51,7 +52,7 @@ function count(db: Database.Database, sql: string, params: unknown[] = []): numb
   const row = db.prepare(sql).get(...params) as { n: number } | undefined;
   return row?.n ?? 0;
 }
-function querySocietyReport(db: Database.Database): SocietyReport {
+export function querySocietyReport(db: Database.Database): SocietyReport {
   const roles = rowsToMap(db.prepare("SELECT agent AS key, COUNT(*) AS n FROM runs GROUP BY agent ORDER BY agent").all() as Array<{ key: string; n: number }>);
   const byStatus = rowsToMap(db.prepare("SELECT status AS key, COUNT(*) AS n FROM artifacts GROUP BY status ORDER BY status").all() as Array<{ key: string; n: number }>);
   const byWave = rowsToMap(db.prepare("SELECT wave AS key, COUNT(*) AS n FROM artifacts GROUP BY wave ORDER BY wave").all() as Array<{ key: number | null; n: number }>);
@@ -79,6 +80,23 @@ function querySocietyReport(db: Database.Database): SocietyReport {
     },
     evidence: { total: evidenceTotal, passed: evidencePassed, failed: evidenceFailed, pass_rate: evidenceTotal === 0 ? 0 : evidencePassed / evidenceTotal, artifacts_awaiting_evidence: awaitingEvidence, artifacts_awaiting_arbitration: awaitingArbitration },
     efficiency: { elapsed_runtime_ms: elapsed, failed_runs: count(db, "SELECT COUNT(*) AS n FROM runs WHERE status = 'failed' OR exit_code IS NOT NULL AND exit_code != 0"), reworked_artifacts: count(db, "SELECT COUNT(*) AS n FROM artifacts WHERE status = 'needs-rework'") },
+  };
+}
+
+export interface SocietyArtifactReport {
+  id: string;
+  evidence: AcceptanceEvidence[];
+  arbitration: ArbitrationDecision[];
+}
+
+export function querySocietyArtifactReport(
+  db: Database.Database,
+  artifactId: string,
+): SocietyArtifactReport {
+  return {
+    id: artifactId,
+    evidence: db.prepare(`SELECT * FROM acceptance_evidence WHERE artifact_id = ? ORDER BY created_at ASC, rowid ASC`).all(artifactId) as AcceptanceEvidence[],
+    arbitration: db.prepare(`SELECT * FROM arbitration_decisions WHERE artifact_id = ? ORDER BY decided_at ASC, rowid ASC`).all(artifactId) as ArbitrationDecision[],
   };
 }
 

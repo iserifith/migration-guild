@@ -14,7 +14,7 @@ describe("SocietyView", () => {
   });
 
   it("selecting an artifact chip swaps the lifecycle", () => {
-    render(<SocietyView />);
+    render(<SocietyView data={societyFixture} />);
 
     expect(screen.getByRole("heading", { name: "Chainr — lifecycle" })).toBeInTheDocument();
     const arbiterLane = screen.getByRole("region", { name: "Arbiter lane" });
@@ -24,7 +24,7 @@ describe("SocietyView", () => {
   });
 
   it("shows the rejection, rework, passing evidence, independence gate, and acceptance", () => {
-    render(<SocietyView />);
+    render(<SocietyView data={societyFixture} />);
 
     const fail = screen.getByText("FAIL");
     const passRows = screen.getAllByText("PASS");

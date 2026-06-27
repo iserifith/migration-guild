@@ -29,6 +29,7 @@ import type {
   SessionListResult,
   SessionQuery,
   SessionEntry,
+  SocietyResponse,
   StatusResponse,
   WavePlanEntry,
 } from "./types";
@@ -110,6 +111,10 @@ export interface EventQuery {
   limit?: number;
 }
 
+export interface SocietyQuery {
+  id?: string;
+}
+
 // ── Live endpoints (served by migration/registry/commands/serve.ts) ──────────
 
 /** GET /api/artifacts — list all artifacts, optionally filtered. */
@@ -120,6 +125,11 @@ export function fetchArtifacts(query: ArtifactQuery = {}): Promise<Artifact[]> {
 /** GET /api/status — registry summary plus operator state. */
 export function fetchStatus(): Promise<StatusResponse> {
   return get<StatusResponse>("/api/status");
+}
+
+/** GET /api/society[?id=<artifactId>] — society aggregate and optional timeline proof. */
+export function getSociety(query: SocietyQuery = {}): Promise<SocietyResponse> {
+  return get<SocietyResponse>(buildUrl("/api/society", query));
 }
 
 /** GET /api/wave-plan — per-wave status breakdown for first-class artifacts. */

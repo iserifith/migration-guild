@@ -53,6 +53,14 @@ export interface AcceptanceEvidenceRow { evidence_id: string; artifact_id: strin
 export interface ArbitrationDecisionRow { decision_id: string; artifact_id: string; arbiter: string; decision: "approved" | "rejected"; reason: string; evidence_ids: string; decided_at: string; }
 
 export type SocietyRole = "builder" | "critic" | "arbiter";
+export type MetricTone = "neutral" | "success" | "warning";
+export type WaveTone = "success" | "accent" | "warning";
+export type ActivityTone = SocietyRole | "danger";
+export interface MissionMetric { label: string; value: string; suffix?: string; detail: string; tone: MetricTone; }
+export interface MissionSocietyRole { role: SocietyRole; action: string; count: string; }
+export interface MissionWave { label: string; status: string; progress: number; tone: WaveTone; }
+export interface MissionActivity { role: string; message: string; relativeTime: string; tone: ActivityTone; }
+export interface MissionControlData { metrics: MissionMetric[]; society: MissionSocietyRole[]; waves: MissionWave[]; activity: MissionActivity[]; }
 
 export interface SocietyArtifactChip {
   artifactId: string;
@@ -83,6 +91,43 @@ export interface SocietyLifecycle {
   artifactName: string;
   status: string;
   steps: LifecycleStep[];
+}
+export interface SocietyViewData { lanes: SocietyLane[]; lifecycles: SocietyLifecycle[]; initialArtifactId: string; }
+
+export interface SocietyResponse {
+  roles: Record<string, number>;
+  task_division: {
+    by_status: Record<string, number>;
+    by_wave: Record<string, number>;
+    by_tier: Record<string, number>;
+    active_claims: number;
+  };
+  dialogue: Record<string, number>;
+  conflict_resolution: {
+    claim_releases: number;
+    claim_expirations: number;
+    reaped_runs: number;
+    arbitration_approved: number;
+    arbitration_rejected: number;
+  };
+  evidence: {
+    total: number;
+    passed: number;
+    failed: number;
+    pass_rate: number;
+    artifacts_awaiting_evidence: number;
+    artifacts_awaiting_arbitration: number;
+  };
+  efficiency: {
+    elapsed_runtime_ms: number | null;
+    failed_runs: number;
+    reworked_artifacts: number;
+  };
+  artifact?: {
+    id: string;
+    evidence: AcceptanceEvidenceRow[];
+    arbitration: ArbitrationDecisionRow[];
+  };
 }
 
 // ── Live endpoint shapes ───────────────────────────────────────────────────────

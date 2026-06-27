@@ -1,14 +1,9 @@
 import type {
   AcceptanceEvidenceRow,
-  SocietyLane,
-  SocietyLifecycle,
+  SocietyViewData,
 } from "../types";
 
-export interface SocietyFixture {
-  lanes: SocietyLane[];
-  lifecycles: SocietyLifecycle[];
-  initialArtifactId: string;
-}
+export type SocietyFixture = SocietyViewData;
 
 const evidence = (
   evidenceId: string,

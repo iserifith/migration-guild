@@ -18,6 +18,7 @@ import {
   fetchBlockers,
   fetchEvents,
   fetchIssues,
+  getSociety,
   fetchRunLog,
   fetchRuns,
   fetchSessions,
@@ -43,6 +44,7 @@ import type {
   SessionQuery,
   SessionEntry,
   StatusResponse,
+  SocietyResponse,
   WavePlanEntry,
 } from "./types";
 
@@ -57,6 +59,7 @@ function useLoadableData<T>(
   loader: () => Promise<T>,
   initialData: T,
   deps: DependencyList,
+  pollIntervalMs?: number,
 ): LoadableState<T> {
   const [data, setData] = useState<T>(initialData);
   const [loading, setLoading] = useState(true);
@@ -87,7 +90,10 @@ function useLoadableData<T>(
 
   useEffect(() => {
     load();
-  }, [load]);
+    if (!pollIntervalMs) return;
+    const timer = window.setInterval(load, pollIntervalMs);
+    return () => window.clearInterval(timer);
+  }, [load, pollIntervalMs]);
 
   return { data, loading, error, reload: load };
 }
@@ -162,6 +168,7 @@ export function useEvents(artifactId: string): UseEventsResult {
     () => fetchEvents({ id: artifactId }),
     [] as ArtifactEvent[],
     [artifactId],
+    5_000,
   );
 
   return {
@@ -170,6 +177,24 @@ export function useEvents(artifactId: string): UseEventsResult {
     error: state.error,
     reload: state.reload,
   };
+}
+
+export interface UseSocietyResult {
+  society: SocietyResponse | null;
+  loading: boolean;
+  error: Error | null;
+  reload: () => void;
+}
+
+/** Polls the society aggregate, optionally including one artifact's proof rows. */
+export function useSociety(artifactId?: string): UseSocietyResult {
+  const state = useLoadableData(
+    () => getSociety({ id: artifactId }),
+    null as SocietyResponse | null,
+    [artifactId],
+    5_000,
+  );
+  return { society: state.data, loading: state.loading, error: state.error, reload: state.reload };
 }
 
 // ── Feature hooks ─────────────────────────────────────────────────────────────
