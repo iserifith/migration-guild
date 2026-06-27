@@ -1,0 +1,84 @@
+- id: jvm-internal-api
+  finding: jvm
+  category: internal-api
+  severity: critical
+  match: '\b(?:sun|com\.sun|jdk\.internal)\.[A-Za-z0-9_$.]+'
+  flags: g
+  summary_template: 'Internal JDK API usage detected: {symbol}'
+  remediation: Replace internal JDK APIs with supported Java SE or framework equivalents before planning.
+- id: jvm-removed-api
+  finding: jvm
+  category: removed-api
+  severity: critical
+  match: '\bjavax\.(?:xml\.bind|activation|annotation\.PostConstruct|annotation\.PreDestroy)\b'
+  flags: g
+  summary_template: 'Removed or decoupled Java SE API detected: {symbol}'
+  remediation: Adopt supported Jakarta or external library replacements and record the target modernization strategy before planning.
+- id: jvm-deprecated-api
+  finding: jvm
+  category: deprecated-api
+  severity: warning
+  match: '\b(?:System\.setSecurityManager|SecurityManager\b|Thread\.(?:stop|suspend|resume)\b|java\.applet\.)'
+  flags: g
+  summary_template: 'Deprecated JVM API usage detected: {symbol}'
+  remediation: Plan a supported replacement and capture the migration notes before code generation.
+- id: dependency-log4j
+  finding: dependency
+  dependency_name: log4j:log4j
+  target_hint: org.slf4j:slf4j-api
+  category: eol
+  severity: critical
+  match: '\borg\.apache\.log4j\b'
+  flags: g
+  summary_template: 'EOL Log4j 1.x API detected{version}'
+  remediation: Approve a replacement strategy to SLF4J/Log4j 2-compatible APIs before planning can continue.
+  details_template: 'Log4j 1.x is end-of-life and should not advance into migrated outputs without an explicit replacement plan. Evidence: L{line}: {text}'
+  coordinate_hints: [log4j:log4j]
+- id: dependency-junit4
+  finding: dependency
+  dependency_name: junit:junit
+  target_hint: org.junit.jupiter:junit-jupiter
+  category: outdated
+  severity: warning
+  match: '\b(?:junit\.framework|org\.junit\.(?!jupiter))'
+  flags: g
+  summary_template: 'JUnit 4-era test API detected{version}'
+  remediation: Approve an upgrade strategy to JUnit 5 before the affected artifact can progress.
+  details_template: 'Migration targets use JUnit 5 for generated tests and retained compatibility should be explicit. Evidence: L{line}: {text}'
+  coordinate_hints: [junit:junit]
+- id: dependency-commons-logging
+  finding: dependency
+  dependency_name: commons-logging:commons-logging
+  target_hint: org.slf4j:slf4j-api
+  category: outdated
+  severity: warning
+  match: '\borg\.apache\.commons\.logging\b'
+  flags: g
+  summary_template: 'Commons Logging API detected{version}'
+  remediation: Approve a logging facade upgrade or replacement strategy before planning can continue.
+  details_template: 'Generated Spring Boot targets should use SLF4J-compatible logging rather than legacy Commons Logging calls. Evidence: L{line}: {text}'
+  coordinate_hints: [commons-logging:commons-logging]
+- id: dependency-servlet
+  finding: dependency
+  dependency_name: javax.servlet:javax.servlet-api
+  target_hint: jakarta.servlet:jakarta.servlet-api
+  category: incompatible
+  severity: warning
+  match: '\bjavax\.servlet\b'
+  flags: g
+  summary_template: 'Legacy javax.servlet API detected{version}'
+  remediation: Approve the jakarta.servlet replacement plan before the affected artifact can progress.
+  details_template: 'Spring Boot 3 targets require Jakarta namespace APIs. Evidence: L{line}: {text}'
+  coordinate_hints: [javax.servlet:javax.servlet-api, javax.servlet:servlet-api]
+- id: dependency-jaxrs
+  finding: dependency
+  dependency_name: javax.ws.rs:javax.ws.rs-api
+  target_hint: jakarta.ws.rs:jakarta.ws.rs-api
+  category: incompatible
+  severity: warning
+  match: '\bjavax\.ws\.rs\b'
+  flags: g
+  summary_template: 'Legacy javax.ws.rs API detected{version}'
+  remediation: Approve the Jakarta or Spring Web replacement strategy before planning can continue.
+  details_template: 'Modern Spring Boot targets should not carry forward javax.ws.rs APIs without an explicit modernization plan. Evidence: L{line}: {text}'
+  coordinate_hints: [javax.ws.rs:javax.ws.rs-api]

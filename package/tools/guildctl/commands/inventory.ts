@@ -11,49 +11,34 @@ import { setNext } from "../../registry/commands/operator";
 import { applySchema } from "../../registry/db/schema";
 import { refreshCompatibilityAudits } from "../audit";
 import { evaluatePlanningReadiness, formatPlanningBlockMessage } from "../readiness";
+import { findMatchingFiles, loadActiveStack } from "../stack";
 
 // ─── File scanner ────────────────────────────────────────────────────────────
 
-function findJavaFiles(dir: string): string[] {
-  const results: string[] = [];
-  if (!fs.existsSync(dir)) return results;
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) results.push(...findJavaFiles(full));
-    else if (entry.isFile() && entry.name.endsWith(".java")) results.push(full);
-  }
-  return results;
-}
-
-/** Derive artifact id from a legacy .java path.
- *  Format: legacy-source:<module>:<ClassName>
- *  e.g.  legacy-source:com.example.util:StringUtils
- */
-function deriveArtifactId(filePath: string, legacyRoot: string): string {
-  const rel = path.relative(legacyRoot, filePath); // e.g. src/main/java/com/example/Foo.java
-  const noExt = rel.replace(/\.java$/, "");
+function deriveArtifactId(filePath: string, legacyRoot: string, sourceExtension: string, mainSourceDir: string): string {
+  const rel = path.relative(legacyRoot, filePath);
+  const noExt = rel.endsWith(sourceExtension) ? rel.slice(0, -sourceExtension.length) : rel;
   const parts = noExt.split(path.sep);
   const className = parts[parts.length - 1];
 
-  // Drop leading src/main/java or src/test/java segments if present
-  const javaIdx = parts.findIndex(
-    (p, i) => p === "java" && i > 0 && parts[i - 1] === "main",
-  );
-  const pkgParts = javaIdx >= 0 ? parts.slice(javaIdx + 1, -1) : parts.slice(0, -1);
+  const sourceParts = mainSourceDir.split("/");
+  const sourceEnd = parts.findIndex((part, index) => sourceParts.every((sourcePart, offset) => parts[index + offset] === sourcePart));
+  const pkgParts = sourceEnd >= 0 ? parts.slice(sourceEnd + sourceParts.length, -1) : parts.slice(0, -1);
   const module = pkgParts.join(".") || "default";
 
   return `legacy-source:${module}:${className}`;
 }
 
-/** Register all .java files in legacy/ that aren't already in the DB. */
 function scanAndRegister(db: Database.Database, projectRoot: string): number {
   const legacyDir = path.join(projectRoot, "legacy");
   process.stdout.write(`  [scan] projectRoot : ${projectRoot}\n`);
   process.stdout.write(`  [scan] legacyDir   : ${legacyDir}\n`);
   process.stdout.write(`  [scan] legacyDir exists: ${fs.existsSync(legacyDir)}\n`);
 
-  const files = findJavaFiles(legacyDir);
-  process.stdout.write(`  [scan] .java files found: ${files.length}\n`);
+  const cfg = loadConfig();
+  const pack = loadActiveStack(cfg, projectRoot);
+  const files = findMatchingFiles(legacyDir, pack.manifest.source_globs);
+  process.stdout.write(`  [scan] source files found: ${files.length}\n`);
 
   // Show DB filename so we know which file is being written
   const dbFilename = (db as unknown as { name?: string }).name ?? "(unknown)";
@@ -63,7 +48,7 @@ function scanAndRegister(db: Database.Database, projectRoot: string): number {
   let skipped = 0;
 
   for (const file of files) {
-    const id = deriveArtifactId(file, legacyDir);
+    const id = deriveArtifactId(file, legacyDir, pack.manifest.scaffold.source_extension, pack.manifest.scaffold.main_source_dir);
     const exists = db.prepare("SELECT id FROM artifacts WHERE id = ?").get(id);
     if (exists) { skipped++; continue; }
 
@@ -101,8 +86,8 @@ export async function runInventory(db: Database.Database): Promise<void> {
   // Always resolve project root from __dirname (migration/guildctl/dist → my-migration/)
   const projectRoot = path.resolve(__dirname, "..", "..", "..");
 
-  // Step 1: scan legacy/ and register all .java files directly — no agent needed
-  process.stdout.write("  Scanning legacy/ for Java files…\n");
+  // Step 1: scan source files directly — no agent needed
+  process.stdout.write("  Scanning legacy/ for source files…\n");
   const count = scanAndRegister(db, projectRoot);
   process.stdout.write(`  ✓ ${count} file(s) registered\n\n`);
 

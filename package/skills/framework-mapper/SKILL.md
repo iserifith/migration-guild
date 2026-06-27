@@ -17,7 +17,7 @@ Use this skill when the legacy framework has been identified and you need the co
 ## Procedure
 
 1. Identify the legacy construct to replace.
-2. Open [common mappings](./references/common-mappings.md) and find the nearest equivalent for the target framework.
+2. Use the active stack pack mappings injected into the planning prompt and find the nearest target equivalent.
 3. Check the workspace for an existing reference example if one exists.
 4. Prefer the workspace example over generic guidance when the patterns are materially similar.
 5. If no example exists, use standard conventions for the target framework.
