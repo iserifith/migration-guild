@@ -2,16 +2,11 @@ import * as fs from "fs";
 import * as path from "path";
 import type Database from "better-sqlite3";
 import { printPhaseHeader } from "../dashboard";
+import { resolveGuildConfig } from "../config";
+import { loadActiveStack, type LoadedStackPack } from "../stack";
 
 export type BootstrapProjectType = "web" | "service" | "library";
-
-interface BootstrapArtifactSignal {
-  path: string;
-  module: string | null;
-  role: string | null;
-  framework: string | null;
-}
-
+interface BootstrapArtifactSignal { path: string; module: string | null; role: string | null; framework: string | null }
 export interface BootstrapResult {
   projectType: BootstrapProjectType;
   template: string;
@@ -22,304 +17,152 @@ export interface BootstrapResult {
   skipped: string[];
 }
 
-function getAssetsDir(workspaceRoot: string): string {
-  const packagedAssetsDir = path.join(
-    workspaceRoot,
-    "package",
-    "skills",
-    "target-module-bootstrap",
-    "assets",
-  );
-  if (fs.existsSync(packagedAssetsDir)) {
-    return packagedAssetsDir;
-  }
-
-  return path.join(
-    workspaceRoot,
-    ".github",
-    "skills",
-    "target-module-bootstrap",
-    "assets",
-  );
+function activePack(workspaceRoot: string): LoadedStackPack {
+  return loadActiveStack(resolveGuildConfig({ cwd: workspaceRoot }), workspaceRoot);
 }
 
 function listFirstClassArtifacts(db: Database.Database): BootstrapArtifactSignal[] {
-  return db.prepare(`
-    SELECT path, module, role, framework
-    FROM artifacts
-    WHERE tier = 'first-class'
-    ORDER BY path
-  `).all() as BootstrapArtifactSignal[];
+  return db.prepare(`SELECT path, module, role, framework FROM artifacts WHERE tier = 'first-class' ORDER BY path`).all() as BootstrapArtifactSignal[];
 }
 
-export function detectBootstrapProjectType(
-  artifacts: BootstrapArtifactSignal[],
-): BootstrapProjectType {
-  if (artifacts.length === 0) return "service";
-
-  const isWeb = artifacts.some((artifact) => {
-    const role = (artifact.role ?? "").toLowerCase();
-    const framework = (artifact.framework ?? "").toLowerCase();
-    const filePath = artifact.path.toLowerCase();
-    return (
-      role === "rest-endpoint" ||
-      framework.includes("jax-rs") ||
-      framework.includes("servlet") ||
-      framework.includes("spring-mvc") ||
-      framework.includes("spring-web") ||
-      filePath.includes("/web/") ||
-      filePath.includes("/controller/")
-    );
-  });
-  if (isWeb) return "web";
-
-  const libraryRoles = new Set(["utility", "model", "transformer", "interface", "test"]);
-  const allLibraryLike = artifacts.every((artifact) => {
-    const role = (artifact.role ?? "").toLowerCase();
-    return !role || libraryRoles.has(role);
-  });
-  return allLibraryLike ? "library" : "service";
+export function detectBootstrapProjectType(artifacts: BootstrapArtifactSignal[], pack = activePack(process.cwd())): BootstrapProjectType {
+  const descriptions = pack.manifest.project_types;
+  for (const [name, description] of Object.entries(descriptions)) {
+    if (!description.any) continue;
+    const matched = artifacts.some((artifact) => {
+      const role = (artifact.role ?? "").toLowerCase();
+      const framework = (artifact.framework ?? "").toLowerCase();
+      const filePath = artifact.path.toLowerCase();
+      return description.any?.roles?.includes(role)
+        || description.any?.frameworks?.some((signal) => framework.includes(signal))
+        || description.any?.paths?.some((signal) => filePath.includes(signal));
+    });
+    if (matched) return name as BootstrapProjectType;
+  }
+  for (const [name, description] of Object.entries(descriptions)) {
+    if (description.all_roles && artifacts.length > 0 && artifacts.every((artifact) => !artifact.role || description.all_roles!.includes(artifact.role.toLowerCase()))) {
+      return name as BootstrapProjectType;
+    }
+  }
+  return pack.manifest.scaffold.default_project_type as BootstrapProjectType;
 }
 
 function commonPrefix(modules: string[][]): string[] {
   if (modules.length === 0) return [];
   const prefix = [...modules[0]!];
   for (const parts of modules.slice(1)) {
-    let i = 0;
-    while (i < prefix.length && i < parts.length && prefix[i] === parts[i]) i += 1;
-    prefix.splice(i);
+    let index = 0;
+    while (index < prefix.length && index < parts.length && prefix[index] === parts[index]) index += 1;
+    prefix.splice(index);
     if (prefix.length === 0) break;
   }
   return prefix;
 }
 
-function sanitizeJavaPackage(input: string): string {
-  const cleaned = input
-    .split(".")
-    .map((part) => part.toLowerCase().replace(/[^a-z0-9_]/g, ""))
-    .filter(Boolean);
-  return cleaned.length > 0 ? cleaned.join(".") : "com.example.migrated";
+function sanitizePackage(input: string, fallback: string): string {
+  const cleaned = input.split(".").map((part) => part.toLowerCase().replace(/[^a-z0-9_]/g, "")).filter(Boolean);
+  return cleaned.length > 0 ? cleaned.join(".") : fallback;
 }
 
-export function deriveBootstrapBasePackage(
-  artifacts: BootstrapArtifactSignal[],
-): string {
-  const moduleParts = artifacts
-    .map((artifact) => artifact.module)
-    .filter((module): module is string => Boolean(module))
-    .map((module) => module.split(".").filter(Boolean));
+export function deriveBootstrapBasePackage(artifacts: BootstrapArtifactSignal[], fallback = activePack(process.cwd()).manifest.scaffold.default_package): string {
+  const moduleParts = artifacts.map((artifact) => artifact.module).filter((module): module is string => Boolean(module)).map((module) => module.split(".").filter(Boolean));
   const prefix = commonPrefix(moduleParts);
-  if (prefix.length > 0) return sanitizeJavaPackage(prefix.join("."));
-  const firstModule = artifacts.find((artifact) => artifact.module)?.module;
-  return sanitizeJavaPackage(firstModule ?? "com.example.migrated");
+  const candidate = prefix.length > 0 ? prefix.join(".") : artifacts.find((artifact) => artifact.module)?.module ?? fallback;
+  return sanitizePackage(candidate, fallback);
 }
 
-function deriveAppName(basePackage: string): string {
-  const lastSegment = basePackage.split(".").filter(Boolean).at(-1) ?? "migrated-app";
-  return lastSegment.replace(/[^a-z0-9-]/gi, "-").toLowerCase() || "migrated-app";
+function deriveAppName(basePackage: string, fallback: string): string {
+  const lastSegment = basePackage.split(".").filter(Boolean).at(-1) ?? fallback;
+  return lastSegment.replace(/[^a-z0-9-]/gi, "-").toLowerCase() || fallback;
 }
 
-function applyTemplate(template: string, replacements: Record<string, string>): string {
-  return Object.entries(replacements).reduce(
-    (content, [from, to]) => content.replaceAll(from, to),
-    template,
-  );
+function className(appName: string, marker: string): string {
+  return `${appName.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join("")}${marker}`;
 }
 
-function ensureDir(dirPath: string): void {
-  fs.mkdirSync(dirPath, { recursive: true });
-}
-
-function maybeWriteFile(
-  filePath: string,
-  content: string,
-  workspaceRoot: string,
-  created: string[],
-  skipped: string[],
-): void {
-  if (fs.existsSync(filePath)) {
-    skipped.push(path.relative(workspaceRoot, filePath) || filePath);
-    return;
-  }
-  ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, content, "utf-8");
+function maybeWriteFile(filePath: string, content: string, workspaceRoot: string, created: string[], skipped: string[]): void {
+  if (fs.existsSync(filePath)) { skipped.push(path.relative(workspaceRoot, filePath) || filePath); return; }
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content, "utf8");
   created.push(path.relative(workspaceRoot, filePath) || filePath);
 }
 
-function templateNameFor(projectType: BootstrapProjectType): string {
-  switch (projectType) {
-    case "web":
-      return "build.gradle.web.template";
-    case "library":
-      return "build.gradle.library.template";
-    default:
-      return "build.gradle.service.template";
-  }
+function render(template: string, replacements: Array<[string, string]>): string {
+  return replacements.reduce((content, [marker, value]) => content.replaceAll(marker, value), template);
 }
 
-function hasAnyJavaSource(dirPath: string): boolean {
+function hasSource(dirPath: string, extension: string): boolean {
   if (!fs.existsSync(dirPath)) return false;
-  for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+  return fs.readdirSync(dirPath, { withFileTypes: true }).some((entry) => {
     const fullPath = path.join(dirPath, entry.name);
-    if (entry.isDirectory() && hasAnyJavaSource(fullPath)) return true;
-    if (entry.isFile() && entry.name.endsWith(".java")) return true;
-  }
-  return false;
+    return entry.isDirectory() ? hasSource(fullPath, extension) : entry.isFile() && entry.name.endsWith(extension);
+  });
 }
 
-export function isBootstrapComplete(
-  workspaceRoot: string,
-  projectType: BootstrapProjectType,
-): boolean {
+export function isBootstrapComplete(workspaceRoot: string, projectType: BootstrapProjectType): boolean {
+  const pack = activePack(workspaceRoot);
+  const scaffold = pack.manifest.scaffold;
   const modernRoot = path.join(workspaceRoot, "modern");
-  const buildExists =
-    fs.existsSync(path.join(modernRoot, "build.gradle")) ||
-    fs.existsSync(path.join(modernRoot, "pom.xml"));
-  const settingsExists = fs.existsSync(path.join(modernRoot, "settings.gradle"));
-  const mainJavaExists = fs.existsSync(path.join(modernRoot, "src", "main", "java"));
-  const testJavaExists = fs.existsSync(path.join(modernRoot, "src", "test", "java"));
-  if (!buildExists || !settingsExists || !mainJavaExists || !testJavaExists) return false;
-  if (projectType === "library") return true;
-
-  const resourcesFile = path.join(modernRoot, "src", "main", "resources", "application.yml");
-  return fs.existsSync(resourcesFile) && hasAnyJavaSource(path.join(modernRoot, "src", "main", "java"));
+  if (!fs.existsSync(path.join(modernRoot, scaffold.build_file)) || !fs.existsSync(path.join(modernRoot, scaffold.settings_file))) return false;
+  if (!fs.existsSync(path.join(modernRoot, scaffold.main_source_dir)) || !fs.existsSync(path.join(modernRoot, scaffold.test_source_dir))) return false;
+  if (projectType === scaffold.library_project_type) return true;
+  return fs.existsSync(path.join(modernRoot, scaffold.resources_dir, scaffold.resources_file))
+    && hasSource(path.join(modernRoot, scaffold.main_source_dir), scaffold.source_extension);
 }
 
 export function needsBootstrap(db: Database.Database, workspaceRoot = process.cwd()): boolean {
-  const projectType = detectBootstrapProjectType(listFirstClassArtifacts(db));
-  return !isBootstrapComplete(workspaceRoot, projectType);
+  const pack = activePack(workspaceRoot);
+  return !isBootstrapComplete(workspaceRoot, detectBootstrapProjectType(listFirstClassArtifacts(db), pack));
 }
 
-export function bootstrapTargetModule(
-  workspaceRoot: string,
-  artifacts: BootstrapArtifactSignal[],
-  assetsDir = getAssetsDir(workspaceRoot),
-): BootstrapResult {
-  if (!fs.existsSync(assetsDir)) {
-    throw new Error(`[guildctl] Bootstrap assets not found: ${assetsDir}`);
-  }
-
-  const projectType = detectBootstrapProjectType(artifacts);
-  const basePackage = deriveBootstrapBasePackage(artifacts);
-  const appName = deriveAppName(basePackage);
+export function bootstrapTargetModule(workspaceRoot: string, artifacts: BootstrapArtifactSignal[]): BootstrapResult {
+  const pack = activePack(workspaceRoot);
+  const scaffold = pack.manifest.scaffold;
+  const projectType = detectBootstrapProjectType(artifacts, pack);
+  const description = pack.manifest.project_types[projectType];
+  if (!description) throw new Error(`[guildctl] Project type not described by stack pack: ${projectType}`);
+  const basePackage = deriveBootstrapBasePackage(artifacts, scaffold.default_package);
+  const appName = deriveAppName(basePackage, scaffold.default_app_name);
+  const generatedClass = className(appName, scaffold.app_class_marker);
   const modernRoot = path.join(workspaceRoot, "modern");
   const packagePath = basePackage.replaceAll(".", path.sep);
   const created: string[] = [];
   const skipped: string[] = [];
-  const template = templateNameFor(projectType);
+  const template = path.basename(description.template);
+  const mainRoot = path.join(modernRoot, scaffold.main_source_dir, packagePath);
+  fs.mkdirSync(mainRoot, { recursive: true });
+  fs.mkdirSync(path.join(modernRoot, scaffold.test_source_dir, packagePath), { recursive: true });
+  if (projectType !== scaffold.library_project_type) fs.mkdirSync(path.join(modernRoot, scaffold.resources_dir), { recursive: true });
 
-  ensureDir(path.join(modernRoot, "src", "main", "java", packagePath));
-  ensureDir(path.join(modernRoot, "src", "test", "java", packagePath));
-  if (projectType !== "library") {
-    ensureDir(path.join(modernRoot, "src", "main", "resources"));
+  const buildTemplate = fs.readFileSync(path.join(pack.dir, description.template), "utf8");
+  maybeWriteFile(path.join(modernRoot, scaffold.build_file), render(buildTemplate, [[scaffold.group_marker, basePackage]]), workspaceRoot, created, skipped);
+  const settingsTemplate = fs.readFileSync(path.join(pack.dir, scaffold.settings_template), "utf8");
+  maybeWriteFile(path.join(modernRoot, scaffold.settings_file), render(settingsTemplate, [[scaffold.app_name_marker, appName]]), workspaceRoot, created, skipped);
+  if (projectType !== scaffold.library_project_type) {
+    const resourcesTemplate = fs.readFileSync(path.join(pack.dir, scaffold.resources_template), "utf8");
+    maybeWriteFile(path.join(modernRoot, scaffold.resources_dir, scaffold.resources_file), render(resourcesTemplate, [[scaffold.app_name_marker, appName]]), workspaceRoot, created, skipped);
+    const applicationTemplate = fs.readFileSync(path.join(pack.dir, scaffold.application_template), "utf8");
+    const rendered = render(applicationTemplate, [[scaffold.package_marker, basePackage], [scaffold.app_class_marker, generatedClass]]);
+    maybeWriteFile(path.join(mainRoot, `${generatedClass}${scaffold.source_extension}`), rendered, workspaceRoot, created, skipped);
   }
-
-  const buildTemplate = fs.readFileSync(path.join(assetsDir, template), "utf-8");
-  maybeWriteFile(
-    path.join(modernRoot, "build.gradle"),
-    applyTemplate(buildTemplate, { "group = 'com.example'": `group = '${basePackage}'` }),
-    workspaceRoot,
-    created,
-    skipped,
-  );
-
-  maybeWriteFile(
-    path.join(modernRoot, "settings.gradle"),
-    `rootProject.name = '${appName}'\n`,
-    workspaceRoot,
-    created,
-    skipped,
-  );
-
-  if (projectType !== "library") {
-    maybeWriteFile(
-      path.join(modernRoot, "src", "main", "resources", "application.yml"),
-      "spring:\n  application:\n    name: " + appName + "\n",
-      workspaceRoot,
-      created,
-      skipped,
-    );
-  }
-
-  const appClassName = `${appName
-    .split("-")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join("")}Application`;
-  const appFile = path.join(modernRoot, "src", "main", "java", packagePath, `${appClassName}.java`);
-
-  if (projectType !== "library") {
-    maybeWriteFile(
-      appFile,
-      `package ${basePackage};
-
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-
-@SpringBootApplication
-public class ${appClassName} {
-
-    public static void main(String[] args) {
-        SpringApplication.run(${appClassName}.class, args);
-    }
-}
-`,
-      workspaceRoot,
-      created,
-      skipped,
-    );
-  }
-
-  return {
-    projectType,
-    template,
-    moduleRoot: modernRoot,
-    basePackage,
-    appName,
-    created,
-    skipped,
-  };
+  return { projectType, template, moduleRoot: modernRoot, basePackage, appName, created, skipped };
 }
 
-export async function runBootstrap(
-  db: Database.Database,
-  workspaceRoot = process.cwd(),
-): Promise<BootstrapResult> {
+export async function runBootstrap(db: Database.Database, workspaceRoot = process.cwd()): Promise<BootstrapResult> {
   printPhaseHeader("Phase 3 · Bootstrap");
+  const pack = activePack(workspaceRoot);
   const artifacts = listFirstClassArtifacts(db);
-  const projectType = detectBootstrapProjectType(artifacts);
-
+  const projectType = detectBootstrapProjectType(artifacts, pack);
+  const basePackage = deriveBootstrapBasePackage(artifacts, pack.manifest.scaffold.default_package);
   if (!needsBootstrap(db, workspaceRoot)) {
-    const modernRoot = path.join(workspaceRoot, "modern");
-    const result: BootstrapResult = {
-      projectType,
-      template: templateNameFor(projectType),
-      moduleRoot: modernRoot,
-      basePackage: deriveBootstrapBasePackage(artifacts),
-      appName: deriveAppName(deriveBootstrapBasePackage(artifacts)),
-      created: [],
-      skipped: ["modern/ (already scaffolded)"],
-    };
+    const result: BootstrapResult = { projectType, template: path.basename(pack.manifest.project_types[projectType]!.template), moduleRoot: path.join(workspaceRoot, "modern"), basePackage, appName: deriveAppName(basePackage, pack.manifest.scaffold.default_app_name), created: [], skipped: ["modern/ (already scaffolded)"] };
     console.log("  Target module already looks bootstrapped — skipping.\n");
     return result;
   }
-
   const result = bootstrapTargetModule(workspaceRoot, artifacts);
-  console.log(`  Project type: ${result.projectType}`);
-  console.log(`  Base package: ${result.basePackage}`);
-  console.log(`  App name:     ${result.appName}\n`);
-
-  if (result.created.length > 0) {
-    console.log("  Created:");
-    for (const file of result.created) console.log(`    + ${file}`);
-    console.log();
-  }
-
-  if (result.skipped.length > 0) {
-    console.log("  Skipped:");
-    for (const file of result.skipped) console.log(`    - ${file}`);
-    console.log();
-  }
-
+  console.log(`  Project type: ${result.projectType}\n  Base package: ${result.basePackage}\n  App name:     ${result.appName}\n`);
+  if (result.created.length) { console.log("  Created:"); result.created.forEach((file) => console.log(`    + ${file}`)); console.log(); }
+  if (result.skipped.length) { console.log("  Skipped:"); result.skipped.forEach((file) => console.log(`    - ${file}`)); console.log(); }
   console.log("  ✓ Bootstrap complete\n");
   return result;
 }

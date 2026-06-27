@@ -1,9 +1,3 @@
-// Default: plain Spring Boot (no web server). Replace with the appropriate
-// template variant based on project type:
-//   build.gradle.web.template     — Spring Boot web/REST app
-//   build.gradle.service.template — Spring Boot batch/CLI/service (this default)
-//   build.gradle.library.template — Plain Java library (no Spring Boot)
-
 plugins {
     id 'java'
     id 'org.springframework.boot' version '3.3.0'

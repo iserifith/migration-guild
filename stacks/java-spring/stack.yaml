@@ -1,0 +1,71 @@
+id: java-spring
+display_name: Java / Spring Boot 3
+detect:
+  markers: [pom.xml, build.gradle, build.gradle.kts, "**/*.java"]
+source_globs: ["**/*.java"]
+manifest_globs: ["**/pom.xml", "**/build.gradle", "**/build.gradle.kts"]
+dependency_parsers:
+  - match: pom.xml
+    pattern: '<dependency>\s*<groupId>([^<]+)</groupId>\s*<artifactId>([^<]+)</artifactId>(?:\s*<version>([^<]+)</version>)?'
+    flags: gms
+  - match: build.gradle
+    pattern: '(?:implementation|api|compileOnly|runtimeOnly|testImplementation|testCompile)\s*\(?\s*["'']([^:''"]+):([^:''"]+):([^''"]+)["'']'
+    flags: g
+  - match: build.gradle.kts
+    pattern: '(?:implementation|api|compileOnly|runtimeOnly|testImplementation|testCompile)\s*\(?\s*["'']([^:''"]+):([^:''"]+):([^''"]+)["'']'
+    flags: g
+test_framework: junit5
+project_types:
+  web:
+    template: scaffold/build.gradle.web.template
+    any:
+      roles: [rest-endpoint]
+      frameworks: [jax-rs, servlet, spring-mvc, spring-web]
+      paths: [/web/, /controller/]
+  library:
+    template: scaffold/build.gradle.library.template
+    all_roles: [utility, model, transformer, interface, test]
+  service:
+    template: scaffold/build.gradle.service.template
+audit:
+  rules_file: audit.rules.yaml
+  external_probes:
+    - name: jdeps
+      cmd: jdeps
+      availability_args: [--version]
+      args: ["{target}"]
+      targets: [target/classes, build/classes, build/classes/java/main]
+      target_suffixes: ["**/*.jar"]
+      available_note: Compiled classes or jars are available for optional JDK dependency inspection.
+      fallback_note: No compiled classes or jars found under legacy/; source-scan heuristics were used instead.
+    - name: jdeprscan
+      cmd: jdeprscan
+      availability_args: [--version]
+      args: ["{target}"]
+      targets: [target/classes, build/classes, build/classes/java/main]
+      target_suffixes: ["**/*.jar"]
+      available_note: Compiled classes or jars are available for optional deprecation inspection.
+      fallback_note: No compiled classes or jars found under legacy/; source-scan heuristics were used instead.
+instructions:
+  classify: classify.md
+  mappings: mappings.md
+  tests: test-convention.md
+scaffold:
+  default_project_type: service
+  library_project_type: library
+  source_extension: .java
+  default_package: com.example.migrated
+  default_app_name: migrated-app
+  main_source_dir: src/main/java
+  test_source_dir: src/test/java
+  resources_dir: src/main/resources
+  resources_file: application.yml
+  build_file: build.gradle
+  settings_file: settings.gradle
+  application_template: scaffold/Application.java.template
+  settings_template: scaffold/settings.gradle.template
+  resources_template: scaffold/application.yml.template
+  package_marker: com.example.migrated
+  app_name_marker: migrated-app
+  app_class_marker: Application
+  group_marker: com.example

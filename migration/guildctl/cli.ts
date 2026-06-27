@@ -33,6 +33,7 @@ import {
 } from "./config";
 import { collectInitEvidence, createRunLedger, renderPrompt, scaffoldDefaultPrompts } from "./workspace";
 import { checkHarness, resolveHarness } from "./harness";
+import { detectStack, loadStackPack } from "./stack";
 
 const program = new Command();
 
@@ -61,8 +62,13 @@ program
   .command("init")
   .description("Scaffold .guild/config.yaml, prompt pack, runs, evidence, and .env.example")
   .option("--force", "Overwrite existing generated Guild config/prompts")
+  .option("--stack <id>", "Select a stack pack instead of auto-detecting legacy/")
   .action((opts) => {
     const configPath = scaffoldGuildConfig(process.cwd(), Boolean(opts.force));
+    const stack = opts.stack ? loadStackPack(String(opts.stack), process.cwd()).manifest.id : detectStack(process.cwd());
+    const raw = readGuildConfig(configPath);
+    raw["stack"] = stack;
+    writeGuildConfig(raw, configPath);
     const cfg = resolveGuildConfig({ cwd: process.cwd(), profile: program.opts()["profile"] as string | undefined });
     scaffoldDefaultPrompts(cfg);
     process.stdout.write(`✓ Guild config ready: ${configPath}\n`);
