@@ -46,7 +46,8 @@ var GITHUB_MAPPINGS = {
 var ROOT_MAPPINGS = {
   legacy: path.join(CWD, "legacy"),
   modern: path.join(CWD, "modern"),
-  tools: path.join(CWD, "migration")
+  tools: path.join(CWD, "migration"),
+  harness: path.join(CWD, "harness")
 };
 var FRAMEWORKS = [
   { label: "Spring Boot 3.x", value: "Spring Boot 3.x" },
@@ -103,6 +104,12 @@ async function runUpdate() {
     console.log(`  migration/`);
     toolFiles.forEach((f) => console.log(`    \u21BA ${f}`));
     total += toolFiles.length;
+  }
+  total += copyDir(path.join(PKG_DIR, "harness"), ROOT_MAPPINGS.harness).length;
+  const copilotShim = path.join(PKG_DIR, "agent-shim.mjs");
+  if (fs.existsSync(copilotShim)) {
+    fs.copyFileSync(copilotShim, path.join(CWD, "agent-shim.mjs"));
+    total++;
   }
   console.log(`
 Done. ${total} file(s) updated.`);
@@ -177,7 +184,7 @@ async function runInstall() {
     console.log(`    + ${path.relative(CWD, instructionsDest)}`);
     total++;
   }
-  for (const f of [".env.example", "guildctl.config.json"]) {
+  for (const f of [".env.example", "guildctl.config.json", "agent-shim.mjs"]) {
     const src = path.join(PKG_DIR, f);
     const dest = path.join(CWD, f);
     if (fs.existsSync(src) && !fs.existsSync(dest)) {

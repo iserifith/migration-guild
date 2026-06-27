@@ -6,6 +6,7 @@ export type JsonMap = Record<string, unknown>;
 
 export interface GuildConfig {
   version: number;
+  harness: string;
   workspace: { name: string; root: string };
   model: { model: string; base_url?: string | null; api_key_env?: string | null; context_length?: number };
   agents: Record<string, JsonMap>;
@@ -25,6 +26,7 @@ export interface ResolvedGuildConfig extends GuildConfig {
 
 export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   version: 1,
+  harness: "codex",
   workspace: { name: "migration-guild-workspace", root: "." },
   model: {
     model: "deepseek-v4-pro",
