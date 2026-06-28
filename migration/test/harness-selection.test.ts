@@ -6,14 +6,23 @@ import test from "node:test";
 import { DEFAULT_GUILD_CONFIG } from "../guildctl/config";
 import { checkHarness, resolveHarness } from "../guildctl/harness";
 
-test("codex is the default bundled harness and AGENT_CMD overrides it", () => {
+test("opencode is the default bundled harness and AGENT_CMD overrides it", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "harness-selection-"));
   fs.mkdirSync(path.join(root, "package", "harness"), { recursive: true });
-  fs.writeFileSync(path.join(root, "package", "harness", "codex.mjs"), "");
+  fs.writeFileSync(path.join(root, "package", "harness", "opencode.mjs"), "");
   const selected = resolveHarness(DEFAULT_GUILD_CONFIG, root, {});
+  assert.equal(selected.name, "opencode");
+  assert.equal(selected.command, path.join(root, "package", "harness", "opencode.mjs"));
+  assert.equal(resolveHarness(DEFAULT_GUILD_CONFIG, root, { AGENT_CMD: "/tmp/custom-agent" }).command, "/tmp/custom-agent");
+});
+
+test("codex remains selectable for responses-API providers", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "harness-selection-codex-"));
+  fs.mkdirSync(path.join(root, "package", "harness"), { recursive: true });
+  fs.writeFileSync(path.join(root, "package", "harness", "codex.mjs"), "");
+  const selected = resolveHarness({ ...DEFAULT_GUILD_CONFIG, harness: "codex" }, root, {});
   assert.equal(selected.name, "codex");
   assert.equal(selected.command, path.join(root, "package", "harness", "codex.mjs"));
-  assert.equal(resolveHarness(DEFAULT_GUILD_CONFIG, root, { AGENT_CMD: "/tmp/custom-agent" }).command, "/tmp/custom-agent");
 });
 
 test("doctor harness check flags a missing selected command", () => {

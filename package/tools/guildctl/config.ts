@@ -28,7 +28,7 @@ export interface ResolvedGuildConfig extends GuildConfig {
 export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   version: 1,
   stack: "java-spring",
-  harness: "codex",
+  harness: "opencode",
   workspace: { name: "migration-guild-workspace", root: "." },
   model: {
     model: "deepseek-v4-pro",

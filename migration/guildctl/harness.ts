@@ -21,14 +21,17 @@ export function resolveHarness(config: GuildConfig, root: string, env: NodeJS.Pr
     return { name: "custom", command: env.AGENT_CMD, targetCommand: env.AGENT_CMD, source: "environment" };
   }
 
-  const name = config.harness || "codex";
+  const name = config.harness || "opencode";
+  if (name === "opencode") {
+    return { name, command: bundledFile(root, path.join("harness", "opencode.mjs")), targetCommand: "opencode", source: "config" };
+  }
   if (name === "codex") {
     return { name, command: bundledFile(root, path.join("harness", "codex.mjs")), targetCommand: "codex", source: "config" };
   }
   if (name === "copilot") {
     return { name, command: bundledFile(root, "agent-shim.mjs"), targetCommand: "copilot", source: "config" };
   }
-  throw new Error(`Unknown harness "${name}". Supported bundled harnesses: codex, copilot. Use AGENT_CMD for a custom harness.`);
+  throw new Error(`Unknown harness "${name}". Supported bundled harnesses: opencode, codex, copilot. Use AGENT_CMD for a custom harness.`);
 }
 
 export function checkHarness(resolution: HarnessResolution): { ok: boolean; message: string } {
