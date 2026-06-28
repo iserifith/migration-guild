@@ -62,6 +62,8 @@ function copyWorkspace(kitRoot: string, fixture: string, mode: string): string {
   fs.cpSync(fixturePath, path.join(root, "legacy"), { recursive: true });
   fs.mkdirSync(path.join(root, "modern"), { recursive: true });
   fs.cpSync(path.join(kitRoot, "package", "tools"), path.join(root, "migration"), { recursive: true });
+  fs.cpSync(path.join(kitRoot, "package", "harness"), path.join(root, "harness"), { recursive: true });
+  fs.cpSync(path.join(kitRoot, "stacks"), path.join(root, "stacks"), { recursive: true });
   fs.cpSync(path.join(kitRoot, "package", "agents"), path.join(root, ".github", "agents"), { recursive: true });
   fs.cpSync(path.join(kitRoot, "package", "skills"), path.join(root, ".github", "skills"), { recursive: true });
   fs.cpSync(path.join(kitRoot, "package", "agent-instructions.md"), path.join(root, ".github", "agent-instructions.md"));
@@ -76,10 +78,19 @@ function copyWorkspace(kitRoot: string, fixture: string, mode: string): string {
 }
 
 function executeCli(workspace: string, args: string[]): void {
-  const result = spawnSync(process.execPath, ["--import", "tsx", "migration/guildctl/cli.ts", ...args], {
+  // Run the workspace's own tsx (node_modules is symlinked in) and pin the
+  // workspace root explicitly — the source layout's __dirname fallback would
+  // otherwise overshoot when running cli.ts (not the built dist/).
+  const tsxBin = path.join(workspace, "migration", "node_modules", ".bin", "tsx");
+  const result = spawnSync(tsxBin, ["migration/guildctl/cli.ts", ...args], {
     cwd: workspace,
     stdio: "inherit",
-    env: { ...process.env, REGISTRY_DB: path.join(workspace, "migration", "registry.db"), GUILDCTL_AUTO_CONFIRM_MAPPINGS: "1" },
+    env: {
+      ...process.env,
+      GUILD_WORKSPACE: workspace,
+      REGISTRY_DB: path.join(workspace, "migration", "registry.db"),
+      GUILDCTL_AUTO_CONFIRM_MAPPINGS: "1",
+    },
   });
   if (result.status !== 0) throw new Error(`Benchmark phase failed: guildctl ${args.join(" ")}`);
 }

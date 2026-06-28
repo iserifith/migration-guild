@@ -43,6 +43,7 @@ const ROOT_MAPPINGS: Record<string, string> = {
   modern: path.join(CWD, "modern"),
   tools:  path.join(CWD, "migration"),
   harness: path.join(CWD, "harness"),
+  stacks: path.join(CWD, "stacks"),
 };
 
 const FRAMEWORKS = [
@@ -107,6 +108,7 @@ async function runUpdate() {
     total += toolFiles.length;
   }
   total += copyDir(path.join(PKG_DIR, "harness"), ROOT_MAPPINGS.harness).length;
+  total += copyDir(path.join(PKG_DIR, "stacks"), ROOT_MAPPINGS.stacks).length;
   const copilotShim = path.join(PKG_DIR, "agent-shim.mjs");
   if (fs.existsSync(copilotShim)) {
     fs.copyFileSync(copilotShim, path.join(CWD, "agent-shim.mjs"));
