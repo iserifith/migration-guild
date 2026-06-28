@@ -2,10 +2,19 @@
 import * as path from "path";
 import * as fs from "fs";
 import { execFileSync } from "child_process";
-// Auto-load .env from project root (my-migration/) — works regardless of CWD
-// so users don't need to `set -a && source .env && set +a` before every command.
+// Auto-load .env from the workspace root, regardless of CWD, so users don't
+// need to `set -a && source .env && set +a`. Try several candidates: the
+// current directory (where the user runs), plus the CLI install location for
+// both source (migration/guildctl/cli.ts) and built (…/guildctl/dist) layouts.
+// dotenv does not override already-set vars, so earlier candidates win.
 import { config as dotenvConfig } from "dotenv";
-dotenvConfig({ path: path.resolve(__dirname, "..", "..", "..", ".env"), quiet: true });
+for (const candidate of [
+  path.resolve(process.cwd(), ".env"),
+  path.resolve(__dirname, "..", "..", "..", ".env"),
+  path.resolve(__dirname, "..", "..", ".env"),
+]) {
+  if (fs.existsSync(candidate)) dotenvConfig({ path: candidate, quiet: true });
+}
 
 import { Command } from "commander";
 import { getDb } from "../registry/db/connection";
