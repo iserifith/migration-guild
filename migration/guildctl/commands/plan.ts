@@ -6,6 +6,7 @@ import { printPhaseHeader, printEvent, printWavePlan } from "../dashboard";
 import { getLogDir } from "../util";
 import { resolveGuildConfig, resolvePhaseModel, resolveWorkspaceRoot } from "../config";
 import { setNext } from "../../registry/commands/operator";
+import { approveDependencyStrategy } from "../../registry/commands/modernization";
 import { refreshCompatibilityAudits } from "../audit";
 import { loadActiveStack, readStackInstruction } from "../stack";
 import { evaluatePlanningReadiness, formatPlanningBlockMessage } from "../readiness";
@@ -168,6 +169,24 @@ export async function runPlan(
     if (unconfirmed.length > 0) {
       await confirmMappings(db, mappings);
     }
+  }
+
+  // Benchmark/non-interactive auto-approval of dependency strategies, mirroring
+  // GUILDCTL_AUTO_CONFIRM_MAPPINGS — keeps the unattended guild pipeline moving
+  // through the modernization gate the way an operator would.
+  if (process.env["GUILDCTL_AUTO_APPROVE_DEPENDENCIES"] === "1") {
+    const unresolved = evaluatePlanningReadiness(db).unresolvedDependencyFindings;
+    for (const finding of unresolved) {
+      const target = (finding.target_hint ?? "").trim();
+      approveDependencyStrategy(db, {
+        findingId: finding.finding_id,
+        strategy: target ? "upgrade" : "remove",
+        targetDependency: target || undefined,
+        rationale: "Auto-approved for benchmark run",
+        approvedBy: "benchmark-runner",
+      });
+    }
+    if (unresolved.length) process.stdout.write(`  ✓ Auto-approved ${unresolved.length} dependency strategy(ies) for benchmark\n`);
   }
 
   const readiness = evaluatePlanningReadiness(db);

@@ -90,6 +90,7 @@ function executeCli(workspace: string, args: string[]): void {
       GUILD_WORKSPACE: workspace,
       REGISTRY_DB: path.join(workspace, "migration", "registry.db"),
       GUILDCTL_AUTO_CONFIRM_MAPPINGS: "1",
+      GUILDCTL_AUTO_APPROVE_DEPENDENCIES: "1",
     },
   });
   if (result.status !== 0) throw new Error(`Benchmark phase failed: guildctl ${args.join(" ")}`);
