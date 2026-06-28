@@ -12,7 +12,7 @@
 // @ai-sdk/openai-compatible, so it works with non-OpenAI providers.
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync, mkdtempSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdtempSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -97,4 +97,15 @@ export function main(argv = process.argv.slice(2)) {
   });
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+// Run main() when invoked directly. Compare real paths so symlinked temp dirs
+// (macOS /var → /private/var) don't make this guard silently false — that would
+// load the module without running anything (a 0-output, exit-0 no-op).
+function isDirectRun() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+if (isDirectRun()) main();
