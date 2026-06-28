@@ -55,6 +55,26 @@ export function runBenchmarkCompare(db: Database.Database, opts: BenchmarkCompar
   process.stdout.write(`- total_cost_usd delta: ${comparison.deltas.total_cost_usd ?? "n/a"}\n`);
 }
 
+function ensureToolsBuilt(kitRoot: string): void {
+  // Agents invoke `node migration/registry/dist/cli.js`; that dist is built from
+  // package/tools (which copyWorkspace copies into each workspace) by tsup.
+  // Build it once with the repo's tsup so the agents can read/update the registry.
+  const tsupBin = path.join(kitRoot, "node_modules", ".bin", "tsup");
+  if (!fs.existsSync(tsupBin)) {
+    throw new Error("tsup not found at repo root — run `npm install` at the repo root before benchmarking.");
+  }
+  process.stdout.write("Building tools (registry/guildctl dist) for agent workspaces...\n");
+  spawnSync(tsupBin, [], { cwd: path.join(kitRoot, "package", "tools"), stdio: "inherit" });
+  // Gate on the actual outputs the agents need, not tsup's exit code (a non-fatal
+  // dts/sourcemap warning shouldn't abort the run if the CLIs were emitted).
+  const required = [
+    path.join(kitRoot, "package", "tools", "registry", "dist", "cli.js"),
+    path.join(kitRoot, "package", "tools", "guildctl", "dist", "cli.js"),
+  ];
+  const missing = required.filter((file) => !fs.existsSync(file));
+  if (missing.length) throw new Error(`tsup did not produce required CLI(s): ${missing.join(", ")}`);
+}
+
 function copyWorkspace(kitRoot: string, fixture: string, mode: string): string {
   const fixturePath = path.join(kitRoot, "package", "mock", fixture);
   if (!fs.existsSync(fixturePath)) throw new Error(`Unknown benchmark fixture: ${fixture}`);
@@ -175,6 +195,7 @@ export async function runBenchmarkRun(db: Database.Database, opts: BenchmarkRunO
   const requested = opts.mode ?? "both";
   if (!(["guild", "baseline", "both"] as string[]).includes(requested)) throw new Error("Benchmark mode must be guild, baseline, or both");
   const kitRoot = path.resolve(__dirname, "..", "..", "..");
+  ensureToolsBuilt(kitRoot);
   const modes: Array<"baseline" | "guild"> = requested === "both" ? ["baseline", "guild"] : [requested];
   const recorded: Partial<Record<"baseline" | "guild", BenchmarkRun>> = {};
   for (const mode of modes) {

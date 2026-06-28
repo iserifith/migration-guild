@@ -8,7 +8,7 @@ export default defineConfig([
     },
     outDir: "registry/dist",
     format: ["cjs"],
-    dts: true,
+    dts: false,
     clean: true,
     sourcemap: true,
   },
