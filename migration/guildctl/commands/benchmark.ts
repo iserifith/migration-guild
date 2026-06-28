@@ -97,23 +97,37 @@ function copyWorkspace(kitRoot: string, fixture: string, mode: string): string {
   return root;
 }
 
+function sleepMs(ms: number): void {
+  try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch { /* best effort */ }
+}
+
 function executeCli(workspace: string, args: string[]): void {
   // Run the workspace's own tsx (node_modules is symlinked in) and pin the
   // workspace root explicitly — the source layout's __dirname fallback would
   // otherwise overshoot when running cli.ts (not the built dist/).
   const tsxBin = path.join(workspace, "migration", "node_modules", ".bin", "tsx");
-  const result = spawnSync(tsxBin, ["migration/guildctl/cli.ts", ...args], {
-    cwd: workspace,
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      GUILD_WORKSPACE: workspace,
-      REGISTRY_DB: path.join(workspace, "migration", "registry.db"),
-      GUILDCTL_AUTO_CONFIRM_MAPPINGS: "1",
-      GUILDCTL_AUTO_APPROVE_DEPENDENCIES: "1",
-    },
-  });
-  if (result.status !== 0) throw new Error(`Benchmark phase failed: guildctl ${args.join(" ")}`);
+  const env = {
+    ...process.env,
+    GUILD_WORKSPACE: workspace,
+    REGISTRY_DB: path.join(workspace, "migration", "registry.db"),
+    GUILDCTL_AUTO_CONFIRM_MAPPINGS: "1",
+    GUILDCTL_AUTO_APPROVE_DEPENDENCIES: "1",
+  };
+  // Agent calls go to a remote model and occasionally fail transiently
+  // (rate-limit / dropped stream). Retry the phase a few times so a single
+  // flake doesn't abort a long unattended run; phases are claim-based and
+  // resume from where they left off.
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const result = spawnSync(tsxBin, ["migration/guildctl/cli.ts", ...args], { cwd: workspace, stdio: "inherit", env });
+    if (result.status === 0) return;
+    if (attempt < maxAttempts) {
+      process.stdout.write(`  ⚠ phase \`${args.join(" ")}\` exited ${result.status ?? "null"} (attempt ${attempt}/${maxAttempts}); retrying in 5s...\n`);
+      sleepMs(5000);
+    } else {
+      throw new Error(`Benchmark phase failed after ${maxAttempts} attempts: guildctl ${args.join(" ")}`);
+    }
+  }
 }
 
 function executeMode(kitRoot: string, fixture: string, mode: "guild" | "baseline"): { workspace: string; startedAt: string; finishedAt: string; elapsedMs: number } {
