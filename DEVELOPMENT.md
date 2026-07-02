@@ -36,8 +36,7 @@ The distributable kit is built from **`package/` plus selected top-level docs an
 - `README.md`
 - `GETTING-STARTED.md`
 - `AGENTS.md`
-- `docs/`
-- `package/` without source-only clutter such as `node_modules`, raw TypeScript, local `.env`, or repo-only working trees
+- `package/` without source-only clutter such as `node_modules`, raw TypeScript, local `.env`, repo-only working trees, or maintainer-only architecture notes
 
 Important consequence:
 
@@ -50,7 +49,7 @@ Important consequence:
 
 - `README.md` — user-facing overview
 - `GETTING-STARTED.md` — setup and first-run guide
-- `docs/` — deeper architecture and Agent customization reference material
+- External maintainer-only notes — deeper architecture and agent customization reference material kept outside public repository history
 - `DEVELOPMENT.md` — maintainer workflow and packaging rules
 - `CHANGELOGS.MD` — repository-level change log for ongoing development
 
@@ -164,13 +163,13 @@ Environment knobs introduced for migration pool reliability:
 - `GUILDCTL_CODE_TIMEOUT_MINS`
 - `GUILDCTL_CLAIM_LEASE_MINS`
 
-If any of the above semantics change, update both maintainer docs (`DEVELOPMENT.md`, `CHANGELOGS.MD`) and the user-facing runtime architecture docs under `docs/`.
+If any of the above semantics change, update both maintainer docs (`DEVELOPMENT.md`, `CHANGELOGS.MD`) and any external maintainer-only runtime architecture notes.
 
 ## Docs expectations for this repo
 
 Use docs by audience:
 
-- **Users of the kit** → `README.md`, `GETTING-STARTED.md`, `docs/`
+- **Users of the kit** → `README.md`, `GETTING-STARTED.md`
 - **Maintainers of the kit** → `DEVELOPMENT.md`, `CHANGELOGS.MD`
 
 When a change affects maintainer workflow, packaging, source-of-truth boundaries, or repo-local automation, capture it in `DEVELOPMENT.md`.

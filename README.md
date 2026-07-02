@@ -315,9 +315,7 @@ node migration/guildctl/dist/cli.js evidence list --artifact <id>
 node migration/guildctl/dist/cli.js arbitrate --artifact <id> --approve --arbiter reviewer --reason "Evidence accepted"
 ```
 
-For the registry model, phase orchestration, worker spawning, failure handling, and recovery flow, see [docs/how-guildctl-works.md](docs/how-guildctl-works.md).
-
-For the Builder → Critic → Arbiter demo flow, see [docs/agent-society-demo-script.md](docs/agent-society-demo-script.md).
+The registry model, phase orchestration, worker spawning, failure handling, recovery flow, and Builder → Critic → Arbiter demo are maintained outside the public repository history.
 
 ---
 

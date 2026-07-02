@@ -11,5 +11,4 @@ ui-dist/
 migration/logs/
 .guild/
 temp/
-docs/presentation
 .test-workspace

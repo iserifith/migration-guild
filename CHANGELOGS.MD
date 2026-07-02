@@ -2,7 +2,7 @@
 
 This file tracks **development changes to the kit repository itself**.
 
-It is intended for maintainers, not migration-workspace users. User-facing setup and behavior docs belong in `README.md`, `GETTING-STARTED.md`, and `docs/`. Date headings inside `Unreleased` group development batches; they are not release dates.
+It is intended for maintainers, not migration-workspace users. User-facing setup and behavior docs belong in `README.md` and `GETTING-STARTED.md`. Date headings inside `Unreleased` group development batches; they are not release dates.
 
 ## Unreleased
 

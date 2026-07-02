@@ -34,7 +34,6 @@ package/
   instructions/                # shipped path-scoped instructions
   agent-instructions.md      # shipped repo/workspace instructions
 migration/                     # live development copy of shipped CLIs
-docs/                          # local copies of official agent CLI docs
 ```
 
 ### Source of truth
