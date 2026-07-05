@@ -23,11 +23,15 @@ function registerFirstClassArtifact(
   id: string,
   status: "pending" | "planned" = "pending",
 ): void {
+  const moduleName = id.split(":")[1] ?? "com.acme";
   registerArtifact(db, {
     id,
     kind: "legacy-source",
-    path: `legacy/src/main/java/${id.replaceAll(":", "/")}.java`,
+    path: `legacy/src/main/java/${moduleName.replaceAll(".", "/")}/${id.split(":")[2]}.java`,
     tier: "first-class",
+    module: moduleName,
+    role: "service",
+    framework: "plain-java",
   });
   if (status !== "pending") {
     setArtifactStatus(db, id, status);

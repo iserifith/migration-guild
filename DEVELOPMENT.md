@@ -145,6 +145,33 @@ When runtime claim/run behavior changes, keep these pairs aligned in the same co
 
 For Agent artifacts, `package/` is the shipped source of truth and root `.github/` is repo-only maintainer context. Do not reintroduce mirrored runtime copies under root `.github/`.
 
+## Inventory classification quality contract
+
+Stack packs must provide a structured `classification.yaml` and reference it from `stack.yaml` with `classification_spec: classification.yaml`.
+
+Required fields:
+
+- `frameworks.allowed`: canonical source framework identifiers accepted in the registry.
+- `frameworks.aliases`: normalization map for human/model variants.
+- `frameworks.fallback`: canonical no-evidence fallback. Java uses `plain-java`; never use broad `Java-EE` as fallback.
+- `frameworks.ambiguous`: canonical value for equal-precedence conflicting evidence.
+- `roles.allowed`: registry role vocabulary only; do not invent stack-specific roles like `servlet`.
+- `signals`: deterministic source/path regex signals with `framework`, `role`, `priority`, `confidence`, and human-readable `evidence`.
+- `quality.fallback_max_percentage`: concentration threshold for large inventories.
+- `tags.generic` / `tags.meaningful`: lifecycle tags such as `analyzed` are generic and do not count as classification evidence.
+
+Runtime contract:
+
+- `guildctl` owns source scanning and first-class artifact registration.
+- The context agent classifies that expected ID set only; it must not register extras unless a future orchestrator explicitly delegates second-class discovery.
+- Classifications should be submitted via `registry batch-classify --file <json>`.
+- `batch-classify` validates all rows before mutation, rejects duplicates/unknown IDs/unsupported frameworks/unsupported roles/missing evidence, supports `--dry-run`, and applies accepted records transactionally.
+- The agent must run `registry mark-inventory-complete` after successful batch application. Exit code zero alone is not completion evidence.
+- `guildctl run inventory` runs validation and refuses to print `Inventory complete` when quality fails.
+- `guildctl run plan` independently re-runs the inventory-quality gate before stack-advisor/planner work.
+
+Existing workspaces should run `node migration/registry/dist/cli.js migrate` (or rerun any guildctl phase, which applies schema idempotently) to create `artifact_classifications`, then rerun inventory so classifications are normalized under the active stack pack.
+
 ## Claim lease and run lifecycle notes
 
 Recent runtime behavior depends on lease-backed claims and run-linked ownership.

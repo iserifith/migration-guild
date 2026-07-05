@@ -15,6 +15,7 @@ dependency_parsers:
     pattern: '(?:implementation|api|compileOnly|runtimeOnly|testImplementation|testCompile)\s*\(?\s*["'']([^:''"]+):([^:''"]+):([^''"]+)["'']'
     flags: g
 test_framework: junit5
+classification_spec: classification.yaml
 project_types:
   web:
     template: scaffold/build.gradle.web.template

@@ -1,6 +1,11 @@
 #!/usr/bin/env node
+import fs from "fs";
 import { Command } from "commander";
 import { getDb } from "./db/connection";
+import { applyBatchClassification } from "../guildctl/classification";
+import { resolveGuildConfig, resolveWorkspaceRoot } from "../guildctl/config";
+import { loadActiveStack } from "../guildctl/stack";
+import { loadClassificationSpec } from "../guildctl/classification";
 import { applySchema } from "./db/schema";
 import { RegistryError } from "./types";
 import type { Agent, ArtifactTier, EventType, Kind, MappingStrategy, Relation, Role, Status } from "./types";
@@ -185,6 +190,31 @@ program
       tier: opts.tier as ArtifactTier | undefined,
     })),
   );
+
+program
+  .command("batch-classify")
+  .description("Validate and atomically apply structured inventory classifications from JSON")
+  .requiredOption("--file <path>", "JSON file containing an array of classification records or {records: [...]}")
+  .option("--dry-run", "Validate and print accepted records without mutating")
+  .action((opts) => run(() => {
+    const workspaceRoot = resolveWorkspaceRoot();
+    const cfg = resolveGuildConfig({ cwd: workspaceRoot });
+    const spec = loadClassificationSpec(loadActiveStack(cfg, workspaceRoot));
+    const raw = JSON.parse(fs.readFileSync(opts.file, "utf8"));
+    const records = Array.isArray(raw) ? raw : raw.records;
+    if (!Array.isArray(records)) throw new RegistryError(1, "batch-classify JSON must be an array or an object with records array");
+    return applyBatchClassification(db(), spec, records, { dryRun: Boolean(opts.dryRun) });
+  }));
+
+program
+  .command("mark-inventory-complete")
+  .description("Record explicit inventory phase completion evidence after a successful batch classification")
+  .action(() => run(() => {
+    db().prepare(`
+      INSERT INTO operator_state (key, value, updated_at) VALUES ('inventory_completion', @value, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+    `).run({ value: JSON.stringify({ status: "completed", recorded_at: new Date().toISOString() }) });
+  }));
 
 program
   .command("add-tag")

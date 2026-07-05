@@ -12,6 +12,7 @@ import { applySchema } from "../../registry/db/schema";
 import { refreshCompatibilityAudits } from "../audit";
 import { evaluatePlanningReadiness, formatPlanningBlockMessage } from "../readiness";
 import { findMatchingFiles, loadActiveStack, readStackInstruction } from "../stack";
+import { formatInventoryValidationReport, getInventoryCompletionStatus, loadClassificationSpec, recordInventoryCompletion, validateInventoryQuality } from "../classification";
 
 // ─── File scanner ────────────────────────────────────────────────────────────
 
@@ -75,9 +76,23 @@ export function scanAndRegister(db: Database.Database, projectRoot: string): num
   return registered;
 }
 
+interface InventoryDeps {
+  spawnAgent?: typeof spawnAgent;
+  startPolling?: typeof startPolling;
+  getLogDir?: typeof getLogDir;
+  refreshCompatibilityAudits?: typeof refreshCompatibilityAudits;
+  scanAndRegister?: typeof scanAndRegister;
+}
+
+function inventoryTimeoutMs(): number {
+  const raw = process.env["GUILDCTL_INVENTORY_TIMEOUT_MINUTES"];
+  const minutes = raw ? Number(raw) : 30;
+  return Math.max(1, Number.isFinite(minutes) ? minutes : 30) * 60_000;
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
-export async function runInventory(db: Database.Database, workspaceRoot = resolveWorkspaceRoot()): Promise<void> {
+export async function runInventory(db: Database.Database, workspaceRoot = resolveWorkspaceRoot(), deps: InventoryDeps = {}): Promise<void> {
   printPhaseHeader("Phase 1 · Inventory");
 
   // Ensure schema exists (idempotent)
@@ -87,39 +102,59 @@ export async function runInventory(db: Database.Database, workspaceRoot = resolv
 
   // Step 1: scan source files directly — no agent needed
   process.stdout.write("  Scanning legacy/ for source files…\n");
-  const count = scanAndRegister(db, projectRoot);
+  const count = (deps.scanAndRegister ?? scanAndRegister)(db, projectRoot);
   process.stdout.write(`  ✓ ${count} file(s) registered\n\n`);
 
-  const stopPolling = startPolling(db, (events) => {
+  const stopPolling = (deps.startPolling ?? startPolling)(db, (events) => {
     for (const e of events) printEvent(e);
   });
 
   const cfg = resolveGuildConfig({ cwd: projectRoot });
   const pack = loadActiveStack(cfg, projectRoot);
+  const spec = loadClassificationSpec(pack);
   const model = resolvePhaseModel("inventory", cfg);
+  const expectedArtifactIds = (db.prepare("SELECT id FROM artifacts WHERE tier = 'first-class' ORDER BY id").pluck().all() as string[]);
+  const specForPrompt = JSON.stringify(spec, null, 2);
   console.log(`  Agent: context-agent   Model: ${model}\n`);
-  const result = await spawnAgent({
+  const result = await (deps.spawnAgent ?? spawnAgent)({
     agent: "context-agent",
     model,
     prompt:
-        "Classify each artifact in the registry: set its role, framework, and any relevant tags. " +
-        "Use `node migration/registry/dist/cli.js list-artifacts --status pending` to see what needs classifying. " +
-        "Then use `node migration/registry/dist/cli.js update-artifact --id <artifact-id> --module <module> --role <role> --framework <framework>` " +
-        "to write classifications, and `node migration/registry/dist/cli.js add-tag --id <artifact-id> --tag <tag>` for any relevant tags.\n\n" +
+        "Classify ONLY the orchestrator-registered first-class artifacts. Do not register new artifacts. " +
+        "Write a structured JSON batch with id, module, role, framework, confidence, evidence, ambiguous/signals when needed, then apply it using " +
+        "`node migration/registry/dist/cli.js batch-classify --file <json>`. Do not use arbitrary tags; lifecycle tags are not classification evidence. " +
+        "When the batch is applied, record explicit phase completion evidence with `node migration/registry/dist/cli.js mark-inventory-complete`.\n\n" +
+        `Expected artifact IDs (${expectedArtifactIds.length}):\n${expectedArtifactIds.join("\n")}\n\n` +
+        "Classification contract JSON:\n" + specForPrompt + "\n\n" +
         readStackInstruction(pack, "classify"),
     db,
-    logDir: getLogDir(),
+    logDir: (deps.getLogDir ?? getLogDir)(),
     phase: "inventory",
+    timeoutMs: inventoryTimeoutMs(),
   });
 
   if (result.exitCode !== 0) {
     stopPolling();
-    process.stderr.write(`\n  ✗ Classification agent exited with code ${result.exitCode}\n`);
-    process.exit(result.exitCode);
+    recordInventoryCompletion(db, { status: "failed", runId: result.runId, reason: `classification agent exited with code ${result.exitCode}` });
+    throw new Error(`Classification agent exited with code ${result.exitCode}`);
   }
 
   stopPolling();
-  const auditSummary = refreshCompatibilityAudits(db, projectRoot);
+  const completionStatus = getInventoryCompletionStatus(db);
+  const validation = validateInventoryQuality(db, spec, { expectedArtifactIds, completionStatus, requireCompletion: true });
+  if (!validation.valid) {
+    recordInventoryCompletion(db, { status: "failed", runId: result.runId, reason: validation.errors.join("; ") || "inventory validation failed" });
+    const reportText = formatInventoryValidationReport(validation);
+    setNext(db, {
+      summary: "Inventory quality gate failed.",
+      reason: reportText,
+      recommendedCommand: "Fix classifications with node migration/registry/dist/cli.js batch-classify --file <json> --dry-run, then rerun guildctl run inventory",
+    });
+    process.stderr.write(`\n  ✗ Inventory quality gate failed\n${reportText}\n`);
+    throw new Error(`Inventory quality gate failed: ${validation.errors.join("; ")}`);
+  }
+
+  const auditSummary = (deps.refreshCompatibilityAudits ?? refreshCompatibilityAudits)(db, projectRoot);
   const readiness = evaluatePlanningReadiness(db);
   const blockMessage = formatPlanningBlockMessage(readiness);
   console.log(`  Pre-plan audit: ${auditSummary.jvm.critical} critical JVM  ${auditSummary.jvm.warnings} warning JVM  ${auditSummary.dependencies.total} dependency findings\n`);

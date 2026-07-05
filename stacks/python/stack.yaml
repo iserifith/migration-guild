@@ -12,6 +12,7 @@ dependency_parsers:
     pattern: '["'']([A-Za-z0-9_.-]+)\s*(==)\s*([^"'']+)["'']'
     flags: g
 test_framework: pytest
+classification_spec: classification.yaml
 project_types:
   web:
     template: scaffold/pyproject.web.toml.template

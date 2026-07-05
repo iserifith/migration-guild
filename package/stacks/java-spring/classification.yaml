@@ -1,0 +1,159 @@
+version: 1
+frameworks:
+  allowed:
+    - plain-java
+    - ambiguous
+    - servlet
+    - struts
+    - jax-rs
+    - spring-mvc
+    - jpa
+    - ejb
+    - guice
+    - junit
+    - testng
+  aliases:
+    plain Java: plain-java
+    plain-java: plain-java
+    java: plain-java
+    javax.servlet: servlet
+    jakarta.servlet: servlet
+    servlet-filter: servlet
+    spring web mvc: spring-mvc
+    spring-webmvc: spring-mvc
+    spring: spring-mvc
+    hibernate-jpa: jpa
+    junit4: junit
+    junit5: junit
+  fallback: plain-java
+  ambiguous: ambiguous
+roles:
+  allowed:
+    - rest-endpoint
+    - exception-handler
+    - startup-config
+    - filter
+    - service
+    - utility
+    - model
+    - test
+    - module
+    - entry-point
+    - transformer
+    - interface
+quality:
+  fallback_max_percentage: 50
+tags:
+  generic: [analyzed, scaffolded, migrated, tests-written, reviewed]
+  meaningful: [behavior-risk, test-gap, config-follow-up, dependency-extracted, no-legacy-deps, blocked-external, blocked-human-decision]
+signals:
+  - id: servlet-filter
+    framework: servlet
+    role: filter
+    priority: 10
+    confidence: 0.95
+    evidence: servlet Filter import/implementation
+    match:
+      content:
+        - '\bimport\s+(javax|jakarta)\.servlet\.Filter\b'
+        - '\bimplements\s+Filter\b'
+  - id: servlet-http
+    framework: servlet
+    role: rest-endpoint
+    priority: 20
+    confidence: 0.9
+    evidence: HttpServlet import/subclass
+    match:
+      content:
+        - '\bimport\s+(javax|jakarta)\.servlet\.http\.HttpServlet\b'
+        - '\bextends\s+HttpServlet\b'
+  - id: struts-action
+    framework: struts
+    role: rest-endpoint
+    priority: 30
+    confidence: 0.95
+    evidence: Struts Action import/subclass
+    match:
+      content:
+        - 'org\.apache\.struts\.(action|actions)\.'
+        - '\bextends\s+(Action|DispatchAction|LookupDispatchAction)\b'
+  - id: jax-rs
+    framework: jax-rs
+    role: rest-endpoint
+    priority: 40
+    confidence: 0.9
+    evidence: JAX-RS annotations/imports
+    match:
+      content:
+        - '\bimport\s+(javax|jakarta)\.ws\.rs\.'
+        - '@(Path|GET|POST|PUT|DELETE|PATCH|Produces|Consumes)\b'
+  - id: spring-mvc
+    framework: spring-mvc
+    role: rest-endpoint
+    priority: 40
+    confidence: 0.9
+    evidence: Spring MVC controller annotations/imports
+    match:
+      content:
+        - 'org\.springframework\.web\.bind\.annotation\.'
+        - '@(RestController|Controller|RequestMapping|GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping)\b'
+  - id: jpa-entity
+    framework: jpa
+    role: model
+    priority: 50
+    confidence: 0.9
+    evidence: JPA entity annotations/imports
+    match:
+      content:
+        - '\bimport\s+(javax|jakarta)\.persistence\.'
+        - '@(Entity|Embeddable|MappedSuperclass|Table)\b'
+  - id: jpa-repository
+    framework: jpa
+    role: interface
+    priority: 50
+    confidence: 0.85
+    evidence: Spring Data/JPA repository type
+    match:
+      content:
+        - '(JpaRepository|CrudRepository|PagingAndSortingRepository|Repository)\s*<'
+        - 'org\.springframework\.data\.'
+  - id: ejb
+    framework: ejb
+    role: service
+    priority: 60
+    confidence: 0.9
+    evidence: EJB annotations/imports
+    match:
+      content:
+        - '\bimport\s+(javax|jakarta)\.ejb\.'
+        - '@(Stateless|Stateful|Singleton|MessageDriven|EJB)\b'
+  - id: guice-module
+    framework: guice
+    role: module
+    priority: 70
+    confidence: 0.9
+    evidence: Guice module/injection imports
+    match:
+      content:
+        - 'com\.google\.inject\.'
+        - '\bextends\s+AbstractModule\b'
+  - id: junit
+    framework: junit
+    role: test
+    priority: 5
+    confidence: 0.95
+    evidence: JUnit imports/annotations or test path
+    match:
+      content:
+        - '\bimport\s+org\.junit\.'
+        - '\bimport\s+org\.junit\.jupiter\.'
+        - '@Test\b'
+  - id: testng
+    framework: testng
+    role: test
+    priority: 5
+    confidence: 0.95
+    evidence: TestNG imports/annotations
+    match:
+      content:
+        - '\bimport\s+org\.testng\.'

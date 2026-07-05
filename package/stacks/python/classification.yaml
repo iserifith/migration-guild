@@ -1,0 +1,49 @@
+version: 1
+frameworks:
+  allowed: [plain-python, ambiguous, django, flask, fastapi, starlette, pytest]
+  aliases:
+    python: plain-python
+    plain python: plain-python
+    plain-python: plain-python
+  fallback: plain-python
+  ambiguous: ambiguous
+roles:
+  allowed: [rest-endpoint, exception-handler, startup-config, filter, service, utility, model, test, module, entry-point, transformer, interface]
+quality:
+  fallback_max_percentage: 80
+tags:
+  generic: [analyzed, scaffolded, migrated, tests-written, reviewed]
+  meaningful: [behavior-risk, test-gap, config-follow-up, dependency-extracted, no-legacy-deps, blocked-external, blocked-human-decision]
+signals:
+  - id: pytest
+    framework: pytest
+    role: test
+    priority: 5
+    confidence: 0.9
+    evidence: pytest import or test path
+    match:
+      path: ['(^|/)test_.*\.py$', '(^|/)tests/.*\.py$']
+  - id: django
+    framework: django
+    role: rest-endpoint
+    priority: 20
+    confidence: 0.85
+    evidence: Django imports
+    match:
+      content: ['\bfrom\s+django\b', '\bimport\s+django\b']
+  - id: flask
+    framework: flask
+    role: rest-endpoint
+    priority: 20
+    confidence: 0.85
+    evidence: Flask imports/routes
+    match:
+      content: ['\bfrom\s+flask\s+import\b', '@\w+\.route\(']
+  - id: fastapi
+    framework: fastapi
+    role: rest-endpoint
+    priority: 20
+    confidence: 0.85
+    evidence: FastAPI imports/routes
+    match:
+      content: ['\bfrom\s+fastapi\s+import\b', 'FastAPI\(']

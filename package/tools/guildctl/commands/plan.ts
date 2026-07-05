@@ -10,6 +10,7 @@ import { approveDependencyStrategy } from "../../registry/commands/modernization
 import { refreshCompatibilityAudits } from "../audit";
 import { loadActiveStack, readStackInstruction } from "../stack";
 import { evaluatePlanningReadiness, formatPlanningBlockMessage } from "../readiness";
+import { formatInventoryValidationReport, loadClassificationSpec, validateInventoryQuality } from "../classification";
 
 async function confirmMappings(
   db: Database.Database,
@@ -89,13 +90,14 @@ interface PlanDeps {
   spawnAgent?: typeof spawnAgent;
   startPolling?: typeof startPolling;
   getLogDir?: typeof getLogDir;
+  workspaceRoot?: string;
 }
 
 export async function runPlan(
   db: Database.Database,
   deps: PlanDeps = {},
 ): Promise<void> {
-  const projectRoot = resolveWorkspaceRoot();
+  const projectRoot = deps.workspaceRoot ?? resolveWorkspaceRoot();
   const cfg = resolveGuildConfig({ cwd: projectRoot });
   const planningModel = resolvePhaseModel("planning", cfg);
   const pack = loadActiveStack(cfg, projectRoot);
@@ -114,6 +116,17 @@ export async function runPlan(
   console.log(`  Pre-plan audit refreshed for ${auditSummary.artifact_count} artifact(s)`);
   console.log(`  JVM findings: critical=${auditSummary.jvm.critical}  warning=${auditSummary.jvm.warnings}`);
   console.log(`  Dependency findings: total=${auditSummary.dependencies.total}  unresolved=${auditSummary.dependencies.unresolved}\n`);
+
+  const inventoryReport = validateInventoryQuality(db, loadClassificationSpec(pack));
+  if (!inventoryReport.valid) {
+    const reportText = formatInventoryValidationReport(inventoryReport);
+    setNext(db, {
+      summary: "Inventory quality gate blocked planning.",
+      reason: reportText,
+      recommendedCommand: "node migration/registry/dist/cli.js batch-classify --file <json> --dry-run",
+    });
+    throw new Error(`Inventory quality gate blocked planning: ${inventoryReport.errors.join("; ")}`);
+  }
 
   if (jvmBlock) {
     setNext(db, {

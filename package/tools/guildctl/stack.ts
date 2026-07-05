@@ -67,6 +67,7 @@ export interface StackManifest {
   manifest_globs: string[];
   dependency_parsers: Array<{ match: string; pattern: string; flags?: string }>;
   test_framework: string;
+  classification_spec?: string;
   project_types: Record<string, ProjectTypeDescription>;
   audit: { rules_file: string; external_probes: ExternalProbe[] };
   instructions: { classify: string; mappings: string; tests: string };

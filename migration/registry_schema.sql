@@ -307,6 +307,22 @@ CREATE TABLE IF NOT EXISTS stack_mappings (
 
 CREATE INDEX IF NOT EXISTS idx_stack_mappings_confirmed ON stack_mappings(confirmed);
 
+-- ─── Inventory Classification Metadata ───────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS artifact_classifications (
+    artifact_id    TEXT PRIMARY KEY REFERENCES artifacts(id) ON DELETE CASCADE,
+    framework      TEXT NOT NULL,
+    role           TEXT NOT NULL,
+    confidence     REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+    ambiguous      INTEGER NOT NULL DEFAULT 0 CHECK (ambiguous IN (0, 1)),
+    evidence_json  TEXT NOT NULL,
+    signals_json   TEXT NOT NULL,
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifact_classifications_framework ON artifact_classifications(framework);
+CREATE INDEX IF NOT EXISTS idx_artifact_classifications_ambiguous ON artifact_classifications(ambiguous);
+
 -- ─── JVM Compatibility Audit Findings ─────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS jvm_audit_findings (

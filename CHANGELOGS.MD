@@ -6,6 +6,12 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### July 6, 2026
+
+- Added the stack-pack inventory classification contract (`classification.yaml`), Java/Python stack specs, alias normalization, ambiguous/fallback semantics, structured confidence/evidence storage, and atomic `registry batch-classify` / `mark-inventory-complete` commands.
+- Changed inventory and planning to enforce an inventory-quality gate covering missing fields, invalid framework/role values, fallback-heavy distributions, module/path mismatches, unexpected registrations, generic-only tags, and missing completion evidence.
+- Added regression coverage for Java servlet/filter/Struts/JAX-RS/Spring MVC/JPA/EJB/Guice/test/plain-Java detection, batch atomicity, timeout/false-success handling, and valid Java/Python stack-pack progression.
+
 ### April 22, 2026
 
 - Added a repo-local maintainer prompt shortcut under `.github/prompts/` for building the distributable kit from a fresh clone and installing it into an external test workspace from user-supplied workspace and legacy-source inputs.
