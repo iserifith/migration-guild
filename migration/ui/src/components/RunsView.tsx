@@ -61,6 +61,10 @@ export default function RunsView({
   const hasActiveFilters = Boolean(statusFilter || agentFilter || modelFilter);
   const canPageBackward = page > 1;
   const canPageForward = totalPages != null ? page < totalPages : runs.length === pageSize;
+  const formatTokenSummary = (run: RunEntry) =>
+    run.token_total > 0
+      ? `fresh ${run.token_fresh.toLocaleString()} / total ${run.token_total.toLocaleString()}`
+      : "-";
 
   if (loading) {
     return <LoadingState resource="runs" />;
@@ -179,6 +183,7 @@ export default function RunsView({
                 <th>Started</th>
                 <th>Finished</th>
                 <th>Duration</th>
+                <th>Tokens</th>
               </tr>
             </thead>
             <tbody>
@@ -201,6 +206,7 @@ export default function RunsView({
                   <td>{formatTimestamp(run.started_at, timeMode)}</td>
                   <td>{formatTimestamp(run.finished_at, timeMode)}</td>
                   <td>{formatDuration(run.started_at, run.finished_at)}</td>
+                  <td className="mono">{formatTokenSummary(run)}</td>
                 </tr>
               ))}
             </tbody>

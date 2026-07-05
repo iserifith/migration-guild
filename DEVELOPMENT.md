@@ -156,21 +156,33 @@ Required fields:
 - `frameworks.fallback`: canonical no-evidence fallback. Java uses `plain-java`; never use broad `Java-EE` as fallback.
 - `frameworks.ambiguous`: canonical value for equal-precedence conflicting evidence.
 - `roles.allowed`: registry role vocabulary only; do not invent stack-specific roles like `servlet`.
+- `modules.source_roots`: stack-defined source-root regex rules that derive `artifact.module` from build/source-set ownership, not package names. Java examples: `legacy/app/src/main/java/...` → `app`, `legacy/app/src/test/java/...` → `app-test`, `legacy/it-selenium/src/test/java/...` → `it-selenium-test`, `legacy/db-utils/src/main/java/...` → `db-utils`.
 - `signals`: deterministic source/path regex signals with `framework`, `role`, `priority`, `confidence`, and human-readable `evidence`.
-- `quality.fallback_max_percentage`: concentration threshold for large inventories.
+- `quality.fallback_max_percentage`: advisory concentration threshold for large inventories unless the stack explicitly sets `fallback_concentration: error`.
+- `quality.fallback_min_confidence` and `quality.fallback_required_evidence`: fallback records must prove high-confidence negative evidence. A mostly plain-code project can pass; files with configured framework signals may not silently fall through to fallback.
 - `tags.generic` / `tags.meaningful`: lifecycle tags such as `analyzed` are generic and do not count as classification evidence.
 
 Runtime contract:
 
 - `guildctl` owns source scanning and first-class artifact registration.
-- The context agent classifies that expected ID set only; it must not register extras unless a future orchestrator explicitly delegates second-class discovery.
+- The context agent classifies that expected ID set only; it must not register extras unless a future orchestrator explicitly delegates second-class discovery. Inventory snapshots the registry before agent execution and rolls back any agent-created first- or second-class records on failure, while preserving legitimate pre-existing second-class artifacts.
 - Classifications should be submitted via `registry batch-classify --file <json>`.
 - `batch-classify` validates all rows before mutation, rejects duplicates/unknown IDs/unsupported frameworks/unsupported roles/missing evidence, supports `--dry-run`, and applies accepted records transactionally.
 - The agent must run `registry mark-inventory-complete` after successful batch application. Exit code zero alone is not completion evidence.
 - `guildctl run inventory` runs validation and refuses to print `Inventory complete` when quality fails.
 - `guildctl run plan` independently re-runs the inventory-quality gate before stack-advisor/planner work.
 
-Existing workspaces should run `node migration/registry/dist/cli.js migrate` (or rerun any guildctl phase, which applies schema idempotently) to create `artifact_classifications`, then rerun inventory so classifications are normalized under the active stack pack.
+Existing workspaces should run `node migration/registry/dist/cli.js migrate` (or rerun any guildctl phase, which applies schema idempotently) to create `artifact_classifications`, then rerun inventory so classifications are normalized under the active stack pack. Workspaces from the older package-derived-module scanner should clear and rescan inventory rather than reusing IDs/modules such as `org.apache...`: current Java module semantics are build/source-set ownership. Safe reset sequence for a failed inventory is:
+
+```bash
+# from the workspace using the packaged runtime paths
+node migration/registry/dist/cli.js migrate
+sqlite3 .guild/registry.sqlite "DELETE FROM artifact_classifications; DELETE FROM artifact_tags WHERE artifact_id IN (SELECT id FROM artifacts WHERE kind='legacy-source'); DELETE FROM artifacts WHERE kind='legacy-source'; DELETE FROM operator_state WHERE key='inventory_completion';"
+GUILDCTL_INVENTORY_TIMEOUT_MINUTES=45 node migration/guildctl/dist/cli.js run inventory
+node migration/guildctl/dist/cli.js run plan
+```
+
+Preserve hand-curated second-class descriptor/config artifacts unless they were created by the failed inventory run; inventory failure cleanup now handles newly-created unauthorized records automatically.
 
 ## Claim lease and run lifecycle notes
 

@@ -11,6 +11,10 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 - Added the stack-pack inventory classification contract (`classification.yaml`), Java/Python stack specs, alias normalization, ambiguous/fallback semantics, structured confidence/evidence storage, and atomic `registry batch-classify` / `mark-inventory-complete` commands.
 - Changed inventory and planning to enforce an inventory-quality gate covering missing fields, invalid framework/role values, fallback-heavy distributions, module/path mismatches, unexpected registrations, generic-only tags, and missing completion evidence.
 - Added regression coverage for Java servlet/filter/Struts/JAX-RS/Spring MVC/JPA/EJB/Guice/test/plain-Java detection, batch atomicity, timeout/false-success handling, and valid Java/Python stack-pack progression.
+- Changed Java inventory module semantics from package-derived values to stack-pack source-root/build ownership, with test source-set suffixes and upgrade guidance for clearing old package-derived inventories.
+- Changed fallback validation so high plain-code concentration is advisory unless the stack opts into hard failure; `plain-java` now requires high-confidence negative evidence and validation rejects missed configured framework signals.
+- Added inventory pollution cleanup: agent-created unauthorized first- and second-class artifacts are rolled back on failed inventory while preserving legitimate pre-existing second-class records.
+- Fixed TypeScript declaration generation for the registry `serve` command action and added a `build` script that runs `tsc -p tsconfig.json`.
 
 ### April 22, 2026
 

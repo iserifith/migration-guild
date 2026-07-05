@@ -560,7 +560,9 @@ program
   .command("serve")
   .description("Start the registry inspector UI (http://localhost:3322)")
   .option("--port <n>", "Port to listen on", parseInt)
-  .action((opts) => startServer(db(), opts.port ?? 3322));
+  .action((opts) => {
+    startServer(db(), opts.port ?? 3322);
+  });
 
 // ─── Runs ─────────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import BlockersView from "./components/BlockersView";
 import RunsView from "./components/RunsView";
 import SessionsView from "./components/SessionsView";
@@ -34,6 +34,13 @@ describe("operational tab views", () => {
             finished_at: "2024-01-02T00:10:00Z",
             exit_code: 0,
             log_file: null,
+            token_input: 10,
+            token_output: 5,
+            token_reasoning: 2,
+            token_cache_read: 7,
+            token_cache_write: 3,
+            token_fresh: 17,
+            token_total: 27,
           },
         ]}
         total={42}

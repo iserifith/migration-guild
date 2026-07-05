@@ -967,7 +967,7 @@ export function queryRunHistory(
   if (opts.status) { conditions.push("status = ?"); params.push(opts.status); }
   params.push(opts.limit ?? 100);
   const sql = `
-    SELECT run_id, agent, model, status, started_at, finished_at, exit_code, log_file
+    SELECT run_id, agent, model, status, started_at, finished_at, exit_code, log_file, token_input, token_output, token_reasoning, token_cache_read, token_cache_write, token_fresh, token_total
     FROM runs
     WHERE ${conditions.join(" AND ")}
     ORDER BY started_at DESC
@@ -1030,7 +1030,7 @@ export function queryRunHistoryPage(
     ${whereSql}
   `).get(params) as { total: number }).total;
   const rows = db.prepare(`
-    SELECT run_id, agent, model, status, started_at, finished_at, exit_code, log_file
+    SELECT run_id, agent, model, status, started_at, finished_at, exit_code, log_file, token_input, token_output, token_reasoning, token_cache_read, token_cache_write, token_fresh, token_total
     FROM runs
     ${whereSql}
     ORDER BY ${orderBy}

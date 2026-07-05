@@ -1,6 +1,7 @@
 import { spawn, execFileSync, spawnSync } from "child_process";
 import { randomUUID } from "crypto";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import { Transform } from "stream";
 import type Database from "better-sqlite3";
@@ -9,7 +10,7 @@ import { resolveGuildConfig, resolveWorkspaceRoot } from "./config";
 import { resolveHarness } from "./harness";
 import { releaseClaimedArtifactsForOwner } from "../registry/commands/artifacts";
 import { releaseClaimsForRun } from "../registry/commands/claim";
-import { startRun, finishRun, setRunPid } from "../registry/commands/runs";
+import { startRun, finishRun, setRunPid, type RunTokenUsage } from "../registry/commands/runs";
 
 export interface SpawnAgentOpts {
   agent: string;
@@ -131,6 +132,38 @@ function getNewlyWrittenFiles(root: string, before: Set<string>): string[] {
 
 function writeLogLine(stream: fs.WriteStream | undefined, line: string): void {
   stream?.write(`[${formatLocalClockTime()}] ${line}\n`);
+}
+
+function safeTokenInt(value: unknown): number {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+}
+
+function readTokenUsageFile(file: string): RunTokenUsage | undefined {
+  try {
+    if (!fs.existsSync(file)) return undefined;
+    const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Partial<Record<string, unknown>>;
+    const input = safeTokenInt(raw.input);
+    const output = safeTokenInt(raw.output);
+    const reasoning = safeTokenInt(raw.reasoning);
+    const cacheRead = safeTokenInt(raw.cacheRead);
+    const cacheWrite = safeTokenInt(raw.cacheWrite);
+    const fresh = safeTokenInt(raw.fresh) || input + output + reasoning;
+    const total = safeTokenInt(raw.total) || fresh + cacheRead + cacheWrite;
+    if (fresh + cacheRead + cacheWrite + total === 0) return undefined;
+    return { input, output, reasoning, cacheRead, cacheWrite, fresh, total };
+  } catch {
+    return undefined;
+  }
+}
+
+function formatTokenUsageLines(usage: RunTokenUsage | undefined): string[] {
+  if (!usage) return ["Tokens:   (not reported)"];
+  return [
+    `Tokens:   fresh=${usage.fresh} provider_total=${usage.total}`,
+    `          input=${usage.input} output=${usage.output} reasoning=${usage.reasoning}`,
+    `          cache_read=${usage.cacheRead} cache_write=${usage.cacheWrite}`,
+  ];
 }
 
 function formatLogTimestamp(ms: number): string {
@@ -256,6 +289,7 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   const config = resolveGuildConfig({ cwd: projectRoot });
   const agentCommand = resolveHarness(config, projectRoot).command;
   const beforeFiles = snapshotChangedFiles(projectRoot);
+  const usageFile = path.join(os.tmpdir(), `guild-opencode-usage-${runId}.json`);
 
   const logFile = opts.logDir
     ? path.join(opts.logDir, formatLogFileName(agent, startMs, runId, opts.phase))
@@ -367,6 +401,7 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
       GUILDCTL_AGENT_NAME: claimOwner,
       GUILDCTL_AGENT_KIND: agent,
       GUILDCTL_RUN_ID: run.run_id,
+      GUILD_OPENCODE_USAGE_FILE: usageFile,
       ...(preClaimedArtifactId != null ? {
         GUILDCTL_ARTIFACT_ID: preClaimedArtifactId,
         GUILDCTL_CLAIM_ID: preClaimId!,
@@ -464,10 +499,13 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
         : finalExitCode === 0
           ? undefined
           : `${agent} exited with code ${finalExitCode}`;
+      const tokenUsage = readTokenUsageFile(usageFile);
+      try { fs.rmSync(usageFile, { force: true }); } catch {}
       finishRun(db, {
         runId: run.run_id,
         exitCode: finalExitCode,
         reason: terminationReason,
+        tokenUsage,
       });
 
       const result = {
@@ -500,6 +538,7 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
             `Exit:     ${finalExitCode}`,
             `Elapsed:  ${elapsedS}s`,
             `Finished: ${new Date().toISOString()}`,
+            ...formatTokenUsageLines(tokenUsage),
             ...claimBlock,
             ...filesBlock,
             LOG_SEP,

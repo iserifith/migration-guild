@@ -34,14 +34,20 @@ test("reapDeadRuns marks a missing pid as failed", () => {
   }
 });
 
-test("spawnAgent records failed stub runs and writes a log file", async () => {
+test("spawnAgent records failed stub runs, token usage, and writes a log file", async () => {
   const db = createDb();
   const workDir = mkdtempSync(path.join(tmpdir(), "guildctl-runner-"));
   const stubPath = path.join(workDir, "fake-agent.sh");
   const original = process.env["AGENT_CMD"];
 
   try {
-    writeFileSync(stubPath, "#!/bin/sh\necho simulated runner failure >&2\nexit 1\n", {
+    writeFileSync(stubPath, `#!/bin/sh
+echo simulated runner failure >&2
+cat > "$GUILD_OPENCODE_USAGE_FILE" <<'JSON'
+{"input":10,"output":5,"reasoning":2,"cacheRead":7,"cacheWrite":3,"total":27,"fresh":17,"events":1,"sessions":["main"]}
+JSON
+exit 1
+`, {
       mode: 0o755,
     });
     process.env["AGENT_CMD"] = stubPath;
@@ -54,14 +60,38 @@ test("spawnAgent records failed stub runs and writes a log file", async () => {
       logDir: workDir,
     });
     const stored = db.prepare(
-      "SELECT status, exit_code, log_file FROM runs WHERE run_id = ?",
-    ).get(result.runId) as { status: string; exit_code: number; log_file: string | null };
+      `SELECT status, exit_code, log_file,
+              token_input, token_output, token_reasoning,
+              token_cache_read, token_cache_write, token_total, token_fresh
+       FROM runs WHERE run_id = ?`,
+    ).get(result.runId) as {
+      status: string;
+      exit_code: number;
+      log_file: string | null;
+      token_input: number;
+      token_output: number;
+      token_reasoning: number;
+      token_cache_read: number;
+      token_cache_write: number;
+      token_total: number;
+      token_fresh: number;
+    };
 
     assert.equal(result.exitCode, 1);
     assert.equal(stored.status, "failed");
     assert.equal(stored.exit_code, 1);
+    assert.equal(stored.token_input, 10);
+    assert.equal(stored.token_output, 5);
+    assert.equal(stored.token_reasoning, 2);
+    assert.equal(stored.token_cache_read, 7);
+    assert.equal(stored.token_cache_write, 3);
+    assert.equal(stored.token_total, 27);
+    assert.equal(stored.token_fresh, 17);
     assert.ok(stored.log_file);
-    assert.match(readFileSync(stored.log_file, "utf8"), /simulated runner failure/);
+    const logText = readFileSync(stored.log_file, "utf8");
+    assert.match(logText, /simulated runner failure/);
+    assert.match(logText, /Tokens:/);
+    assert.match(logText, /fresh=17/);
   } finally {
     if (original == null) {
       delete process.env["AGENT_CMD"];

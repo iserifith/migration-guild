@@ -295,6 +295,13 @@ export interface RunEntry {
   finished_at: string | null;
   exit_code: number | null;
   log_file: string | null;
+  token_input: number;
+  token_output: number;
+  token_reasoning: number;
+  token_cache_read: number;
+  token_cache_write: number;
+  token_fresh: number;
+  token_total: number;
 }
 
 export type RunListResult = PagedResult<RunEntry, RunFilters>;

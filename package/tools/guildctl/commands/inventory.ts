@@ -12,21 +12,15 @@ import { applySchema } from "../../registry/db/schema";
 import { refreshCompatibilityAudits } from "../audit";
 import { evaluatePlanningReadiness, formatPlanningBlockMessage } from "../readiness";
 import { findMatchingFiles, loadActiveStack, readStackInstruction } from "../stack";
-import { formatInventoryValidationReport, getInventoryCompletionStatus, loadClassificationSpec, recordInventoryCompletion, validateInventoryQuality } from "../classification";
+import { deriveArtifactModule, formatInventoryValidationReport, getInventoryCompletionStatus, loadClassificationSpec, recordInventoryCompletion, validateInventoryQuality } from "../classification";
 
 // ─── File scanner ────────────────────────────────────────────────────────────
 
-function deriveArtifactId(filePath: string, legacyRoot: string, sourceExtension: string, mainSourceDir: string): string {
+function deriveArtifactId(filePath: string, projectRoot: string, legacyRoot: string, sourceExtension: string, module: string): string {
   const rel = path.relative(legacyRoot, filePath);
   const noExt = rel.endsWith(sourceExtension) ? rel.slice(0, -sourceExtension.length) : rel;
   const parts = noExt.split(path.sep);
   const className = parts[parts.length - 1];
-
-  const sourceParts = mainSourceDir.split("/");
-  const sourceEnd = parts.findIndex((part, index) => sourceParts.every((sourcePart, offset) => parts[index + offset] === sourcePart));
-  const pkgParts = sourceEnd >= 0 ? parts.slice(sourceEnd + sourceParts.length, -1) : parts.slice(0, -1);
-  const module = pkgParts.join(".") || "default";
-
   return `legacy-source:${module}:${className}`;
 }
 
@@ -38,6 +32,7 @@ export function scanAndRegister(db: Database.Database, projectRoot: string): num
 
   const cfg = resolveGuildConfig({ cwd: projectRoot });
   const pack = loadActiveStack(cfg, projectRoot);
+  const spec = loadClassificationSpec(pack);
   const files = findMatchingFiles(legacyDir, pack.manifest.source_globs);
   process.stdout.write(`  [scan] source files found: ${files.length}\n`);
 
@@ -49,13 +44,14 @@ export function scanAndRegister(db: Database.Database, projectRoot: string): num
   let skipped = 0;
 
   for (const file of files) {
-    const id = deriveArtifactId(file, legacyDir, pack.manifest.scaffold.source_extension, pack.manifest.scaffold.main_source_dir);
+    const relPath = path.relative(projectRoot, file);
+    const module = deriveArtifactModule(spec, relPath);
+    const id = deriveArtifactId(file, projectRoot, legacyDir, pack.manifest.scaffold.source_extension, module);
     const exists = db.prepare("SELECT id FROM artifacts WHERE id = ?").get(id);
     if (exists) { skipped++; continue; }
 
-    const relPath = path.relative(projectRoot, file);
     try {
-      registerArtifact(db, { id, kind: "legacy-source", path: relPath });
+      registerArtifact(db, { id, kind: "legacy-source", path: relPath, module });
       registered++;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -90,6 +86,19 @@ function inventoryTimeoutMs(): number {
   return Math.max(1, Number.isFinite(minutes) ? minutes : 30) * 60_000;
 }
 
+function artifactIds(db: Database.Database): string[] {
+  return db.prepare("SELECT id FROM artifacts ORDER BY id").pluck().all() as string[];
+}
+
+function removeArtifacts(db: Database.Database, ids: string[]): void {
+  if (ids.length === 0) return;
+  const tx = db.transaction(() => {
+    const del = db.prepare("DELETE FROM artifacts WHERE id = ?");
+    for (const id of ids) del.run(id);
+  });
+  tx();
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export async function runInventory(db: Database.Database, workspaceRoot = resolveWorkspaceRoot(), deps: InventoryDeps = {}): Promise<void> {
@@ -114,6 +123,7 @@ export async function runInventory(db: Database.Database, workspaceRoot = resolv
   const spec = loadClassificationSpec(pack);
   const model = resolvePhaseModel("inventory", cfg);
   const expectedArtifactIds = (db.prepare("SELECT id FROM artifacts WHERE tier = 'first-class' ORDER BY id").pluck().all() as string[]);
+  const allowedArtifactIdsBeforeAgent = artifactIds(db);
   const specForPrompt = JSON.stringify(spec, null, 2);
   console.log(`  Agent: context-agent   Model: ${model}\n`);
   const result = await (deps.spawnAgent ?? spawnAgent)({
@@ -135,14 +145,23 @@ export async function runInventory(db: Database.Database, workspaceRoot = resolv
 
   if (result.exitCode !== 0) {
     stopPolling();
+    removeArtifacts(db, artifactIds(db).filter((id) => !allowedArtifactIdsBeforeAgent.includes(id)));
     recordInventoryCompletion(db, { status: "failed", runId: result.runId, reason: `classification agent exited with code ${result.exitCode}` });
     throw new Error(`Classification agent exited with code ${result.exitCode}`);
   }
 
   stopPolling();
   const completionStatus = getInventoryCompletionStatus(db);
-  const validation = validateInventoryQuality(db, spec, { expectedArtifactIds, completionStatus, requireCompletion: true });
+  const createdArtifactIds = artifactIds(db).filter((id) => !allowedArtifactIdsBeforeAgent.includes(id));
+  const validation = validateInventoryQuality(db, spec, {
+    expectedArtifactIds,
+    allowedSecondClassArtifactIds: allowedArtifactIdsBeforeAgent.filter((id) => !expectedArtifactIds.includes(id)),
+    completionStatus,
+    requireCompletion: true,
+    workspaceRoot: projectRoot,
+  });
   if (!validation.valid) {
+    removeArtifacts(db, createdArtifactIds);
     recordInventoryCompletion(db, { status: "failed", runId: result.runId, reason: validation.errors.join("; ") || "inventory validation failed" });
     const reportText = formatInventoryValidationReport(validation);
     setNext(db, {

@@ -16,6 +16,13 @@ export interface Run {
   finished_at: string | null;
   exit_code: number | null;
   termination_reason: string | null;
+  token_input: number;
+  token_output: number;
+  token_reasoning: number;
+  token_cache_read: number;
+  token_cache_write: number;
+  token_fresh: number;
+  token_total: number;
   status: "running" | "completed" | "failed";
 }
 
@@ -30,10 +37,21 @@ export interface StartRunOptions {
   pid?: number | null;
 }
 
+export interface RunTokenUsage {
+  input: number;
+  output: number;
+  reasoning: number;
+  cacheRead: number;
+  cacheWrite: number;
+  fresh: number;
+  total: number;
+}
+
 export interface FinishRunOptions {
   runId: string;
   exitCode: number;
   reason?: string;
+  tokenUsage?: RunTokenUsage;
 }
 
 export function startRun(db: Database.Database, opts: StartRunOptions): Run {
@@ -84,17 +102,32 @@ export function setRunPid(
 
 export function finishRun(db: Database.Database, opts: FinishRunOptions): Run {
   const status = opts.exitCode === 0 ? "completed" : "failed";
+  const usage = opts.tokenUsage;
   db.prepare(`
     UPDATE runs
     SET finished_at = datetime('now'),
         exit_code = @exit_code,
         termination_reason = @termination_reason,
+        token_input = @token_input,
+        token_output = @token_output,
+        token_reasoning = @token_reasoning,
+        token_cache_read = @token_cache_read,
+        token_cache_write = @token_cache_write,
+        token_fresh = @token_fresh,
+        token_total = @token_total,
         status = @status
     WHERE run_id = @run_id
   `).run({
     run_id: opts.runId,
     exit_code: opts.exitCode,
     termination_reason: opts.reason ?? null,
+    token_input: usage?.input ?? 0,
+    token_output: usage?.output ?? 0,
+    token_reasoning: usage?.reasoning ?? 0,
+    token_cache_read: usage?.cacheRead ?? 0,
+    token_cache_write: usage?.cacheWrite ?? 0,
+    token_fresh: usage?.fresh ?? 0,
+    token_total: usage?.total ?? 0,
     status,
   });
 

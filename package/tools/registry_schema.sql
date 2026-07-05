@@ -180,6 +180,13 @@ CREATE TABLE IF NOT EXISTS runs (
     finished_at  TEXT,
     exit_code    INTEGER,
     termination_reason TEXT,
+    token_input  INTEGER NOT NULL DEFAULT 0 CHECK (token_input >= 0),
+    token_output INTEGER NOT NULL DEFAULT 0 CHECK (token_output >= 0),
+    token_reasoning INTEGER NOT NULL DEFAULT 0 CHECK (token_reasoning >= 0),
+    token_cache_read INTEGER NOT NULL DEFAULT 0 CHECK (token_cache_read >= 0),
+    token_cache_write INTEGER NOT NULL DEFAULT 0 CHECK (token_cache_write >= 0),
+    token_fresh INTEGER NOT NULL DEFAULT 0 CHECK (token_fresh >= 0),
+    token_total INTEGER NOT NULL DEFAULT 0 CHECK (token_total >= 0),
     status       TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'completed', 'failed'))
 );
 
@@ -405,3 +412,10 @@ ALTER TABLE runs ADD COLUMN IF NOT EXISTS pid INTEGER;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS owner_id TEXT;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS phase TEXT;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS termination_reason TEXT;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_input INTEGER NOT NULL DEFAULT 0 CHECK (token_input >= 0);
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_output INTEGER NOT NULL DEFAULT 0 CHECK (token_output >= 0);
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_reasoning INTEGER NOT NULL DEFAULT 0 CHECK (token_reasoning >= 0);
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_cache_read INTEGER NOT NULL DEFAULT 0 CHECK (token_cache_read >= 0);
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_cache_write INTEGER NOT NULL DEFAULT 0 CHECK (token_cache_write >= 0);
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_fresh INTEGER NOT NULL DEFAULT 0 CHECK (token_fresh >= 0);
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_total INTEGER NOT NULL DEFAULT 0 CHECK (token_total >= 0);

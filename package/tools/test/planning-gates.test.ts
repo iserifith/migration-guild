@@ -33,6 +33,11 @@ function registerFirstClassArtifact(
     role: "service",
     framework: "plain-java",
   });
+  db.prepare(`
+    INSERT INTO artifact_classifications (artifact_id, framework, role, confidence, ambiguous, evidence_json, signals_json)
+    VALUES (?, 'plain-java', 'service', 0.85, 0, ?, '[]')
+    ON CONFLICT(artifact_id) DO NOTHING
+  `).run(id, JSON.stringify(["negative-evidence: no configured framework signal matched"]));
   if (status !== "pending") {
     setArtifactStatus(db, id, status);
   }

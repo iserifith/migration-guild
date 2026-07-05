@@ -41,8 +41,24 @@ roles:
     - entry-point
     - transformer
     - interface
+modules:
+  default: default
+  source_roots:
+    - pattern: '^legacy/([^/]+)/src/main/java/'
+      module_group: 1
+    - pattern: '^legacy/([^/]+)/src/test/java/'
+      module_group: 1
+      suffix: '-test'
+    - pattern: '^legacy/src/main/java/'
+      module_group: 1
+    - pattern: '^legacy/src/test/java/'
+      module_group: 1
+      suffix: '-test'
 quality:
   fallback_max_percentage: 50
+  fallback_concentration: warning
+  fallback_min_confidence: 0.75
+  fallback_required_evidence: negative-evidence
 tags:
   generic: [analyzed, scaffolded, migrated, tests-written, reviewed]
   meaningful: [behavior-risk, test-gap, config-follow-up, dependency-extracted, no-legacy-deps, blocked-external, blocked-human-decision]

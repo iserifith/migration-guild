@@ -117,7 +117,7 @@ export async function runPlan(
   console.log(`  JVM findings: critical=${auditSummary.jvm.critical}  warning=${auditSummary.jvm.warnings}`);
   console.log(`  Dependency findings: total=${auditSummary.dependencies.total}  unresolved=${auditSummary.dependencies.unresolved}\n`);
 
-  const inventoryReport = validateInventoryQuality(db, loadClassificationSpec(pack));
+  const inventoryReport = validateInventoryQuality(db, loadClassificationSpec(pack), { workspaceRoot: projectRoot });
   if (!inventoryReport.valid) {
     const reportText = formatInventoryValidationReport(inventoryReport);
     setNext(db, {
