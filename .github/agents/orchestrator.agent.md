@@ -42,7 +42,7 @@ migration/                     # live development copy of shipped CLIs
 - For repo-only maintainer helpers, use `.github/`.
 - Do not recreate a full migration workspace under the repo root.
 - Validate installed behavior in a separate workspace outside this repository.
-- Keep `migration/` and `package/tools/` aligned when runtime CLI behavior changes.
+- `migration/` is the canonical source for CLI runtime code.
 
 ### Agent profiles (`package/agents/*.agent.md` and `.github/agents/*.agent.md`)
 

@@ -166,7 +166,7 @@ test("arbitrate --approve succeeds with independent passing evidence", () => {
       "--produced-by",
       "critic-agent",
       "--command",
-      "npm test --prefix package/tools",
+      "npm test --prefix migration",
       "--exit-code",
       "0",
       "--summary",
