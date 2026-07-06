@@ -28,6 +28,7 @@ import { runStatus, printNextSteps } from "./commands/status";
 import { runWatch } from "./commands/watch";
 import { runRelease } from "./commands/release";
 import { runRemediate } from "./commands/remediate";
+import { runAuditCoverage, formatCoverageReport } from "./commands/audit";
 import { runEvidenceAdd, runEvidenceList } from "./commands/evidence";
 import { runArbitrate } from "./commands/arbitrate";
 import { runSocietyReport } from "./commands/society-report";
@@ -271,6 +272,25 @@ program
       model: opts.model,
       prompt: opts.prompt,
     });
+  });
+
+// ─── audit ───────────────────────────────────────────────────────────────────
+
+const audit = program
+  .command("audit")
+  .description("Audit commands for coverage, completeness, and invariants");
+
+audit
+  .command("coverage")
+  .description("Verify all files on disk are registered and all registered artifacts are in terminal state")
+  .action(() => {
+    assertDbExists(dbPath());
+    const result = runAuditCoverage(db());
+    const report = formatCoverageReport(result);
+    process.stdout.write(report + "\n");
+    if (result.onDiskNotRegistered.length > 0 || result.registeredMissingOnDisk.length > 0 || result.registeredNonTerminal.length > 0) {
+      process.exit(1);
+    }
   });
 
 // ─── evidence gate ────────────────────────────────────────────────────────────
