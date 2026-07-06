@@ -11,7 +11,7 @@ This repository is the **source code for the Migration Guild kit itself**. It is
   - `package/instructions/`
   - `package/agent-instructions.md`
 - Treat root `.github/` as maintainer-only repo context.
-- Treat `migration/` as the repo's live development copy of the shipped CLIs. When runtime behavior changes there, keep `package/tools/` aligned.
+- Treat `migration/` as the repo's live development copy of the shipped CLIs. This is the canonical source.
 
 ## Do not use this repo as a migration workspace
 

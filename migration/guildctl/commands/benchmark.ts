@@ -57,7 +57,7 @@ export function runBenchmarkCompare(db: Database.Database, opts: BenchmarkCompar
 
 function ensureToolsBuilt(kitRoot: string): void {
   // Agents invoke `node migration/registry/dist/cli.js`; that dist is built from
-  // package/tools (which copyWorkspace copies into each workspace) by tsup.
+  // migration/ (which copyWorkspace copies into each workspace) by tsup.
   // Build it once with the repo's tsup so the agents can read/update the registry.
   const tsupBin = path.join(kitRoot, "node_modules", ".bin", "tsup");
   if (!fs.existsSync(tsupBin)) {

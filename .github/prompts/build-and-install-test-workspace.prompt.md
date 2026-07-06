@@ -25,7 +25,7 @@ Workflow:
 4. From this repository clone, install build dependencies:
    ```bash
    npm install
-   cd package/tools && npm install && cd ../..
+   cd migration && npm install && cd ..
    ```
 5. Build the distributable kit:
    ```bash

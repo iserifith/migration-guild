@@ -29,12 +29,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          # Cache every npm lockfile present in the repo. Subdirs without a
-          # lockfile (package/tools/ui) still install correctly, just uncached.
           cache: npm
           cache-dependency-path: |
             package-lock.json
-            package/tools/package-lock.json
             migration/package-lock.json
             migration/ui/package-lock.json
 
@@ -43,14 +40,6 @@ jobs:
       - name: Install root dependencies
         run: npm install
 
-      - name: Install package/tools dependencies
-        run: npm install
-        working-directory: package/tools
-
-      - name: Install package/tools/ui dependencies
-        run: npm install
-        working-directory: package/tools/ui
-
       - name: Install migration dependencies
         run: npm install
         working-directory: migration
@@ -58,14 +47,6 @@ jobs:
       - name: Install migration/ui dependencies
         run: npm install
         working-directory: migration/ui
-
-      - name: Test package/tools (registry CLI)
-        run: npm test
-        working-directory: package/tools
-
-      - name: Test package/tools/ui (registry UI)
-        run: npm test
-        working-directory: package/tools/ui
 
       - name: Test migration (registry CLI)
         run: npm test
