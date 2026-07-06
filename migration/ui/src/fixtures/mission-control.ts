@@ -19,9 +19,9 @@ export const missionControlFixture: MissionControlFixture = {
     { label: "Wave 3", status: "Blocked · dependency", progress: 8, tone: "warning" },
   ],
   activity: [
-    { role: "Arbiter", message: "accepted Chainr", relativeTime: "2s", tone: "arbiter" },
-    { role: "Critic", message: "proof passed · Shiftr", relativeTime: "11s", tone: "critic" },
-    { role: "Arbiter", message: "rejected Removr", relativeTime: "38s", tone: "danger" },
-    { role: "Builder", message: "claimed Sortr", relativeTime: "1m", tone: "builder" },
+    { id: "activity-arbiter-accepted-chainr", role: "Arbiter", message: "accepted Chainr", relativeTime: "2s", tone: "arbiter" },
+    { id: "activity-critic-proof-shiftr", role: "Critic", message: "proof passed · Shiftr", relativeTime: "11s", tone: "critic" },
+    { id: "activity-arbiter-rejected-removr", role: "Arbiter", message: "rejected Removr", relativeTime: "38s", tone: "danger" },
+    { id: "activity-builder-claimed-sortr", role: "Builder", message: "claimed Sortr", relativeTime: "1m", tone: "builder" },
   ],
 };

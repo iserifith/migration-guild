@@ -1,6 +1,8 @@
 import React from "react";
 import { useArtifacts, useEvents, useSessions, useSociety } from "../hooks";
 import type { LifecycleStep, SocietyRole, SocietyViewData } from "../types";
+import { classifyRole } from "../utils/roles";
+import { relativeTime } from "../utils/time";
 
 export interface SocietyViewProps {
   data?: SocietyViewData;
@@ -19,17 +21,6 @@ const stepToken = (kind: LifecycleStep["kind"]) => {
 };
 
 const roleLabel = (role: SocietyRole) => role[0].toUpperCase() + role.slice(1);
-
-function relativeTime(value: string): string {
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
-  return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m` : `${Math.floor(seconds / 3600)}h`;
-}
-
-function classifyRole(agent: string | null): SocietyRole {
-  if (/critic|review|test/i.test(agent ?? "")) return "critic";
-  if (/arbiter/i.test(agent ?? "")) return "arbiter";
-  return "builder";
-}
 
 function LiveSocietyView() {
   const { artifacts } = useArtifacts();

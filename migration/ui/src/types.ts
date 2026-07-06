@@ -59,7 +59,7 @@ export type ActivityTone = SocietyRole | "danger";
 export interface MissionMetric { label: string; value: string; suffix?: string; detail: string; tone: MetricTone; }
 export interface MissionSocietyRole { role: SocietyRole; action: string; count: string; }
 export interface MissionWave { label: string; status: string; progress: number; tone: WaveTone; }
-export interface MissionActivity { role: string; message: string; relativeTime: string; tone: ActivityTone; }
+export interface MissionActivity { id: string; role: string; message: string; relativeTime: string; tone: ActivityTone; }
 export interface MissionControlData { metrics: MissionMetric[]; society: MissionSocietyRole[]; waves: MissionWave[]; activity: MissionActivity[]; }
 
 export interface SocietyArtifactChip {

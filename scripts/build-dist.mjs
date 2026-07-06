@@ -188,9 +188,9 @@ async function main() {
   console.log("╚══════════════════════════════════════╝");
   console.log("");
 
-  console.log("▶ Step 1/3 — Build package/tools (tsup)");
-  await run("npx", ["tsup"], { cwd: path.join(repoRoot, "package", "tools") });
-  console.log("  ✓ tools built");
+  console.log("▶ Step 1/3 — Build migration (tsup)");
+  await run("npx", ["tsup"], { cwd: path.join(repoRoot, "migration") });
+  console.log("  ✓ migration built");
 
   console.log("▶ Step 2/3 — Build setup.ts (tsup)");
   await run("npm", ["run", "build"], { cwd: repoRoot });

@@ -134,7 +134,7 @@ test("can approve with independent passing test evidence", () => {
       artifactId: ARTIFACT_ID,
       producedBy: "critic-agent",
       evidenceType: "test-command",
-      command: "npm test --prefix package/tools",
+      command: "npm test --prefix migration",
       exitCode: 0,
       pass: 1,
       summary: "tool tests passed",

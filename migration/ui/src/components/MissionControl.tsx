@@ -1,6 +1,8 @@
 import React from "react";
 import { useArtifacts, useEvents, useSessions, useSociety, useStatus, useWavePlan } from "../hooks";
 import type { ActivityTone, MissionControlData, SocietyRole } from "../types";
+import { classifyRole } from "../utils/roles";
+import { relativeTime } from "../utils/time";
 
 export interface MissionControlProps {
   data?: MissionControlData;
@@ -23,28 +25,26 @@ const roleTokens: Record<SocietyRole, { foreground: string; background: string }
   arbiter: { foreground: "var(--text-pro)", background: "var(--bg-pro)" },
 };
 
-function relativeTime(value: string): string {
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
-  return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m` : `${Math.floor(seconds / 3600)}h`;
-}
-
-function roleFor(agent: string): SocietyRole {
-  if (/critic|review|test/i.test(agent)) return "critic";
-  if (/arbiter/i.test(agent)) return "arbiter";
-  return "builder";
-}
-
 function LiveMissionControl() {
-  const { status } = useStatus();
-  const { society } = useSociety();
-  const { wavePlan } = useWavePlan();
-  const { sessions } = useSessions();
-  const { artifacts } = useArtifacts();
+  const statusHook = useStatus();
+  const societyHook = useSociety();
+  const wavePlanHook = useWavePlan();
+  const sessionsHook = useSessions();
+  const artifactsHook = useArtifacts();
+  const { status } = statusHook;
+  const { society } = societyHook;
+  const { wavePlan } = wavePlanHook;
+  const { sessions } = sessionsHook;
+  const { artifacts } = artifactsHook;
   const activityArtifactId = sessions[0]?.id ?? artifacts[0]?.id ?? "";
-  const { events } = useEvents(activityArtifactId);
+  const eventsHook = useEvents(activityArtifactId);
+  const { events } = eventsHook;
+  const errors = [statusHook, societyHook, wavePlanHook, sessionsHook, artifactsHook, eventsHook]
+    .map((hook) => hook.error)
+    .filter((error): error is Error => error !== null);
   const total = status?.files.total ?? 0;
   const completed = status?.files.completed ?? 0;
-  const roleCount = (role: SocietyRole) => Object.entries(society?.roles ?? {}).reduce((sum, [agent, count]) => sum + (roleFor(agent) === role ? count : 0), 0);
+  const roleCount = (role: SocietyRole) => Object.entries(society?.roles ?? {}).reduce((sum, [agent, count]) => sum + (classifyRole(agent) === role ? count : 0), 0);
   const data: MissionControlData = {
     metrics: [
       { label: "Completion", value: `${total ? Math.round(completed / total * 100) : 0}%`, detail: `${completed} / ${total} artifacts`, tone: "neutral" },
@@ -63,11 +63,22 @@ function LiveMissionControl() {
       return { label: `Wave ${wave.wave}`, status: `${done}/${wave.total} done`, progress, tone: progress === 100 ? "success" : progress === 0 ? "warning" : "accent" };
     }),
     activity: events.slice(0, 6).map((event) => {
-      const role = roleFor(event.agent);
-      return { role: role[0].toUpperCase() + role.slice(1), message: event.note, relativeTime: relativeTime(event.created_at), tone: (/reject|fail/i.test(event.event_type) ? "danger" : role) as ActivityTone };
+      const role = classifyRole(event.agent);
+      return { id: event.id, role: role[0].toUpperCase() + role.slice(1), message: event.note, relativeTime: relativeTime(event.created_at), tone: (/reject|fail/i.test(event.event_type) ? "danger" : role) as ActivityTone };
     }),
   };
-  return <MissionControlView data={data} />;
+  return (
+    <>
+      {errors.length > 0 && (
+        <div style={{ color: "var(--text-danger)", padding: "8px 12px", fontSize: 12 }}>
+          {errors.map((error, index) => (
+            <div key={index}>{error.message}</div>
+          ))}
+        </div>
+      )}
+      <MissionControlView data={data} />
+    </>
+  );
 }
 
 function MissionControlView({ data }: { data: MissionControlData }) {
@@ -184,8 +195,8 @@ function MissionControlView({ data }: { data: MissionControlData }) {
         <section className="mission-panel" aria-labelledby="activity-heading">
           <h2 className="mission-heading" id="activity-heading"><span className="pulse" />Live activity</h2>
           <div>
-            {data.activity.map((event, index) => (
-              <div className="mission-activity" key={`${event.relativeTime}-${index}`}>
+            {data.activity.map((event) => (
+              <div className="mission-activity" key={event.id}>
                 <span className="mission-dot" style={{ color: toneToken[event.tone] }} aria-hidden="true">●</span>
                 <span><span className="mission-activity-role">{event.role}</span> {event.message}</span>
                 <time className="mission-time">{event.relativeTime}</time>

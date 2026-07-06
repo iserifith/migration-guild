@@ -22,7 +22,7 @@ The split matters because not everything in this repository ships.
 | `package/skills/` | Skill definitions and shipped skill assets installed into migration workspaces | Yes |
 | `package/prompts/` | Prompt shortcuts installed into migration workspaces | Yes |
 | `package/instructions/` | Path-scoped instructions installed into migration workspaces | Yes |
-| `package/tools/` | Registry CLI, guildctl CLI, OpenAI-compatible runtime files, packaging-time runtime files | Yes |
+| `migration/` | Registry CLI, guildctl CLI, OpenAI-compatible runtime files, test suite | Yes |
 | `setup.ts` | Installer entrypoint that copies `package/` into a target workspace | Yes, as compiled `dist/setup.js` |
 | `scripts/build-dist.mjs` | Builds the distributable tarball | Dev tool |
 
@@ -55,8 +55,7 @@ Important consequence:
 
 ### Runtime and packaging paths
 
-- `migration/` — live development copy of the registry and guildctl CLIs used in this repo
-- `package/tools/` — packaged copy of the same toolset that gets shipped
+- `migration/` — canonical source for the registry and guildctl CLIs, test suite, and runtime code
 - `dist/` — compiled installer and assembled tarball output
 - `package/mock/` — packaged sample fixture content for setting up a separate test workspace
 
@@ -84,7 +83,6 @@ Common paths:
 - `package/skills/`
 - `package/prompts/`
 - `package/instructions/`
-- `package/tools/`
 - `package/agent-instructions.md`
 
 Do not mirror shipped agents, skills, prompts, or instructions into root `.github/`. `package/` is the source of truth for shipped Agent runtime behavior.
@@ -106,7 +104,6 @@ Use `package/mock/` for maintained sample content instead of recreating `legacy/
 `setup.ts` is the installer source. It:
 
 - copies packaged agents, prompts, skills, and instructions into `.github/`
-- copies `package/tools/` into `migration/`
 - writes `.github/agent-instructions.md` with the selected target framework
 - optionally clones or copies legacy source into `legacy/`
 
@@ -128,20 +125,13 @@ npm run build:dist
 What they do:
 
 - `npm run build` compiles `setup.ts` to `dist/setup.js`
-- `npm run build:dist` runs the cross-platform dist builder, builds `package/tools/`, rebuilds `dist/setup.js`, then assembles `dist/__GUILDCTL_KIT_TGZ__`
+- `npm run build:dist` runs the cross-platform dist builder, builds `migration/`, rebuilds `dist/setup.js`, then assembles `dist/__GUILDCTL_KIT_TGZ__`
 
-## Mirroring rules
+## Source of truth
 
-The only intentional live mirror is:
-
-- `migration/*` and `package/tools/*`
-
-When runtime claim/run behavior changes, keep these pairs aligned in the same commit:
-
-- `migration/registry/**` <-> `package/tools/registry/**`
-- `__MIGRATION_GUILDCTL__/**` <-> `__PACKAGE_TOOLS_GUILDCTL__/**`
-- `migration/registry_schema.sql` <-> `package/tools/registry_schema.sql`
-- `migration/test/**` <-> `package/tools/test/**` for behavior-level regression coverage
+- `migration/` is the canonical source for CLI runtime code
+- `package/` contains shipped Agent artifacts (agents, skills, prompts, instructions) but NOT runtime code
+- Do not mirror runtime code between directories
 
 For Agent artifacts, `package/` is the shipped source of truth and root `.github/` is repo-only maintainer context. Do not reintroduce mirrored runtime copies under root `.github/`.
 
@@ -263,7 +253,7 @@ AGENT_CMD=/path/to/agent agent --agent documentation-agent --yolo -p "<prompt>"
 When making a change, ask:
 
 1. Is this repo-only, or should it ship?
-2. If it should ship, did I update the `package/` copy?
-3. If it changes `migration/`, did I update `package/tools/` too?
+2. If it should ship as an Agent artifact, did I update `package/`?
+3. If it changes CLI/runtime code, did I update `migration/`?
 4. If it changes maintainer workflow, did I update `DEVELOPMENT.md`?
 5. If it is worth recording for later context, did I add it to the correct `Unreleased` date group in `CHANGELOGS.MD`?

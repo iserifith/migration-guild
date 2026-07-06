@@ -88,7 +88,7 @@ test("arbitration records JSON evidence IDs and returns latest decision", () => 
       artifactId: ARTIFACT_ID,
       producedBy: "review-agent",
       evidenceType: "test-command",
-      command: "npm test --prefix package/tools -- evidence-gate.test.ts",
+      command: "npm test --prefix migration -- evidence-gate.test.ts",
       exitCode: 0,
       pass: 1,
       summary: "evidence gate tests passed",
