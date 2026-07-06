@@ -248,16 +248,17 @@ Prompt packs make the workflow portable across Java, .NET, PHP, Rails, Node, bat
 
 ## Run ledgers
 
-Every evidence-mapping run writes a ledgered output under `.guild/runs/`.
-
-A run directory can include:
+Every evidence-mapping run writes a ledgered output under `.guild/runs/`. A run directory contains:
 
 ```text
 .guild/runs/<timestamp>/
-  prompt.md
-  report.md
-  evidence.json
-  config.snapshot.yaml
+  input.json              # phase + profile + input passed to the run
+  config.snapshot.yaml    # sanitized config snapshot (API keys redacted)
+  prompt.final.md         # the full rendered prompt sent to the model
+  response.md             # model response (if captured)
+  evidence/
+    init-evidence.json    # structured evidence (files, deps, git, risks)
+  report.md               # human-readable evidence report
 ```
 
 Ledgers make it possible to answer:
@@ -315,9 +316,19 @@ node migration/guildctl/dist/cli.js release --id <artifact-id>
 node migration/guildctl/dist/cli.js evidence add --artifact <id> --type test-command --produced-by reviewer --pass --summary "Tests passed"
 node migration/guildctl/dist/cli.js evidence list --artifact <id>
 node migration/guildctl/dist/cli.js arbitrate --artifact <id> --approve --arbiter reviewer --reason "Evidence accepted"
+
+# Society proof + benchmarks
+node migration/guildctl/dist/cli.js society-report
+node migration/guildctl/dist/cli.js benchmark run --fixture <id> --mode both
+node migration/guildctl/dist/cli.js benchmark report
+node migration/guildctl/dist/cli.js benchmark compare --baseline <id> --guild <id>
+
+# Registry inspector (live dashboard on http://localhost:3322)
+node migration/registry/dist/cli.js serve
+node migration/registry/dist/cli.js list-artifacts
 ```
 
-The registry model, phase orchestration, worker spawning, failure handling, recovery flow, and Builder → Critic → Arbiter demo are maintained outside the public repository history.
+The registry model, phase orchestration, worker spawning, pre-claim/atomic-claim logic, failure handling, recovery flow, and the Builder → Critic → Arbiter review loop all live in this repository under `migration/guildctl/` and `migration/registry/`. Run `guildctl --help` to see every command, or read `migration/guildctl/cli.ts` for the authoritative command list.
 
 ---
 
