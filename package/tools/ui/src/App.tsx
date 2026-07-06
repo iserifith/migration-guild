@@ -14,8 +14,10 @@
 import React from "react";
 import ArtifactList from "./components/ArtifactList";
 import BlockersView from "./components/BlockersView";
+import MissionControl from "./components/MissionControl";
 import RunsView from "./components/RunsView";
 import SessionsView from "./components/SessionsView";
+import SocietyView from "./components/SocietyView";
 import WavePlan from "./components/WavePlan";
 import { useRegistryData, type UseRegistryDataResult } from "./hooks";
 import type {
@@ -57,6 +59,16 @@ interface TabDef {
 }
 
 const TABS: TabDef[] = [
+  {
+    id: "Mission Control",
+    label: "Mission Control",
+    render: () => <MissionControl />,
+  },
+  {
+    id: "Society",
+    label: "Society",
+    render: () => <SocietyView />,
+  },
   {
     id: "Artifacts",
     label: "Artifacts",
@@ -236,39 +248,43 @@ export default function App() {
   return (
     <div className="layout">
       <header className="header">
+        <span className="brand-mark" aria-hidden="true">▲</span>
         <h1>Migration Guild</h1>
-        <span className="sep">›</span>
+        <span className="sep">/</span>
         <span className="project">registry inspector</span>
-        <div className="stats">
-          {status.loading ? (
-            <span className="stat">Loading status...</span>
-          ) : status.error ? (
-            <button className="header-button" onClick={status.reload} type="button">
-              Retry status
-            </button>
-          ) : (
-            Object.entries(byStatus).map(([s, n]) => (
-              <span key={s} className={`stat ${s}`}>
-                {n} {s}
-              </span>
-            ))
-          )}
+        <div className="header-actions">
+          <span className="live-status"><span className="pulse" />Live</span>
+          <div className="stats">
+            {status.loading ? (
+              <span className="stat">Loading status...</span>
+            ) : status.error ? (
+              <button className="header-button" onClick={status.reload} type="button">
+                Retry status
+              </button>
+            ) : (
+              Object.entries(byStatus).map(([s, n]) => (
+                <span key={s} className={`stat ${s}`}>
+                  {n} {s}
+                </span>
+              ))
+            )}
+          </div>
+          <label className="time-control">
+            <span className="time-label">Time</span>
+            <select
+              aria-label="Time display mode"
+              className="filter-select"
+              value={timeMode}
+              onChange={(event) => setTimeMode(event.target.value as TimeDisplayMode)}
+            >
+              <option value="utc">UTC</option>
+              <option value="local">Local time</option>
+            </select>
+          </label>
+          <button className="header-button" onClick={reload} type="button">
+            ↻ refresh
+          </button>
         </div>
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ color: "#888", fontSize: 12 }}>Time</span>
-          <select
-            aria-label="Time display mode"
-            className="filter-select"
-            value={timeMode}
-            onChange={(event) => setTimeMode(event.target.value as TimeDisplayMode)}
-          >
-            <option value="utc">UTC</option>
-            <option value="local">Local time</option>
-          </select>
-        </label>
-        <button className="header-button" onClick={reload} type="button">
-          ↻ refresh
-        </button>
       </header>
 
       <nav className="tabs">

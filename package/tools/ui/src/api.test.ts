@@ -16,6 +16,7 @@ import {
   fetchSessions,
   fetchStatus,
   fetchWavePlan,
+  getSociety,
 } from "./api";
 import type {
   Artifact,
@@ -128,6 +129,16 @@ describe("fetchStatus", () => {
     expect(result.files.total).toBe(5);
     expect(result.files.pending).toBe(2);
     expect(result.files.by_status["in-progress"]).toBe(1);
+  });
+});
+
+describe("getSociety", () => {
+  it("calls the aggregate and per-artifact forms", async () => {
+    const spy = mockJsonFetch({ roles: {} });
+    await getSociety();
+    await getSociety({ id: "legacy-source:com.acme:Foo" });
+    expect(spy).toHaveBeenNthCalledWith(1, "/api/society");
+    expect(spy).toHaveBeenNthCalledWith(2, "/api/society?id=legacy-source%3Acom.acme%3AFoo");
   });
 });
 

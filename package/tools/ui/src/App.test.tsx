@@ -14,6 +14,12 @@ import type { Artifact, StatusResponse } from "./types";
 vi.mock("./hooks", () => ({
   useRegistryData: vi.fn(),
   useRunLog: vi.fn(),
+  useStatus: () => ({ status: null, loading: false, error: null, reload: vi.fn() }),
+  useSociety: () => ({ society: null, loading: false, error: null, reload: vi.fn() }),
+  useWavePlan: () => ({ wavePlan: [], loading: false, error: null, reload: vi.fn() }),
+  useSessions: () => ({ sessions: [], loading: false, error: null, reload: vi.fn() }),
+  useArtifacts: () => ({ artifacts: [], loading: false, error: null, reload: vi.fn() }),
+  useEvents: () => ({ events: [], loading: false, error: null, reload: vi.fn() }),
 }));
 
 const MOCK_ARTIFACT: Artifact = {
@@ -198,6 +204,7 @@ describe("App shell", () => {
       },
     });
     render(<App />);
+    fireEvent.click(screen.getByText("Artifacts"));
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
   });
 
@@ -211,6 +218,7 @@ describe("App shell", () => {
     mockRegistryData();
     render(<App />);
     for (const label of [
+      "Mission Control",
       "Artifacts",
       "Wave Plan",
       "Sessions",
@@ -221,10 +229,11 @@ describe("App shell", () => {
     }
   });
 
-  it("shows the Artifacts table by default after load", () => {
+  it("shows Mission Control by default after load", () => {
     mockRegistryData();
     render(<App />);
-    expect(screen.getByRole("columnheader", { name: /path/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /agent society/i })).toBeInTheDocument();
+    expect(screen.getByText("Mission Control")).toHaveClass("active");
   });
 
   it("renders server-backed wave data even when the artifact list is empty", () => {
@@ -302,6 +311,7 @@ describe("App shell", () => {
       },
     });
     render(<App />);
+    fireEvent.click(screen.getByText("Artifacts"));
     expect(screen.getByText(/couldn't load artifacts/i)).toBeInTheDocument();
     expect(screen.getByText(/network failure/i)).toBeInTheDocument();
   });
