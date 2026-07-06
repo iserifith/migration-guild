@@ -1,118 +1,94 @@
 # Migration Guild
 
-A multi-agent system for evidence-gated legacy modernization.
+**Evidence-gated, multi-agent legacy modernization.** Migration Guild orchestrates a society of AI agents that migrate legacy codebases (Java/Spring today, Python next) file-by-file — but no agent is allowed to *claim* progress. Every status transition must be backed by evidence in a shared SQLite registry, and a Builder → Critic → Arbiter gate decides what actually counts as "migrated."
 
-## Quick Start
+Your legacy source is never touched: agents read from `legacy/`, write to `modern/`, and the registry keeps the audit trail.
+
+## Why evidence-gated?
+
+Most agentic migration demos trust the model's self-report ("done ✅"). Migration Guild inverts that: intent is cheap, evidence is required. Agents must file dependency scans, classification signals, tests, and review verdicts before the arbiter lets an artifact advance. Failed work is released back to the pool via lease-expiring claims, so a crashed agent never deadlocks the pipeline.
+
+## Key features
+
+- **Blackboard architecture** — agents coordinate through a shared SQLite registry (WAL mode), not through chat. Atomic claims with lease tokens, heartbeats, and attempt counters make parallel agents safe.
+- **Four-phase pipeline** — `inventory` (scan & classify) → `plan` (dependency waves) → `migrate` (tests-first codegen) → `review` (independent critic + arbiter gate).
+- **Stack packs** — pluggable per-stack rules (`stacks/java-spring`, `stacks/python`): classification heuristics, framework mappings, audit rules, and scaffold templates.
+- **Provider-neutral** — any OpenAI-compatible endpoint (DashScope/Qwen, OpenRouter, OpenAI, local llama.cpp/LM Studio) or an agent CLI harness.
+- **Mission Control UI** — a React dashboard over the registry: wave plans, live sessions, run logs, blockers.
+- **Tested where it hurts** — ~30 test files covering claim leases, evidence gates, arbiter verdicts, pipeline failures, and harness selection.
+
+## Quick start
 
 ```bash
 git clone https://github.com/iserifith/migration-guild.git
 cd migration-guild
 npm install
-cd migration && npm install && cd ..
-npm run build
+cd migration && npm install && npm run build && cd ..
+
+cp .env.example .env   # set your API key (DashScope / OpenRouter / OpenAI / local)
+
 node migration/guildctl/dist/cli.js --help
 ```
+
+Then point it at a legacy repo and run the pipeline phase by phase. The full walkthrough — setup wizard, workspace layout, per-phase commands — is in **[GETTING-STARTED.md](GETTING-STARTED.md)**. Contributor docs live in **[DEVELOPMENT.md](DEVELOPMENT.md)**; agent roles are specified in **[AGENTS.md](AGENTS.md)**.
 
 ## Architecture
 
 ```mermaid
 graph TB
-    subgraph "Frontend"
-        UI["Mission Control UI<br/>(React)"]
-    end
-
-    UI -->|"REST API"| CLI
-
-    subgraph "CLI Layer"
-        CLI["guildctl CLI<br/>(Node.js)"]
-    end
-
-    CLI -->|"Spawn Agents"| ORCH
+    UI["Mission Control UI (React)"] -->|REST| CLI["guildctl CLI"]
+    CLI -->|spawn| ORCH["Orchestrator"]
 
     subgraph "Agent Society"
-        ORCH["Orchestrator Agent"]
-        ORCH --> CTX["Context Agent"]
-        ORCH --> PLAN["Planner Agent"]
-        ORCH --> ANA["Analyze Agent"]
-        ORCH --> TEST["Test Agent"]
-        ORCH --> CODE["Codegen Agent"]
-        ORCH --> REV["Review Agent"]
-        ORCH --> REM["Remediation Agent"]
+        ORCH --> CTX["Context"]
+        ORCH --> PLAN["Planner"]
+        ORCH --> ANA["Analyze"]
+        ORCH --> TEST["Test"]
+        ORCH --> CODE["Codegen"]
+        ORCH --> REV["Review"]
+        ORCH --> REM["Remediation"]
     end
 
-    subgraph "Registry (SQLite)"
-        REG["Artifact Registry<br/>• Atomic Claims<br/>• Wave Planning<br/>• Status Transitions"]
-    end
+    REG["Artifact Registry (SQLite)<br/>atomic claims · waves · status gates"]
+    EV["Evidence Layer<br/>.guild/evidence · .guild/runs"]
+    LLM["LLM Provider<br/>(OpenAI-compatible — Qwen/DashScope default)"]
 
-    subgraph "Evidence Layer"
-        EV[".guild/evidence/<br/>• Dependency Scans<br/>• Static Analysis"]
-        RUNS[".guild/runs/<br/>• Run Ledgers<br/>• Prompt Logs"]
-    end
+    CTX & PLAN & ANA & TEST & CODE & REV & REM -.->|API| LLM
+    CTX & PLAN & TEST & CODE & REV & REM --> REG
+    CTX & ANA --> EV
+    PLAN -->|reads| EV
 
-    subgraph "Alibaba Cloud"
-        QWEN["Qwen Cloud<br/>(DashScope API)<br/>dashscope-intl.aliyuncs.com"]
-    end
+    LEG["legacy/ (read-only)"] --> CTX & ANA & REV
+    TEST & CODE --> MOD["modern/ (write target)"]
+    REV --> MOD
 
-    subgraph "Workspace"
-        LEG["legacy/<br/>(read-only)"]
-        MOD["modern/<br/>(write target)"]
-    end
-
-    CTX -->|"Read"| LEG
-    CTX -->|"Write"| EV
-    CTX -->|"Claim"| REG
-
-    PLAN -->|"Read"| EV
-    PLAN -->|"Write"| REG
-
-    ANA -->|"Read"| LEG
-    ANA -->|"Write"| EV
-
-    TEST -->|"Write"| MOD
-    TEST -->|"Update"| REG
-
-    CODE -->|"Write"| MOD
-    CODE -->|"Update"| REG
-
-    REV -->|"Read"| LEG
-    REV -->|"Read"| MOD
-    REV -->|"Verdict"| REG
-
-    REM -->|"Recover"| REG
-
-    CTX -.->|"API"| QWEN
-    PLAN -.->|"API"| QWEN
-    ANA -.->|"API"| QWEN
-    TEST -.->|"API"| QWEN
-    CODE -.->|"API"| QWEN
-    REV -.->|"API"| QWEN
-    REM -.->|"API"| QWEN
-
-    CLI -->|"Status"| REG
-    CLI -->|"Read"| EV
-    CLI -->|"Read"| RUNS
-
-    style QWEN fill:#ff6a00,stroke:#333,stroke-width:2px,color:#fff
-    style REG fill:#4a90d9,stroke:#333,stroke-width:2px,color:#fff
-    style UI fill:#7b68ee,stroke:#333,stroke-width:2px,color:#fff
-    style CLI fill:#7b68ee,stroke:#333,stroke-width:2px,color:#fff
-    style ORCH fill:#e74c3c,stroke:#333,stroke-width:2px,color:#fff
-    style LEG fill:#95a5a6,stroke:#333,stroke-width:2px,color:#fff
-    style MOD fill:#27ae60,stroke:#333,stroke-width:2px,color:#fff
+    style REG fill:#4a90d9,stroke:#333,color:#fff
+    style LLM fill:#ff6a00,stroke:#333,color:#fff
+    style LEG fill:#95a5a6,stroke:#333,color:#fff
+    style MOD fill:#27ae60,stroke:#333,color:#fff
 ```
 
-## Tracks
+## Pipeline at a glance
 
-**Track 3: Agent Society** — Multi-agent coordination through a shared registry
+| Phase | Command | What must be true to pass |
+|---|---|---|
+| Inventory | `guildctl inventory` | Every file classified (kind, role, framework) with signals recorded |
+| Plan | `guildctl plan` | Dependency graph resolved; artifacts assigned to executable waves |
+| Migrate | `guildctl migrate` | Tests written first; code lands in `modern/`; evidence filed |
+| Review | `guildctl review` / `arbitrate` | Independent critic verdict; arbiter gate approves or sends to `needs-rework` |
 
-## Tech Stack
+`guildctl status` and `guildctl watch` show live progress; `guildctl remediate` recovers stalled or failed artifacts.
 
-- **TypeScript** / Node.js
-- **SQLite** (WAL mode, concurrent reads)
-- **OpenAI-compatible API** (Qwen Cloud / DashScope)
-- **React** (Mission Control UI)
+## Roadmap
+
+- **Runtime evidence tier (environment-in-the-loop).** Today the evidence gates are fed by static and registry evidence. Next: an environment agent that builds and executes migrated modules in an isolated sandbox, files build/test/runtime logs as first-class evidence, and routes failures by class (config → env self-repair, semantic → codegen, behavioral → test agent). This follows the direction argued in [*Environment-in-the-Loop: Rethinking Code Migration with LLM-based Agents*](https://arxiv.org/abs/2602.09944) — Migration Guild already provides the coordination substrate (registry, claims, arbiter) that paradigm needs.
+- Python stack pack parity with java-spring.
+- Pinned-fixture stress suite against real brownfield repos.
+
+## Tech stack
+
+TypeScript / Node.js 18+ · SQLite (WAL) · OpenAI-compatible APIs · React (Mission Control)
 
 ## License
 
 MIT
-...
