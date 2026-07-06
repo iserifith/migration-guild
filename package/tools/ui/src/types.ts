@@ -52,6 +52,84 @@ export type AcceptanceState = "Proposed" | "Evidence Passed" | "Rejected" | "Acc
 export interface AcceptanceEvidenceRow { evidence_id: string; artifact_id: string; run_id: string | null; produced_by: string; evidence_type: string; command: string | null; exit_code: number | null; pass: 0 | 1; summary: string; output_path: string | null; output_excerpt: string | null; created_at: string; }
 export interface ArbitrationDecisionRow { decision_id: string; artifact_id: string; arbiter: string; decision: "approved" | "rejected"; reason: string; evidence_ids: string; decided_at: string; }
 
+export type SocietyRole = "builder" | "critic" | "arbiter";
+export type MetricTone = "neutral" | "success" | "warning";
+export type WaveTone = "success" | "accent" | "warning";
+export type ActivityTone = SocietyRole | "danger";
+export interface MissionMetric { label: string; value: string; suffix?: string; detail: string; tone: MetricTone; }
+export interface MissionSocietyRole { role: SocietyRole; action: string; count: string; }
+export interface MissionWave { label: string; status: string; progress: number; tone: WaveTone; }
+export interface MissionActivity { id: string; role: string; message: string; relativeTime: string; tone: ActivityTone; }
+export interface MissionControlData { metrics: MissionMetric[]; society: MissionSocietyRole[]; waves: MissionWave[]; activity: MissionActivity[]; }
+
+export interface SocietyArtifactChip {
+  artifactId: string;
+  name: string;
+  agentId: string | null;
+  state: string;
+  rejected?: boolean;
+}
+
+export interface SocietyLane {
+  role: SocietyRole;
+  activeLabel: string;
+  artifacts: SocietyArtifactChip[];
+}
+
+export interface LifecycleStep {
+  id: string;
+  kind: SocietyRole | "gate" | "rejection";
+  title: string;
+  relativeTime?: string;
+  description?: string;
+  evidence?: AcceptanceEvidenceRow[];
+  decision?: ArbitrationDecisionRow;
+}
+
+export interface SocietyLifecycle {
+  artifactId: string;
+  artifactName: string;
+  status: string;
+  steps: LifecycleStep[];
+}
+export interface SocietyViewData { lanes: SocietyLane[]; lifecycles: SocietyLifecycle[]; initialArtifactId: string; }
+
+export interface SocietyResponse {
+  roles: Record<string, number>;
+  task_division: {
+    by_status: Record<string, number>;
+    by_wave: Record<string, number>;
+    by_tier: Record<string, number>;
+    active_claims: number;
+  };
+  dialogue: Record<string, number>;
+  conflict_resolution: {
+    claim_releases: number;
+    claim_expirations: number;
+    reaped_runs: number;
+    arbitration_approved: number;
+    arbitration_rejected: number;
+  };
+  evidence: {
+    total: number;
+    passed: number;
+    failed: number;
+    pass_rate: number;
+    artifacts_awaiting_evidence: number;
+    artifacts_awaiting_arbitration: number;
+  };
+  efficiency: {
+    elapsed_runtime_ms: number | null;
+    failed_runs: number;
+    reworked_artifacts: number;
+  };
+  artifact?: {
+    id: string;
+    evidence: AcceptanceEvidenceRow[];
+    arbitration: ArbitrationDecisionRow[];
+  };
+}
+
 // ── Live endpoint shapes ───────────────────────────────────────────────────────
 
 /** Shape of each element returned by GET /api/artifacts. */

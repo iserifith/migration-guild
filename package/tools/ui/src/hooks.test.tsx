@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   useRegistryData,
+  useEvents,
   useRunLog,
   useSessions,
   useWavePlan,
@@ -15,6 +16,8 @@ import {
   fetchSessions,
   fetchStatus,
   fetchWavePlan,
+  fetchEvents,
+  getSociety,
 } from "./api";
 import type {
   BlockerEntry,
@@ -34,6 +37,7 @@ vi.mock("./api", () => ({
   fetchSessions: vi.fn(),
   fetchStatus: vi.fn(),
   fetchWavePlan: vi.fn(),
+  getSociety: vi.fn(),
 }));
 
 function paged<T>(items: T[], overrides: Partial<{
@@ -80,6 +84,8 @@ describe("hooks", () => {
       open_issues: [],
     });
     vi.mocked(fetchWavePlan).mockResolvedValue([]);
+    vi.mocked(fetchEvents).mockResolvedValue([]);
+    vi.mocked(getSociety).mockResolvedValue({} as never);
     vi.mocked(fetchSessions).mockResolvedValue(
       paged<SessionEntry>([], { total: 0, total_pages: 1 }),
     );
@@ -110,6 +116,19 @@ describe("hooks", () => {
     expect(result.current.wavePlan).toEqual([
       { wave: 2, total: 5, by_status: { pending: 3, completed: 2 } },
     ]);
+  });
+
+  it("useEvents polls so the live activity feed receives new rows", async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchEvents)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: "event-1", event_type: "claimed", agent: "builder", model: null, note: "claimed Foo", event_data: null, created_at: "2026-06-27T00:00:00Z" }]);
+    const { result } = renderHook(() => useEvents("artifact-1"));
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { vi.advanceTimersByTime(5_000); await Promise.resolve(); });
+    expect(result.current.events).toHaveLength(1);
+    expect(fetchEvents).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 
   it("useSessions surfaces endpoint errors", async () => {
