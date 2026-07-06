@@ -1,5 +1,7 @@
 # Migration Guild — Evidence-Gated Modernization Toolkit
 
+[![CI](https://github.com/iserifith/migration-guild/actions/workflows/ci.yml/badge.svg)](https://github.com/iserifith/migration-guild/actions/workflows/ci.yml)
+
 **Map legacy systems first. Plan from evidence. Migrate in bounded, reviewable slices.**
 
 Migration Guild is an open-source toolkit for AI-assisted legacy modernization. It turns a legacy codebase into an auditable migration workspace with repo-local configuration, prompt packs, evidence outputs, run ledgers, and explicit gates before migration intent.

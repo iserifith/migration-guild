@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs for the same ref when a new commit is pushed.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          # Cache every npm lockfile present in the repo. Subdirs without a
+          # lockfile (package/tools/ui) still install correctly, just uncached.
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            package/tools/package-lock.json
+            migration/package-lock.json
+            migration/ui/package-lock.json
+
+      # Root tooling (tsup, tsx, typescript) — not strictly required for tests,
+      # but keeps the workspace consistent with local dev.
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install package/tools dependencies
+        run: npm install
+        working-directory: package/tools
+
+      - name: Install package/tools/ui dependencies
+        run: npm install
+        working-directory: package/tools/ui
+
+      - name: Install migration dependencies
+        run: npm install
+        working-directory: migration
+
+      - name: Install migration/ui dependencies
+        run: npm install
+        working-directory: migration/ui
+
+      - name: Test package/tools (registry CLI)
+        run: npm test
+        working-directory: package/tools
+
+      - name: Test package/tools/ui (registry UI)
+        run: npm test
+        working-directory: package/tools/ui
+
+      - name: Test migration (registry CLI)
+        run: npm test
+        working-directory: migration
+
+      - name: Test migration/ui (registry UI)
+        run: npm test
+        working-directory: migration/ui
