@@ -339,14 +339,17 @@ CREATE TABLE IF NOT EXISTS jvm_audit_findings (
     category     TEXT NOT NULL CHECK (category IN (
                      'internal-api',
                      'removed-api',
-                     'deprecated-api'
+                     'deprecated-api',
+                     'python-compat'
                  )),
     severity     TEXT NOT NULL CHECK (severity IN ('critical', 'warning')),
     symbol       TEXT,
     summary      TEXT NOT NULL,
     evidence     TEXT,
     remediation  TEXT NOT NULL,
-    detected_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    detected_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    dismissed_at TEXT,
+    override_id  TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_jvm_audit_artifact ON jvm_audit_findings(artifact_id);
@@ -365,7 +368,9 @@ CREATE TABLE IF NOT EXISTS dependency_findings (
     summary          TEXT NOT NULL,
     details          TEXT,
     remediation      TEXT NOT NULL,
-    detected_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    detected_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    dismissed_at     TEXT,
+    override_id      TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_dependency_findings_artifact ON dependency_findings(artifact_id);
@@ -383,6 +388,18 @@ CREATE TABLE IF NOT EXISTS dependency_strategies (
 );
 
 CREATE INDEX IF NOT EXISTS idx_dependency_strategies_approved_by ON dependency_strategies(approved_by);
+
+-- TASK-11: audit finding dismiss/reopen (no-delete acknowledge path) + python-compat labels.
+CREATE TABLE IF NOT EXISTS audit_overrides (
+    override_id   TEXT PRIMARY KEY,
+    finding_id    TEXT NOT NULL,
+    finding_table TEXT NOT NULL CHECK (finding_table IN ('jvm_audit_findings', 'dependency_findings')),
+    action        TEXT NOT NULL CHECK (action IN ('dismiss', 'reopen')),
+    reason        TEXT NOT NULL,
+    dismissed_by  TEXT NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_audit_overrides_finding ON audit_overrides(finding_id);
 
 -- ─── Triggers ────────────────────────────────────────────────────────────────
 -- Auto-write a status-changed event whenever any agent (at any depth) updates

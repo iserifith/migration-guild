@@ -183,9 +183,10 @@ program
 program
   .command("plan")
   .description("Phase 2: Propose framework mappings, confirm them, and assign migration waves")
-  .action(async () => {
+  .option("--override-audit", "Proceed past open critical audit findings (logged as an override)")
+  .action(async (opts) => {
     assertDbExists(dbPath());
-    await runPlan(db());
+    await runPlan(db(), { overrideAudit: Boolean(opts.overrideAudit) });
   });
 
 // ─── bootstrap ────────────────────────────────────────────────────────────────
