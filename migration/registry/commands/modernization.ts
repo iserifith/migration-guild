@@ -9,6 +9,7 @@ import type {
   FindingSeverity,
   JvmAuditCategory,
   JvmAuditFinding,
+  AuditOverride,
 } from "../types";
 
 export interface JvmAuditFindingInput {
@@ -123,6 +124,7 @@ export function replaceJvmAuditFindings(
           evidence = excluded.evidence,
           remediation = excluded.remediation,
           detected_at = datetime('now')
+          -- dismissed_at / override_id are intentionally preserved across re-audits
       `).run({
         finding_id: findingId,
         artifact_id: artifactId,
@@ -182,6 +184,7 @@ export function replaceDependencyFindings(
           details = excluded.details,
           remediation = excluded.remediation,
           detected_at = datetime('now')
+          -- dismissed_at / override_id are intentionally preserved across re-audits
       `).run({
         finding_id: findingId,
         artifact_id: artifactId,
@@ -350,4 +353,86 @@ export function approveDependencyStrategy(
     FROM dependency_strategies
     WHERE finding_id = ?
   `).get(opts.findingId) as DependencyStrategyDecision;
+}
+
+// ─── Audit finding dismiss / reopen (no-delete acknowledge path) ──────────────
+
+function resolveFindingTable(db: Database.Database, findingId: string): "jvm_audit_findings" | "dependency_findings" {
+  if (db.prepare("SELECT 1 FROM jvm_audit_findings WHERE finding_id = ?").get(findingId)) return "jvm_audit_findings";
+  if (db.prepare("SELECT 1 FROM dependency_findings WHERE finding_id = ?").get(findingId)) return "dependency_findings";
+  throw new RegistryError(2, `Audit finding not found: "${findingId}"`);
+}
+
+export interface DismissFindingOptions {
+  findingId: string;
+  reason: string;
+  dismissedBy?: string;
+}
+
+export function dismissFinding(db: Database.Database, opts: DismissFindingOptions): AuditOverride {
+  if (!opts.reason.trim()) throw new RegistryError(1, "--reason is required to dismiss a finding.");
+  const table = resolveFindingTable(db, opts.findingId);
+  const overrideId = `ovr-${createHash("sha1").update(`${opts.findingId}|${Date.now()}|${Math.random()}`).digest("hex").slice(0, 16)}`;
+
+  const tx = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO audit_overrides (override_id, finding_id, finding_table, action, reason, dismissed_by, created_at)
+      VALUES (@override_id, @finding_id, @finding_table, 'dismiss', @reason, @dismissed_by, datetime('now'))
+    `).run({
+      override_id: overrideId,
+      finding_id: opts.findingId,
+      finding_table: table,
+      reason: opts.reason.trim(),
+      dismissed_by: (opts.dismissedBy ?? "operator").trim(),
+    });
+    db.prepare(`
+      UPDATE ${table} SET dismissed_at = datetime('now'), override_id = @override_id WHERE finding_id = @finding_id
+    `).run({ override_id: overrideId, finding_id: opts.findingId });
+  });
+  tx();
+
+  return db.prepare("SELECT * FROM audit_overrides WHERE override_id = ?").get(overrideId) as AuditOverride;
+}
+
+export function reopenFinding(db: Database.Database, findingId: string): AuditOverride {
+  const table = resolveFindingTable(db, findingId);
+  const overrideId = `ovr-${createHash("sha1").update(`${findingId}|${Date.now()}|${Math.random()}`).digest("hex").slice(0, 16)}`;
+
+  const tx = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO audit_overrides (override_id, finding_id, finding_table, action, reason, dismissed_by, created_at)
+      VALUES (@override_id, @finding_id, @finding_table, 'reopen', 'Reopened via CLI', 'operator', datetime('now'))
+    `).run({
+      override_id: overrideId,
+      finding_id: findingId,
+      finding_table: table,
+    });
+    db.prepare(`
+      UPDATE ${table} SET dismissed_at = NULL, override_id = NULL WHERE finding_id = @finding_id
+    `).run({ finding_id: findingId });
+  });
+  tx();
+
+  return db.prepare("SELECT * FROM audit_overrides WHERE override_id = ?").get(overrideId) as AuditOverride;
+}
+
+export function listAuditOverrides(
+  db: Database.Database,
+  opts: { findingId?: string; action?: "dismiss" | "reopen" } = {},
+): AuditOverride[] {
+  const conditions = ["1=1"];
+  const params: Record<string, string> = {};
+  if (opts.findingId) {
+    conditions.push("finding_id = @finding_id");
+    params["finding_id"] = opts.findingId;
+  }
+  if (opts.action) {
+    conditions.push("action = @action");
+    params["action"] = opts.action;
+  }
+  return db.prepare(`
+    SELECT * FROM audit_overrides
+    WHERE ${conditions.join(" AND ")}
+    ORDER BY created_at DESC, finding_id ASC
+  `).all(params) as AuditOverride[];
 }
