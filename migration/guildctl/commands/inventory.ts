@@ -11,7 +11,7 @@ import { setNext } from "../../registry/commands/operator";
 import { applySchema } from "../../registry/db/schema";
 import { refreshCompatibilityAudits } from "../audit";
 import { evaluatePlanningReadiness, formatPlanningBlockMessage } from "../readiness";
-import { findMatchingFiles, loadActiveStack, readStackInstruction } from "../stack";
+import { findMatchingFiles, loadActiveStack, readStackInstruction, censusSourceFiles, countFilesForStack, listStackPacks } from "../stack";
 import { deriveArtifactModule, formatInventoryValidationReport, getInventoryCompletionStatus, loadClassificationSpec, recordInventoryCompletion, validateInventoryQuality } from "../classification";
 
 // ─── File scanner ────────────────────────────────────────────────────────────
@@ -33,8 +33,50 @@ export function scanAndRegister(db: Database.Database, projectRoot: string): num
   const cfg = resolveGuildConfig({ cwd: projectRoot });
   const pack = loadActiveStack(cfg, projectRoot);
   const spec = loadClassificationSpec(pack);
+
+  // TASK-03: language census — count every source-like file by extension before
+  // applying the stack filter, so an empty/stale result is never silent.
+  const { counts: census, total: censusTotal } = censusSourceFiles(legacyDir);
+  const censusLine = [...census.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([ext, n]) => `${ext}: ${n}`)
+    .join(", ");
+  process.stdout.write(`  [scan] language census: ${censusLine || "none"}\n`);
+
   const files = findMatchingFiles(legacyDir, pack.manifest.source_globs);
-  process.stdout.write(`  [scan] source files found: ${files.length}\n`);
+  process.stdout.write(`  [scan] files matching stack '${pack.manifest.id}': ${files.length}\n`);
+
+  if (censusTotal === 0) {
+    throw new Error(
+      "No source files found in legacy/. Check --legacy-url points at a populated codebase.",
+    );
+  }
+
+  if (files.length === 0) {
+    // Suggest a stack pack whose source globs best match the census.
+    const ranked = listStackPacks(projectRoot)
+      .map((candidate) => ({ id: candidate.manifest.id, n: countFilesForStack(legacyDir, candidate) }))
+      .filter((entry) => entry.n > 0)
+      .sort((a, b) => b.n - a.n);
+    const suggestion = ranked.length > 0
+      ? ` A stack pack that matches this codebase was detected: '${ranked[0]!.id}' (${ranked[0]!.n} file(s)).`
+      : "";
+    const available = listStackPacks(projectRoot).map((p) => p.manifest.id).join(", ");
+    throw new Error(
+      `No files matching stack '${pack.manifest.id}' found, but ${censusTotal} source file(s) were detected (${censusLine}).\n` +
+      "The configured stack does not match this codebase.\n" +
+      `Available stacks: ${available}.${suggestion}`,
+    );
+  }
+
+  // Warning tier: large share of the census is outside the configured stack.
+  const outOfStack = censusTotal - files.length;
+  if (outOfStack > 0 && outOfStack / censusTotal > 0.5) {
+    process.stderr.write(
+      `  [warn] ${outOfStack} of ${censusTotal} source file(s) do not match stack '${pack.manifest.id}'. ` +
+      "Continuing with the matching subset; out-of-stack files are ignored by inventory.\n",
+    );
+  }
 
   // Show DB filename so we know which file is being written
   const dbFilename = (db as unknown as { name?: string }).name ?? "(unknown)";
