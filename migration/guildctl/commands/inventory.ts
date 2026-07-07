@@ -24,6 +24,37 @@ function deriveArtifactId(filePath: string, projectRoot: string, legacyRoot: str
   return `legacy-source:${module}:${className}`;
 }
 
+// ─── Skip accounting ─────────────────────────────────────────────────────────
+
+interface SkipRecord {
+  path: string;
+  reason: string;
+}
+
+// Reconcile the discovered/registered/skipped arithmetic. The invariant is
+// discovered === registered + skipped; any imbalance is a scanner bug, not
+// benign dedup, so we surface it loudly rather than let it pass silently.
+export function reconcileInventoryCounts(
+  discovered: number,
+  registered: number,
+  skipCounts: Record<string, number>,
+): string {
+  const skipped = Object.values(skipCounts).reduce((a, b) => a + b, 0);
+  const reasonParts = Object.entries(skipCounts)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([reason, n]) => `${reason}: ${n}`);
+  const reasonLine = reasonParts.length > 0 ? `  [scan] skip reasons: ${reasonParts.join(", ")}\n` : "";
+  const report = `  [scan] discovered: ${discovered}  registered: ${registered}  skipped: ${skipped}\n${reasonLine}`;
+  if (discovered !== registered + skipped) {
+    throw new Error(
+      `Inventory count mismatch: discovered (${discovered}) != registered (${registered}) + skipped (${skipped}). ` +
+      `A file dropped out without a recorded skip reason — this is a scanner bug.`,
+    );
+  }
+  return report;
+}
+
 export function scanAndRegister(db: Database.Database, projectRoot: string): number {
   const legacyDir = path.join(projectRoot, "legacy");
   process.stdout.write(`  [scan] projectRoot : ${projectRoot}\n`);
@@ -40,30 +71,63 @@ export function scanAndRegister(db: Database.Database, projectRoot: string): num
   const dbFilename = (db as unknown as { name?: string }).name ?? "(unknown)";
   process.stdout.write(`  [scan] DB file     : ${dbFilename}\n\n`);
 
+  const skipLogDir = path.join(projectRoot, ".guild", "logs");
+  fs.mkdirSync(skipLogDir, { recursive: true });
+  const skipLogPath = path.join(skipLogDir, "inventory-skips.log");
+  if (fs.existsSync(skipLogPath)) fs.rmSync(skipLogPath);
+
+  const seen = new Set<string>();
+  const skipCounts: Record<string, number> = {};
+  const skipDetails: SkipRecord[] = [];
+
+  function recordSkip(relPath: string, reason: string): void {
+    skipCounts[reason] = (skipCounts[reason] ?? 0) + 1;
+    skipDetails.push({ path: relPath, reason });
+    fs.appendFileSync(skipLogPath, `${relPath}\t${reason}\n`);
+  }
+
   let registered = 0;
-  let skipped = 0;
 
   for (const file of files) {
     const relPath = path.relative(projectRoot, file);
     const module = deriveArtifactModule(spec, relPath);
     const id = deriveArtifactId(file, projectRoot, legacyDir, pack.manifest.scaffold.source_extension, module);
     const exists = db.prepare("SELECT id FROM artifacts WHERE id = ?").get(id);
-    if (exists) { skipped++; continue; }
+
+    if (seen.has(id)) {
+      // Two distinct files resolved to the same artifact id (slug collision).
+      recordSkip(relPath, "duplicate-slug");
+      continue;
+    }
+    if (exists) {
+      // Already in the registry from a prior run — benign dedup, not a loss.
+      recordSkip(relPath, "already-registered");
+      seen.add(id);
+      continue;
+    }
 
     try {
       registerArtifact(db, { id, kind: "legacy-source", path: relPath, module });
       registered++;
+      seen.add(id);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.includes("already registered")) {
-        process.stderr.write(`  [warn] Could not register ${id}: ${msg}\n`);
+        // Any other failure must still be counted so the arithmetic balances.
+        recordSkip(relPath, `other(${msg.slice(0, 80)})`);
       } else {
-        skipped++;
+        recordSkip(relPath, "already-registered");
+        seen.add(id);
       }
     }
   }
 
-  process.stdout.write(`  [scan] registered: ${registered}  skipped (already exist): ${skipped}\n`);
+  const report = reconcileInventoryCounts(files.length, registered, skipCounts);
+  process.stdout.write(report);
+
+  if (skipDetails.length > 0) {
+    process.stdout.write(`  [scan] ${skipDetails.length} file(s) skipped — see ${skipLogPath}\n`);
+  }
 
   // Verify the count is actually in the DB right now
   const actual = (db.prepare("SELECT COUNT(*) as n FROM artifacts").get() as { n: number }).n;
@@ -133,6 +197,7 @@ export async function runInventory(db: Database.Database, workspaceRoot = resolv
         "Classify ONLY the orchestrator-registered first-class artifacts. Do not register new artifacts. " +
         "Write a structured JSON batch with id, module, role, framework, confidence, evidence, ambiguous/signals when needed, then apply it using " +
         "`node migration/registry/dist/cli.js batch-classify --file <json>`. Do not use arbitrary tags; lifecycle tags are not classification evidence. " +
+        "evidence MUST be a JSON array of strings, e.g. [\"negative-evidence: no configured framework signal matched\", \"django: Django Model import\"]. " +
         "When the batch is applied, record explicit phase completion evidence with `node migration/registry/dist/cli.js mark-inventory-complete`.\n\n" +
         `Expected artifact IDs (${expectedArtifactIds.length}):\n${expectedArtifactIds.join("\n")}\n\n` +
         "Classification contract JSON:\n" + specForPrompt + "\n\n" +
