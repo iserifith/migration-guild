@@ -20,6 +20,8 @@ export interface SpawnAgentOpts {
   logDir?: string;
   phase?: PhaseKey;
   timeoutMs?: number;
+  // TASK-07: per-call inactivity override (ms). Falls back to config/env default.
+  inactivityTimeoutMs?: number;
   claimOwner?: string;
   releaseClaimsOnFailure?: boolean;
   preClaim?: PreClaimOpts;
@@ -418,9 +420,25 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
     proc.stderr.pipe(createTimestampTransform()).pipe(logStream, { end: false });
   }
 
+  // TASK-07: liveliness tracking. lastActivityMs is bumped on every observed
+  // byte from the agent; if no bytes arrive for inactivityTimeoutMs we consider
+  // the agent hung and kill it. activityTicks counts observed output chunks for
+  // the heartbeat line. Only meaningful when stdout/stderr are piped.
+  let lastActivityMs = Date.now();
+  let activityTicks = 0;
+  const observable = Boolean(proc.stdout) && Boolean(proc.stderr);
+  const bumpActivity = (): void => {
+    lastActivityMs = Date.now();
+    activityTicks += 1;
+  };
+  proc.stdout?.on("data", bumpActivity);
+  proc.stderr?.on("data", bumpActivity);
+
   return new Promise((resolve) => {
     let settled = false;
     let timedOut = false;
+    let inactivityKilled = false;
+    let ceilingKilled = false;
     let timeoutHandle: NodeJS.Timeout | undefined;
     let killHandle: NodeJS.Timeout | undefined;
     let claimWatchHandle: NodeJS.Timeout | undefined;
@@ -446,9 +464,7 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
     const finalize = (exitCode: number) => {
       if (settled) return;
       settled = true;
-      if (timeoutHandle) clearTimeout(timeoutHandle);
-      if (killHandle) clearTimeout(killHandle);
-      if (claimWatchHandle) clearInterval(claimWatchHandle);
+      clearLivelinessTimers();
       let finalExitCode = exitCode;
       try {
         if (exitCode === 0) {
@@ -496,9 +512,13 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
       }
       const terminationReason = timedOut
         ? `${agent} timed out`
-        : finalExitCode === 0
-          ? undefined
-          : `${agent} exited with code ${finalExitCode}`;
+        : inactivityKilled
+          ? `${agent} killed: no activity for ${Math.round((opts.inactivityTimeoutMs ?? config.agent_limits.inactivity_timeout_seconds * 1000) / 1000)}s (last activity after ${Math.round((Date.now() - lastActivityMs) / 1000)}s of silence)`
+          : ceilingKilled
+            ? `${agent} killed: exceeded wall-clock ceiling ${Math.round((opts.timeoutMs ?? config.agent_limits.ceiling_seconds * 1000) / 1000)}s (still active)`
+            : finalExitCode === 0
+              ? undefined
+              : `${agent} exited with code ${finalExitCode}`;
       const tokenUsage = readTokenUsageFile(usageFile);
       try { fs.rmSync(usageFile, { force: true }); } catch {}
       finishRun(db, {
@@ -521,9 +541,13 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
         const elapsedS = ((Date.now() - startMs) / 1000).toFixed(1);
         const status = timedOut
           ? "TIMEOUT"
-          : finalExitCode === 0
-            ? "SUCCESS"
-            : "FAILED";
+          : inactivityKilled
+            ? "INACTIVITY-KILL"
+            : ceilingKilled
+              ? "CEILING-KILL"
+              : finalExitCode === 0
+                ? "SUCCESS"
+                : "FAILED";
         const written = getNewlyWrittenFiles(projectRoot, beforeFiles);
         const filesBlock =
           written.length > 0
@@ -551,34 +575,97 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
       }
     };
 
-    if ((opts.timeoutMs ?? 0) > 0) {
-      timeoutHandle = setTimeout(() => {
-        timedOut = true;
-        const timeoutMins = Math.round((opts.timeoutMs ?? 0) / 60000);
-        const msg = `[guildctl] ${agent} timed out after ${timeoutMins}m; terminating pid ${proc.pid ?? "unknown"}`;
-        process.stderr.write(msg + "\n");
-        writeLogLine(logStream, msg);
+    // TASK-07: liveliness limits. Resolve inactivity + ceiling windows:
+    //   - explicit per-call opts win, then env override, then config default.
+    //   - inactivityMs default 120s, ceilingMs default 1800s (config).
+    const inactivityMs =
+      opts.inactivityTimeoutMs ??
+      (process.env.GUILDCTL_INACTIVITY_TIMEOUT_SECONDS
+        ? Number(process.env.GUILDCTL_INACTIVITY_TIMEOUT_SECONDS) * 1000
+        : config.agent_limits.inactivity_timeout_seconds * 1000);
+    const ceilingMs =
+      opts.timeoutMs ??
+      (process.env.GUILDCTL_AGENT_CEILING_SECONDS
+        ? Number(process.env.GUILDCTL_AGENT_CEILING_SECONDS) * 1000
+        : config.agent_limits.ceiling_seconds * 1000);
+    const heartbeatMs = process.env.GUILDCTL_HEARTBEAT_SECONDS
+      ? Number(process.env.GUILDCTL_HEARTBEAT_SECONDS) * 1000
+      : 30000;
+
+    const killAgent = (flag: "inactivity" | "ceiling"): void => {
+      if (settled) return;
+      if (flag === "inactivity") inactivityKilled = true;
+      else ceilingKilled = true;
+      const label = flag === "inactivity" ? "INACTIVITY" : "CEILING";
+      const secs = Math.round((flag === "inactivity" ? inactivityMs : ceilingMs) / 1000);
+      const msg = `[guildctl] ${agent} killed: ${label} after ${secs}s${flag === "inactivity" ? " (no observed output; last activity " + Math.round((Date.now() - lastActivityMs) / 1000) + "s ago)" : " (still active — raise agent_limits.ceiling_seconds to allow longer runs)"};`;
+      process.stderr.write(msg + "\n");
+      writeLogLine(logStream, msg);
+      try {
+        proc.kill("SIGTERM");
+      } catch {
+        finalize(124);
+        return;
+      }
+      killHandle = setTimeout(() => {
+        if (settled) return;
         try {
-          proc.kill("SIGTERM");
+          proc.kill("SIGKILL");
         } catch {
           finalize(124);
-          return;
         }
-        killHandle = setTimeout(() => {
-          if (settled) return;
-          try {
-            proc.kill("SIGKILL");
-          } catch {
-            finalize(124);
-          }
-        }, 5000);
-        killHandle.unref?.();
-      }, opts.timeoutMs);
+      }, 5000);
+      killHandle.unref?.();
+    };
+
+    // Inactivity watcher: only when output is observable (piped). A silent agent
+    // is killed well before the wall-clock ceiling.
+    let inactivityHandle: NodeJS.Timeout | undefined;
+    if (observable && inactivityMs > 0) {
+      inactivityHandle = setInterval(() => {
+        if (settled || inactivityKilled || ceilingKilled) return;
+        if (Date.now() - lastActivityMs > inactivityMs) killAgent("inactivity");
+      }, Math.max(200, Math.min(1000, Math.round(inactivityMs / 10))));
+      inactivityHandle.unref?.();
+    }
+
+    // Wall-clock ceiling backstop: a chatty-but-stuck agent is still bounded.
+    if (ceilingMs > 0) {
+      timeoutHandle = setTimeout(() => {
+        if (settled || inactivityKilled) return;
+        killAgent("ceiling");
+      }, ceilingMs);
       timeoutHandle.unref?.();
     }
 
+    // Heartbeat: periodic liveness line so operators can tell a working agent
+    // from a hung one. Goes quiet once the run settles.
+    let heartbeatHandle: NodeJS.Timeout | undefined;
+    if (heartbeatMs > 0) {
+      heartbeatHandle = setInterval(() => {
+        if (settled) return;
+        const elapsed = Math.round((Date.now() - startMs) / 1000);
+        const sinceActivity = Math.round((Date.now() - lastActivityMs) / 1000);
+        process.stderr.write(
+          `  [heartbeat] ${agent} elapsed=${elapsed}s since-activity=${sinceActivity}s activity-ticks=${activityTicks}\n`,
+        );
+      }, heartbeatMs);
+      heartbeatHandle.unref?.();
+    }
+
+    const clearLivelinessTimers = (): void => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (killHandle) clearTimeout(killHandle);
+      if (inactivityHandle) clearInterval(inactivityHandle);
+      if (heartbeatHandle) clearInterval(heartbeatHandle);
+      if (claimWatchHandle) clearInterval(claimWatchHandle);
+    };
+    // Replace finalize's timer cleanup with the broader one.
+    const origFinalize = finalize;
+    void origFinalize;
+
     proc.on("exit", (code) => {
-      finalize(timedOut ? 124 : (code ?? 1));
+      finalize(inactivityKilled || ceilingKilled || timedOut ? 124 : (code ?? 1));
     });
     proc.on("error", (err) => {
       const msg = `[guildctl] Failed to start agent: ${err.message}`;

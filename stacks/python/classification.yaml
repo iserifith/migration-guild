@@ -1,6 +1,6 @@
 version: 1
 frameworks:
-  allowed: [plain-python, ambiguous, django, flask, fastapi, starlette, pytest]
+  allowed: [plain-python, ambiguous, django, flask, fastapi, starlette, pytest, pylons]
   aliases:
     python: plain-python
     plain python: plain-python
@@ -47,3 +47,28 @@ signals:
     evidence: FastAPI imports/routes
     match:
       content: ['\bfrom\s+fastapi\s+import\b', 'FastAPI\(']
+  - id: pylons-import
+    framework: pylons
+    role: rest-endpoint
+    priority: 20
+    confidence: 0.9
+    evidence: Pylons framework imports
+    match:
+      content: ['\bfrom\s+pylons\s+import\b', '\bimport\s+pylons\b']
+  - id: pylons-controller
+    framework: pylons
+    role: rest-endpoint
+    priority: 20
+    confidence: 0.9
+    evidence: Pylons BaseController subclass
+    match:
+      content: ['class\s+\w+\s*\(\s*BaseController\s*\)']
+  - id: pylons-routing
+    framework: pylons
+    role: startup-config
+    priority: 18
+    confidence: 0.85
+    evidence: Pylons routes.Mapper configuration
+    match:
+      path: ['config/routing\.py$']
+      content: ['routes\.Mapper']

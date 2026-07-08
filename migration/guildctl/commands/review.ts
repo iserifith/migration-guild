@@ -5,6 +5,7 @@ import { printPhaseHeader, printEvent, printStatusSummary } from "../dashboard";
 import { getLogDir } from "../util";
 import { loadConfig, resolvePhaseModel } from "../config";
 import { reapDeadRuns } from "../../registry/commands/runs";
+import { requireNonEmptyRegistry } from "../readiness";
 
 const REVIEW_TIMEOUT_MINUTES = Math.max(1, parseInt(process.env["GUILDCTL_REVIEW_TIMEOUT_MINS"] ?? "10", 10));
 
@@ -69,6 +70,7 @@ export async function runReview(
   opts: ReviewOpts = {},
   deps: ReviewDeps = {},
 ): Promise<void> {
+  requireNonEmptyRegistry(db, "review");
   const parallel = Math.max(1, opts.parallel ?? 1);
   const logDir = (deps.getLogDir ?? getLogDir)();
   const model = resolvePhaseModel("review", loadConfig());
