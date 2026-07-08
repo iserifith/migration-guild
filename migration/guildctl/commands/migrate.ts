@@ -18,7 +18,7 @@ import { reconcileStaleClaims } from "../../registry/commands/claim";
 import { setNext } from "../../registry/commands/operator";
 import { needsBootstrap, runBootstrap } from "./bootstrap";
 import { loadActiveStack, readStackInstruction } from "../stack";
-import { evaluateMigrationReadiness, formatMigrationBlockMessage } from "../readiness";
+import { evaluateMigrationReadiness, formatMigrationBlockMessage, requireNonEmptyRegistry } from "../readiness";
 
 const ANALYZE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["GUILDCTL_ANALYZE_TIMEOUT_MINS"] ?? "10", 10));
 const TEST_WRITE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["GUILDCTL_TEST_TIMEOUT_MINS"] ?? "15", 10));
@@ -109,6 +109,7 @@ export async function runMigrate(
   opts: MigrateOpts = {},
   deps: MigrateDeps = {},
 ): Promise<void> {
+  requireNonEmptyRegistry(db, "migrate");
   const migrationReadiness = evaluateMigrationReadiness(db, opts.wave);
   const migrationBlock = formatMigrationBlockMessage(migrationReadiness.unresolvedDependencyFindings);
   if (migrationBlock) {

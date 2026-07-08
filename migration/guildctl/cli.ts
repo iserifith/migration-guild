@@ -21,6 +21,7 @@ import { getDb } from "../registry/db/connection";
 import { assertDbExists } from "./util";
 import { runInventory } from "./commands/inventory";
 import { runPlan } from "./commands/plan";
+import { PlanInvariantError } from "./commands/plan";
 import { runBootstrap } from "./commands/bootstrap";
 import { runMigrate } from "./commands/migrate";
 import { runReview } from "./commands/review";
@@ -187,9 +188,26 @@ program
 program
   .command("plan")
   .description("Phase 2: Propose framework mappings, confirm them, and assign migration waves")
-  .action(async () => {
+  .option("--override-audit", "Proceed past open critical audit findings (logged as an override)")
+  .option("--retries <n>", "Re-run a phase that fails its post-run invariant, injecting failure context", parseInt)
+  .option("--enforce-invariants", "Verify the registry actually changed after each phase (don't trust agent exit 0)", false)
+  .action(async (opts) => {
     assertDbExists(dbPath());
-    await runPlan(db());
+    try {
+      await runPlan(db(), {
+        overrideAudit: Boolean(opts.overrideAudit),
+        retries: opts.retries ?? 0,
+        enforceInvariants: opts.enforceInvariants === true || opts.enforceInvariants === "true",
+      });
+    } catch (error) {
+      if (error instanceof PlanInvariantError) {
+        process.stderr.write(`
+  ✗ Planning failed invariant verification: ${error.message}
+`);
+        process.exit(1);
+      }
+      throw error;
+    }
   });
 
 // ─── bootstrap ────────────────────────────────────────────────────────────────

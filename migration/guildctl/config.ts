@@ -17,6 +17,9 @@ export interface GuildConfig {
   approval: { mode: "manual" | "smart" | "off"; destructive_commands: "manual" | "smart" | "off" };
   migration: { default_mode: string; require_evidence_before_intent: boolean; max_autonomous_steps: number };
   inventory: { classificationBatchSize: number; maxBatchRetries: number };
+  // TASK-07: agent liveliness limits (seconds). inactivity = kill on silence;
+  // ceiling = backstop wall-clock kill so a chatty-but-stuck agent can't run forever.
+  agent_limits: { inactivity_timeout_seconds: number; ceiling_seconds: number };
   profiles: Record<string, JsonMap>;
 }
 
@@ -48,6 +51,7 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   approval: { mode: "manual", destructive_commands: "manual" },
   migration: { default_mode: "init", require_evidence_before_intent: true, max_autonomous_steps: 3 },
   inventory: { classificationBatchSize: 100, maxBatchRetries: 2 },
+  agent_limits: { inactivity_timeout_seconds: 120, ceiling_seconds: 1800 },
   profiles: {
     default: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "deepseek-v4-pro", api_key_env: "DASHSCOPE_API_KEY" },
     dashscope: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "deepseek-v4-pro", api_key_env: "DASHSCOPE_API_KEY" },

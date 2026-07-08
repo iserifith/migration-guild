@@ -1,15 +1,17 @@
 import * as readline from "readline";
 import type Database from "better-sqlite3";
 import { spawnAgent } from "../runner";
+import type { AgentRunResult } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printWavePlan } from "../dashboard";
 import { getLogDir } from "../util";
 import { resolveGuildConfig, resolvePhaseModel, resolveWorkspaceRoot } from "../config";
 import { setNext } from "../../registry/commands/operator";
+import { setOperatorState } from "../../registry/commands/operator";
 import { approveDependencyStrategy } from "../../registry/commands/modernization";
 import { refreshCompatibilityAudits } from "../audit";
 import { loadActiveStack, readStackInstruction } from "../stack";
-import { evaluatePlanningReadiness, formatPlanningBlockMessage } from "../readiness";
+import { evaluatePlanningReadiness, formatPlanningBlockMessage, requireNonEmptyRegistry } from "../readiness";
 import { formatInventoryValidationReport, loadClassificationSpec, validateInventoryQuality } from "../classification";
 
 async function confirmMappings(
@@ -91,12 +93,167 @@ interface PlanDeps {
   startPolling?: typeof startPolling;
   getLogDir?: typeof getLogDir;
   workspaceRoot?: string;
+  overrideAudit?: boolean;
+  // TASK-01: after each phase, verify the registry actually changed (don't
+  // trust agent exit 0). Default false so callers/tests can opt in; the
+  // production plan CLI enables it.
+  enforceInvariants?: boolean;
+  // TASK-01: re-run a phase that fails its invariant, injecting the failure
+  // context into the retry prompt. Default 0 (no retry).
+  retries?: number;
+}
+
+// TASK-01: a phase completed but the post-run registry invariant failed.
+// Thrown (not process.exit) so the CLI boundary owns the exit code and tests
+// can assert on it directly.
+export class PlanInvariantError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PlanInvariantError";
+  }
+}
+
+// ── TASK-01: post-phase registry invariant verification ──────────────────────
+// An agent exiting 0 is NOT trusted. After each phase we verify the registry
+// actually changed the way the phase promised. A hallucinated exit-0 (no writes)
+// is treated as a phase failure — fed into --retries or a hard non-zero exit.
+
+interface PhaseVerification {
+  phase: string;
+  agentExited: number;
+  invariantPassed: boolean;
+  message: string;
+  at: string;
+}
+
+function recordPhaseVerification(
+  db: Database.Database,
+  phase: string,
+  agentExited: number,
+  invariantPassed: boolean,
+  message: string,
+): void {
+  const entry: PhaseVerification = {
+    phase,
+    agentExited,
+    invariantPassed,
+    message,
+    at: new Date().toISOString(),
+  };
+  setOperatorState(db, `plan_verification_${phase}`, entry);
+}
+
+function countRows(db: Database.Database, sql: string): number {
+  return (db.prepare(sql).get() as { c: number }).c;
+}
+
+function verifyPlannerInvariant(db: Database.Database): { passed: boolean; message: string } {
+  const total = countRows(db, "SELECT COUNT(*) c FROM artifacts");
+  if (total === 0) return { passed: true, message: "no artifacts to assign waves to" };
+  const nullWave = countRows(db, "SELECT COUNT(*) c FROM artifacts WHERE wave IS NULL");
+  const assigned = total - nullWave;
+  if (nullWave === 0) {
+    return { passed: true, message: `all ${total} artifacts assigned to a wave` };
+  }
+  return {
+    passed: false,
+    message: `planner agent exited 0 but ${nullWave}/${total} artifacts still have wave = NULL (only ${assigned} assigned)`,
+  };
+}
+
+function verifyStackAdvisorInvariant(
+  db: Database.Database,
+  baseline: number,
+  inventoryNonEmpty: boolean,
+): { passed: boolean; message: string } {
+  const now = countRows(db, "SELECT COUNT(*) c FROM stack_mappings");
+  if (!inventoryNonEmpty) {
+    return { passed: true, message: "inventory empty — no mappings expected" };
+  }
+  if (now > baseline) {
+    return { passed: true, message: `wrote ${now - baseline} new stack_mapping(s)` };
+  }
+  return {
+    passed: false,
+    message: `stack-advisor agent exited 0 but wrote 0 new stack_mappings (was ${baseline}, now ${now}) on a non-empty inventory`,
+  };
+}
+
+interface PhaseRunResult {
+  result: AgentRunResult;
+  verified: { passed: boolean; message: string } | null;
+}
+
+async function runPhaseWithInvariant(opts: {
+  db: Database.Database;
+  runAgent: typeof spawnAgent;
+  logDir: string;
+  agent: string;
+  model: string;
+  phase: string;
+  basePrompt: string;
+  enforce: boolean;
+  retries: number;
+  verify: () => { passed: boolean; message: string };
+  invariantLabel: string;
+}): Promise<PhaseRunResult> {
+  let prompt = opts.basePrompt;
+  let retriesLeft = opts.retries;
+  let result = await opts.runAgent({
+    agent: opts.agent,
+    model: opts.model,
+    prompt,
+    db: opts.db,
+    logDir: opts.logDir,
+    phase: opts.phase,
+  });
+  if (!opts.enforce) return { result, verified: null };
+
+  let v = opts.verify();
+  recordPhaseVerification(opts.db, opts.invariantLabel, result.exitCode, v.passed, v.message);
+
+  while (!v.passed) {
+    if (retriesLeft <= 0) {
+      process.stderr.write(`
+  ✗ ${v.message}
+`);
+      process.stderr.write(
+        `    Known agent-hallucination failure mode: the ${opts.agent} agent exited ${result.exitCode} but the registry invariant failed.
+`,
+      );
+      process.stderr.write(`    Re-run planning with --retries to let the agent retry with failure context.
+`);
+      throw new PlanInvariantError(v.message);
+    }
+    retriesLeft -= 1;
+    process.stderr.write(
+      `
+  ↻ ${opts.invariantLabel} invariant failed (${v.message}); retrying with failure context (${retriesLeft} retry left)
+`,
+    );
+    prompt = `${opts.basePrompt}
+
+PREVIOUS ATTEMPT FAILED its post-run invariant check: ${v.message}
+You MUST make progress in the registry (call the actual write commands), not merely print a table and exit. Re-run and ensure every relevant row is written before exiting.`;
+    result = await opts.runAgent({
+      agent: opts.agent,
+      model: opts.model,
+      prompt,
+      db: opts.db,
+      logDir: opts.logDir,
+      phase: opts.phase,
+    });
+    v = opts.verify();
+    recordPhaseVerification(opts.db, opts.invariantLabel, result.exitCode, v.passed, v.message);
+  }
+  return { result, verified: v };
 }
 
 export async function runPlan(
   db: Database.Database,
   deps: PlanDeps = {},
 ): Promise<void> {
+  requireNonEmptyRegistry(db, "plan");
   const projectRoot = deps.workspaceRoot ?? resolveWorkspaceRoot();
   const cfg = resolveGuildConfig({ cwd: projectRoot });
   const planningModel = resolvePhaseModel("planning", cfg);
@@ -129,15 +286,24 @@ export async function runPlan(
   }
 
   if (jvmBlock) {
-    setNext(db, {
-      summary: jvmBlock.summary,
-      reason: jvmBlock.reason,
-      recommendedCommand: jvmBlock.command,
-    });
-    process.stderr.write(`  ✗ ${jvmBlock.summary}\n`);
-    process.stderr.write(`    ${jvmBlock.reason}\n`);
-    process.stderr.write(`    Run: ${jvmBlock.command}\n\n`);
-    process.exit(1);
+    if (deps.overrideAudit) {
+      setNext(db, {
+        summary: "Pre-plan audit override applied (--override-audit).",
+        reason: `Blocked by ${initialReadiness.blockingJvmFindings.length} critical compatibility finding(s); operator bypassed the gate.`,
+        recommendedCommand: "node migration/registry/dist/cli.js findings list --severity critical",
+      });
+      process.stderr.write(`  ⚠ Pre-plan audit OVERRIDDEN via --override-audit (${initialReadiness.blockingJvmFindings.length} critical finding(s) bypassed).\n`);
+    } else {
+      setNext(db, {
+        summary: jvmBlock.summary,
+        reason: jvmBlock.reason,
+        recommendedCommand: jvmBlock.command,
+      });
+      process.stderr.write(`  ✗ ${jvmBlock.summary}\n`);
+      process.stderr.write(`    ${jvmBlock.reason}\n`);
+      process.stderr.write(`    Run: ${jvmBlock.command}\n\n`);
+      process.exit(1);
+    }
   }
 
   if (initialReadiness.warningJvmFindings.length > 0) {
@@ -149,18 +315,27 @@ export async function runPlan(
   printPhaseHeader("Phase 2a · Stack Advisor");
   console.log(`  Agent: stack-advisor   Model: ${planningModel}\n`);
 
+  const stackAdvisorBaseline = countRows(db, "SELECT COUNT(*) c FROM stack_mappings");
+  const inventoryNonEmpty = countRows(db, "SELECT COUNT(*) c FROM artifacts") > 0;
+
   let stopPolling = poll(db, (events) => {
     for (const e of events) printEvent(e);
   });
 
-  let result = await runAgent({
+  const stackAdvisorRun = await runPhaseWithInvariant({
+    db,
+    runAgent,
+    logDir,
     agent: "stack-advisor",
     model: planningModel,
-    prompt: "Analyze all registered artifacts and propose a legacy→target framework mapping table.\n\n" + readStackInstruction(pack, "mappings"),
-    db,
-    logDir,
     phase: "planning",
+    basePrompt: "Analyze all registered artifacts and propose a legacy→target framework mapping table.\n\n" + readStackInstruction(pack, "mappings"),
+    enforce: deps.enforceInvariants ?? false,
+    retries: deps.retries ?? 0,
+    invariantLabel: "stack-advisor",
+    verify: () => verifyStackAdvisorInvariant(db, stackAdvisorBaseline, inventoryNonEmpty),
   });
+  const result = stackAdvisorRun.result;
 
   stopPolling();
 
@@ -225,25 +400,31 @@ export async function runPlan(
   printPhaseHeader("Phase 2b · Planner");
   console.log(`  Agent: planner-agent   Model: ${planningModel}\n`);
 
-  stopPolling = poll(db, (events) => {
-    for (const e of events) printEvent(e);
-  });
-
-  result = await runAgent({
+  const plannerRun = await runPhaseWithInvariant({
+    db,
+    runAgent,
+    logDir,
     agent: "planner-agent",
     model: planningModel,
-    prompt: "Run planning: build the dependency graph and assign wave numbers to all pending artifacts.",
-    db,
-    logDir,
     phase: "planning",
+    basePrompt: "Run planning: build the dependency graph and assign wave numbers to all pending artifacts.",
+    enforce: deps.enforceInvariants ?? false,
+    retries: deps.retries ?? 0,
+    invariantLabel: "planner",
+    verify: () => verifyPlannerInvariant(db),
+  });
+  const plannerResult = plannerRun.result;
+
+  stopPolling = poll(db, (events) => {
+    for (const e of events) printEvent(e);
   });
 
   stopPolling();
   printWavePlan(db);
 
-  if (result.exitCode !== 0) {
-    process.stderr.write(`\n  ✗ Planner exited with code ${result.exitCode}\n`);
-    process.exit(result.exitCode);
+  if (plannerResult.exitCode !== 0) {
+    process.stderr.write(`\n  ✗ Planner exited with code ${plannerResult.exitCode}\n`);
+    process.exit(plannerResult.exitCode);
   }
   console.log("\n  ✓ Planning complete\n");
 }
