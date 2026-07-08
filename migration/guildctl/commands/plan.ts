@@ -9,7 +9,7 @@ import { setNext } from "../../registry/commands/operator";
 import { approveDependencyStrategy } from "../../registry/commands/modernization";
 import { refreshCompatibilityAudits } from "../audit";
 import { loadActiveStack, readStackInstruction } from "../stack";
-import { evaluatePlanningReadiness, formatPlanningBlockMessage } from "../readiness";
+import { evaluatePlanningReadiness, formatPlanningBlockMessage, requireNonEmptyRegistry } from "../readiness";
 import { formatInventoryValidationReport, loadClassificationSpec, validateInventoryQuality } from "../classification";
 
 async function confirmMappings(
@@ -98,6 +98,7 @@ export async function runPlan(
   db: Database.Database,
   deps: PlanDeps = {},
 ): Promise<void> {
+  requireNonEmptyRegistry(db, "plan");
   const projectRoot = deps.workspaceRoot ?? resolveWorkspaceRoot();
   const cfg = resolveGuildConfig({ cwd: projectRoot });
   const planningModel = resolvePhaseModel("planning", cfg);

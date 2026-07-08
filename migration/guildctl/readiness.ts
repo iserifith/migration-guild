@@ -6,6 +6,19 @@ import {
 import type { DependencyFindingWithStrategy } from "../registry/commands/modernization";
 import type { JvmAuditFinding } from "../registry/types";
 
+// TASK-03: downstream phases must fast-fail (no agent spawn) on an empty registry.
+export class EmptyRegistryError extends Error {
+  constructor(phase: string) {
+    super(`Cannot run ${phase}: the registry has 0 artifacts. Run 'guildctl run inventory' first.`);
+    this.name = "EmptyRegistryError";
+  }
+}
+
+export function requireNonEmptyRegistry(db: Database.Database, phase: string): void {
+  const count = (db.prepare("SELECT COUNT(*) AS n FROM artifacts").get() as { n: number }).n;
+  if (count === 0) throw new EmptyRegistryError(phase);
+}
+
 export interface PlanningReadiness {
   blockingJvmFindings: JvmAuditFinding[];
   warningJvmFindings: JvmAuditFinding[];
