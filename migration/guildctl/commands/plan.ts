@@ -11,7 +11,7 @@ import { setOperatorState } from "../../registry/commands/operator";
 import { approveDependencyStrategy } from "../../registry/commands/modernization";
 import { refreshCompatibilityAudits } from "../audit";
 import { loadActiveStack, readStackInstruction } from "../stack";
-import { evaluatePlanningReadiness, formatPlanningBlockMessage } from "../readiness";
+import { evaluatePlanningReadiness, formatPlanningBlockMessage, requireNonEmptyRegistry } from "../readiness";
 import { formatInventoryValidationReport, loadClassificationSpec, validateInventoryQuality } from "../classification";
 
 async function confirmMappings(
@@ -93,6 +93,7 @@ interface PlanDeps {
   startPolling?: typeof startPolling;
   getLogDir?: typeof getLogDir;
   workspaceRoot?: string;
+  overrideAudit?: boolean;
   // TASK-01: after each phase, verify the registry actually changed (don't
   // trust agent exit 0). Default false so callers/tests can opt in; the
   // production plan CLI enables it.
@@ -213,18 +214,27 @@ async function runPhaseWithInvariant(opts: {
 
   while (!v.passed) {
     if (retriesLeft <= 0) {
-      process.stderr.write(`\n  ✗ ${v.message}\n`);
+      process.stderr.write(`
+  ✗ ${v.message}
+`);
       process.stderr.write(
-        `    Known agent-hallucination failure mode: the ${opts.agent} agent exited ${result.exitCode} but the registry invariant failed.\n`,
+        `    Known agent-hallucination failure mode: the ${opts.agent} agent exited ${result.exitCode} but the registry invariant failed.
+`,
       );
-      process.stderr.write(`    Re-run planning with --retries to let the agent retry with failure context.\n`);
+      process.stderr.write(`    Re-run planning with --retries to let the agent retry with failure context.
+`);
       throw new PlanInvariantError(v.message);
     }
     retriesLeft -= 1;
     process.stderr.write(
-      `\n  ↻ ${opts.invariantLabel} invariant failed (${v.message}); retrying with failure context (${retriesLeft} retry left)\n`,
+      `
+  ↻ ${opts.invariantLabel} invariant failed (${v.message}); retrying with failure context (${retriesLeft} retry left)
+`,
     );
-    prompt = `${opts.basePrompt}\n\nPREVIOUS ATTEMPT FAILED its post-run invariant check: ${v.message}\nYou MUST make progress in the registry (call the actual write commands), not merely print a table and exit. Re-run and ensure every relevant row is written before exiting.`;
+    prompt = `${opts.basePrompt}
+
+PREVIOUS ATTEMPT FAILED its post-run invariant check: ${v.message}
+You MUST make progress in the registry (call the actual write commands), not merely print a table and exit. Re-run and ensure every relevant row is written before exiting.`;
     result = await opts.runAgent({
       agent: opts.agent,
       model: opts.model,
@@ -243,6 +253,7 @@ export async function runPlan(
   db: Database.Database,
   deps: PlanDeps = {},
 ): Promise<void> {
+  requireNonEmptyRegistry(db, "plan");
   const projectRoot = deps.workspaceRoot ?? resolveWorkspaceRoot();
   const cfg = resolveGuildConfig({ cwd: projectRoot });
   const planningModel = resolvePhaseModel("planning", cfg);
@@ -275,15 +286,24 @@ export async function runPlan(
   }
 
   if (jvmBlock) {
-    setNext(db, {
-      summary: jvmBlock.summary,
-      reason: jvmBlock.reason,
-      recommendedCommand: jvmBlock.command,
-    });
-    process.stderr.write(`  ✗ ${jvmBlock.summary}\n`);
-    process.stderr.write(`    ${jvmBlock.reason}\n`);
-    process.stderr.write(`    Run: ${jvmBlock.command}\n\n`);
-    process.exit(1);
+    if (deps.overrideAudit) {
+      setNext(db, {
+        summary: "Pre-plan audit override applied (--override-audit).",
+        reason: `Blocked by ${initialReadiness.blockingJvmFindings.length} critical compatibility finding(s); operator bypassed the gate.`,
+        recommendedCommand: "node migration/registry/dist/cli.js findings list --severity critical",
+      });
+      process.stderr.write(`  ⚠ Pre-plan audit OVERRIDDEN via --override-audit (${initialReadiness.blockingJvmFindings.length} critical finding(s) bypassed).\n`);
+    } else {
+      setNext(db, {
+        summary: jvmBlock.summary,
+        reason: jvmBlock.reason,
+        recommendedCommand: jvmBlock.command,
+      });
+      process.stderr.write(`  ✗ ${jvmBlock.summary}\n`);
+      process.stderr.write(`    ${jvmBlock.reason}\n`);
+      process.stderr.write(`    Run: ${jvmBlock.command}\n\n`);
+      process.exit(1);
+    }
   }
 
   if (initialReadiness.warningJvmFindings.length > 0) {

@@ -35,8 +35,11 @@ import {
 } from "./commands/mappings";
 import {
   approveDependencyStrategy,
+  dismissFinding,
+  listAuditOverrides,
   listDependencyFindings,
   listJvmAuditFindings,
+  reopenFinding,
 } from "./commands/modernization";
 
 import { getContextPath, writeContext } from "./commands/context";
@@ -690,6 +693,47 @@ program
     severity: opts.severity,
     unresolvedOnly: opts.unresolvedOnly as boolean | undefined,
   })));
+
+// ─── Audit findings dismiss / reopen ─────────────────────────────────────────
+
+program
+  .command("findings")
+  .description("Audit finding lifecycle: list, dismiss (acknowledge, no delete), reopen")
+  .argument("<subcommand>", "list | dismiss | reopen")
+  .option("--id <id>", "Finding ID (required for dismiss/reopen)")
+  .option("--severity <severity>", "critical | warning (list filter)")
+  .option("--status <status>", "open | dismissed (list filter)")
+  .option("--reason <text>", "Dismiss reason (required for dismiss)")
+  .option("--by <name>", "Operator name recording the dismissal", "operator")
+  .action((subcommand: string, opts) => run(() => {
+    if (subcommand === "dismiss") {
+      if (!opts.id) throw new RegistryError(1, "--id is required to dismiss a finding.");
+      if (!opts.reason) throw new RegistryError(1, "--reason is required to dismiss a finding.");
+      return dismissFinding(db(), { findingId: opts.id, reason: opts.reason, dismissedBy: opts.by });
+    }
+    if (subcommand === "reopen") {
+      if (!opts.id) throw new RegistryError(1, "--id is required to reopen a finding.");
+      return reopenFinding(db(), opts.id);
+    }
+    // list (default)
+    if (opts.status === "dismissed") {
+      return listAuditOverrides(db());
+    }
+    const severity = opts.severity as "critical" | "warning" | undefined;
+    const list = [
+      ...listJvmAuditFindings(db(), { severity }).map((f) => ({
+        ...f,
+        kind: "jvm" as const,
+        status: f.dismissed_at ? "dismissed" : "open",
+      })),
+      ...listDependencyFindings(db(), { severity }).map((f) => ({
+        ...f,
+        kind: "dependency" as const,
+        status: f.dismissed_at ? "dismissed" : "open",
+      })),
+    ];
+    return opts.status ? list.filter((f) => f.status === opts.status) : list;
+  }));
 
 program
   .command("approve-dependency-strategy")

@@ -291,7 +291,8 @@ export type FindingSeverity = "critical" | "warning";
 export type JvmAuditCategory =
   | "internal-api"
   | "removed-api"
-  | "deprecated-api";
+  | "deprecated-api"
+  | "python-compat";
 
 export interface JvmAuditFinding {
   finding_id: string;
@@ -304,6 +305,18 @@ export interface JvmAuditFinding {
   evidence: string | null;
   remediation: string;
   detected_at: string;
+  dismissed_at: string | null;
+  override_id: string | null;
+}
+
+export interface AuditOverride {
+  override_id: string;
+  finding_id: string;
+  finding_table: "jvm_audit_findings" | "dependency_findings";
+  action: "dismiss" | "reopen";
+  reason: string;
+  dismissed_by: string;
+  created_at: string;
 }
 
 export type DependencyRiskCategory =
@@ -323,6 +336,8 @@ export interface DependencyFinding {
   details: string | null;
   remediation: string;
   detected_at: string;
+  dismissed_at: string | null;
+  override_id: string | null;
 }
 
 export type DependencyStrategyKind = "upgrade" | "replace" | "remove";

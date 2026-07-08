@@ -6,6 +6,19 @@ import {
 import type { DependencyFindingWithStrategy } from "../registry/commands/modernization";
 import type { JvmAuditFinding } from "../registry/types";
 
+// TASK-03: downstream phases must fast-fail (no agent spawn) on an empty registry.
+export class EmptyRegistryError extends Error {
+  constructor(phase: string) {
+    super(`Cannot run ${phase}: the registry has 0 artifacts. Run 'guildctl run inventory' first.`);
+    this.name = "EmptyRegistryError";
+  }
+}
+
+export function requireNonEmptyRegistry(db: Database.Database, phase: string): void {
+  const count = (db.prepare("SELECT COUNT(*) AS n FROM artifacts").get() as { n: number }).n;
+  if (count === 0) throw new EmptyRegistryError(phase);
+}
+
 export interface PlanningReadiness {
   blockingJvmFindings: JvmAuditFinding[];
   warningJvmFindings: JvmAuditFinding[];
@@ -18,14 +31,17 @@ function summarizeArtifacts(findings: Array<{ artifact_id: string }>): string {
 }
 
 export function evaluatePlanningReadiness(db: Database.Database): PlanningReadiness {
-  const blockingJvmFindings = listJvmAuditFindings(db, { severity: "critical" });
-  const warningJvmFindings = listJvmAuditFindings(db, { severity: "warning" });
+  const allJvm = listJvmAuditFindings(db);
+  const jvm = allJvm.filter((finding) => finding.dismissed_at == null);
+  const blockingJvmFindings = jvm.filter((finding) => finding.severity === "critical");
+  const warningJvmFindings = jvm.filter((finding) => finding.severity === "warning");
   const dependencyFindings = listDependencyFindings(db);
+  const openDependencies = dependencyFindings.filter((finding) => finding.dismissed_at == null);
   return {
     blockingJvmFindings,
     warningJvmFindings,
-    unresolvedDependencyFindings: dependencyFindings.filter((finding) => finding.strategy == null),
-    approvedDependencyFindings: dependencyFindings.filter((finding) => finding.strategy != null),
+    unresolvedDependencyFindings: openDependencies.filter((finding) => finding.strategy == null),
+    approvedDependencyFindings: openDependencies.filter((finding) => finding.strategy != null),
   };
 }
 
@@ -59,9 +75,9 @@ export function formatPlanningBlockMessage(readiness: PlanningReadiness): {
   if (readiness.blockingJvmFindings.length > 0) {
     const sampleArtifacts = summarizeArtifacts(readiness.blockingJvmFindings);
     return {
-      summary: "Planning blocked by critical JVM compatibility findings.",
-      reason: `${readiness.blockingJvmFindings.length} critical JVM finding(s) remain open${sampleArtifacts ? ` across ${sampleArtifacts}` : ""}. Resolve removed/internal API usage or downgrade the risk by changing the source before rerunning planning.`,
-      command: "node migration/registry/dist/cli.js list-jvm-findings --severity critical",
+      summary: "Planning blocked by critical compatibility findings.",
+      reason: `${readiness.blockingJvmFindings.length} critical finding(s) remain open${sampleArtifacts ? ` across ${sampleArtifacts}` : ""}. These block planning until resolved, dismissed, or overridden.`,
+      command: "node migration/registry/dist/cli.js findings list --severity critical\n  # Acknowledge (no delete): node migration/registry/dist/cli.js findings dismiss --id <finding_id> --reason \"<text>\"\n  # Or sanctioned bypass:        node migration/guildctl/dist/cli.js plan --override-audit",
     };
   }
 

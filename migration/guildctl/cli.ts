@@ -184,18 +184,22 @@ program
 program
   .command("plan")
   .description("Phase 2: Propose framework mappings, confirm them, and assign migration waves")
+  .option("--override-audit", "Proceed past open critical audit findings (logged as an override)")
   .option("--retries <n>", "Re-run a phase that fails its post-run invariant, injecting failure context", parseInt)
   .option("--enforce-invariants", "Verify the registry actually changed after each phase (don't trust agent exit 0)", false)
   .action(async (opts) => {
     assertDbExists(dbPath());
     try {
       await runPlan(db(), {
+        overrideAudit: Boolean(opts.overrideAudit),
         retries: opts.retries ?? 0,
         enforceInvariants: opts.enforceInvariants === true || opts.enforceInvariants === "true",
       });
     } catch (error) {
       if (error instanceof PlanInvariantError) {
-        process.stderr.write(`\n  ✗ Planning failed invariant verification: ${error.message}\n`);
+        process.stderr.write(`
+  ✗ Planning failed invariant verification: ${error.message}
+`);
         process.exit(1);
       }
       throw error;

@@ -1,5 +1,5 @@
 - id: python2-print-statement
-  finding: jvm
+  finding: python-compat
   category: removed-api
   severity: critical
   match: '^\s*print\s+(?!\().+'
@@ -7,7 +7,7 @@
   summary_template: 'Python 2 print statement detected: {symbol}'
   remediation: Replace the statement with Python 3 print() syntax and preserve output behavior with tests.
 - id: python2-except-syntax
-  finding: jvm
+  finding: python-compat
   category: removed-api
   severity: critical
   match: '^\s*except\s+[^:\n]+,\s*[A-Za-z_]\w*\s*:'
@@ -15,7 +15,7 @@
   summary_template: 'Python 2 exception syntax detected: {symbol}'
   remediation: Replace comma exception binding with `except Exception as name` syntax.
 - id: python2-xrange
-  finding: jvm
+  finding: python-compat
   category: removed-api
   severity: warning
   match: '\bxrange\s*\('
@@ -23,7 +23,7 @@
   summary_template: 'Python 2 xrange usage detected at line {line}'
   remediation: Replace xrange with range and verify any code that relies on list materialization.
 - id: python-deprecated-stdlib
-  finding: jvm
+  finding: python-compat
   category: deprecated-api
   severity: warning
   match: '\b(?:imp|optparse|distutils)\b'

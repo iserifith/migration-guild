@@ -226,6 +226,56 @@ function validateBatch(db: Database.Database, spec: ClassificationSpec, records:
   return normalized;
 }
 
+// ─── Evidence JSON coercion + safe reader ────────────────────────────────────
+//
+// The context-agent sometimes persists evidence as a plain string instead of a
+// JSON array of strings. We coerce at WRITE time so evidence_json on disk is
+// always a JSON array of strings, and we read with a never-throwing parser so
+// legacy malformed rows (written before this fix) never crash the quality gate.
+
+export function coerceEvidence(evidence: unknown): string {
+  if (evidence == null) return "[]";
+  if (typeof evidence === "string") {
+    const trimmed = evidence.trim();
+    if (trimmed === "") return "[]";
+    // Already a serialized array? Keep it only if it parses back to an array.
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return trimmed;
+      } catch {
+        /* fall through to wrap */
+      }
+    }
+    return JSON.stringify([evidence]);
+  }
+  if (Array.isArray(evidence)) {
+    const items = evidence.map((item) =>
+      typeof item === "string" ? item : JSON.stringify(item),
+    );
+    return JSON.stringify(items);
+  }
+  // object / number / boolean — wrap its string form and let callers log.
+  return JSON.stringify([String(evidence)]);
+}
+
+export function parseEvidence(json: string | null | undefined): string[] {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json);
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => (typeof item === "string" ? item : JSON.stringify(item)));
+    }
+    if (typeof parsed === "string") {
+      // Legacy row stored a stringified string (e.g. "\"plain text\"").
+      return [parsed];
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
 export function applyBatchClassification(
   db: Database.Database,
   spec: ClassificationSpec,
@@ -254,7 +304,7 @@ export function applyBatchClassification(
           role: record.role,
           confidence: record.confidence,
           ambiguous: record.ambiguous ? 1 : 0,
-          evidence_json: JSON.stringify(record.evidence),
+          evidence_json: coerceEvidence(record.evidence),
           signals_json: JSON.stringify(record.signals ?? []),
         });
       }
@@ -359,8 +409,7 @@ export function validateInventoryQuality(
       const minConfidence = spec.quality?.fallback_min_confidence ?? 0.75;
       const requiredEvidence = spec.quality?.fallback_required_evidence ?? "negative-evidence";
       if (!classification || classification.confidence < minConfidence) lowConfidenceFallbacks.push(artifact.id);
-      let evidence: string[] = [];
-      try { evidence = classification ? JSON.parse(classification.evidence_json) as string[] : []; } catch { evidence = []; }
+      let evidence: string[] = parseEvidence(classification?.evidence_json);
       if (!evidence.some((item) => item.includes(requiredEvidence))) fallbackMissingNegativeEvidence.push(artifact.id);
       const inferred = classifyArtifactSource(spec, { id: artifact.id, path: artifact.path }, opts.workspaceRoot ?? process.cwd());
       if (inferred.framework !== spec.frameworks.fallback && inferred.framework !== spec.frameworks.ambiguous) {
