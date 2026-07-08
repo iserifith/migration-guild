@@ -45,6 +45,7 @@ import {
 } from "./config";
 import { collectInitEvidence, createRunLedger, renderPrompt, scaffoldDefaultPrompts } from "./workspace";
 import { checkHarness, resolveHarness } from "./harness";
+import { runPipelineStateChecks } from "./doctor";
 import { detectStack, loadStackPack } from "./stack";
 
 const program = new Command();
@@ -163,7 +164,22 @@ program
     fs.mkdirSync(path.join(cfg.guildRoot, ".guild", "runs"), { recursive: true });
     checks.push([fs.existsSync(path.join(cfg.guildRoot, ".guild", "runs")), "run ledger directory writable"]);
     for (const [ok, message] of checks) process.stdout.write(`${ok ? "✓" : "✗"} ${message}\n`);
-    if (checks.some(([ok]) => !ok)) process.exit(1);
+
+    let stateFailed = false;
+    try {
+      process.stdout.write("\nPipeline state:\n");
+      const stateChecks = runPipelineStateChecks({ db: db(), workspaceRoot: workspaceRoot() });
+      for (const check of stateChecks) {
+        const icon = check.status === "pass" ? "✓" : check.status === "warn" ? "⚠" : "✗";
+        process.stdout.write(`${icon} ${check.message}\n`);
+      }
+      stateFailed = stateChecks.some((check) => check.status === "fail");
+    } catch (err) {
+      stateFailed = true;
+      process.stdout.write(`✗ pipeline-state checks failed to run: ${(err as Error).message}\n`);
+    }
+
+    if (checks.some(([ok]) => !ok) || stateFailed) process.exit(1);
   });
 
 const db = () => getDb(program.opts()["db"] as string | undefined);
