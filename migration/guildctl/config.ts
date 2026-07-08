@@ -9,6 +9,7 @@ export interface GuildConfig {
   stack: string;
   harness: string;
   workspace: { name: string; root: string };
+  database: { path: string };
   model: { model: string; base_url?: string | null; api_key_env?: string | null; context_length?: number };
   agents: Record<string, JsonMap>;
   tools: Record<string, boolean>;
@@ -34,6 +35,7 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   stack: "java-spring",
   harness: "opencode",
   workspace: { name: "migration-guild-workspace", root: "." },
+  database: { path: ".guild/registry.db" },
   model: {
     model: "deepseek-v4-pro",
     base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
@@ -177,6 +179,84 @@ export function writeGuildConfig(config: JsonMap, configPath = guildConfigPath()
   fs.writeFileSync(configPath, stringifySimpleYaml(config), "utf8");
 }
 
+
+export interface RegistryDbPathOptions {
+  explicitPath?: string;
+  workspaceRoot?: string;
+  env?: Record<string, string | undefined>;
+  config?: JsonMap;
+}
+
+function resolvePathAgainstWorkspace(candidate: string, workspaceRoot: string): string {
+  return path.isAbsolute(candidate) ? candidate : path.resolve(workspaceRoot, candidate);
+}
+
+export function resolveRegistryDbPath(options: RegistryDbPathOptions = {}): string {
+  const env = options.env ?? process.env;
+  if (options.explicitPath) return path.resolve(options.explicitPath);
+  if (env["REGISTRY_DB"]) return path.resolve(String(env["REGISTRY_DB"]));
+
+  const workspaceRoot = path.resolve(options.workspaceRoot ?? resolveWorkspaceRoot());
+  const config = options.config ?? readGuildConfig(guildConfigPath(workspaceRoot));
+  const database = isObject(config["database"]) ? config["database"] as JsonMap : undefined;
+  const configured = typeof database?.["path"] === "string" ? String(database["path"]) : undefined;
+  return resolvePathAgainstWorkspace(configured || ".guild/registry.db", workspaceRoot);
+}
+
+export function isPathInside(child: string, parent: string): boolean {
+  const rel = path.relative(path.resolve(parent), path.resolve(child));
+  return rel === "" || (!!rel && !rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+
+export function findToolkitRoot(startDir = __dirname): string {
+  const candidates = [
+    path.resolve(startDir, "..", ".."),
+    path.resolve(startDir, "..", "..", ".."),
+    path.resolve(process.cwd(), ".."),
+  ];
+  for (const candidate of candidates) {
+    if (["migration", "package", "stacks"].every((name) => fs.existsSync(path.join(candidate, name)))) return candidate;
+  }
+  return path.resolve(startDir, "..", "..");
+}
+
+export function registryPathWarning(dbPath: string, workspaceRoot: string, toolkitRoot = findToolkitRoot()): string | undefined {
+  const resolved = path.resolve(dbPath);
+  const workspace = path.resolve(workspaceRoot);
+  const toolkit = path.resolve(toolkitRoot);
+  if (isPathInside(resolved, workspace)) return undefined;
+  const toolkitNote = isPathInside(resolved, toolkit) ? " (inside toolkit checkout)" : "";
+  return `WARNING: registry database resolves outside workspace${toolkitNote}: ${resolved} (workspace: ${workspace})`;
+}
+
+function ensureLinkOrJunction(linkPath: string, targetPath: string): void {
+  if (!fs.existsSync(targetPath)) throw new Error(`Cannot scaffold workspace link ${linkPath}: missing toolkit target ${targetPath}`);
+  if (fs.existsSync(linkPath)) {
+    const stat = fs.lstatSync(linkPath);
+    if (fs.realpathSync(linkPath) !== fs.realpathSync(targetPath)) {
+      // Existing tests and hand-built workspaces may materialize these directories
+      // instead of linking them. Keep that idempotent path working; clean init still
+      // creates links below.
+      if (stat.isDirectory() && !stat.isSymbolicLink()) return;
+      throw new Error(`Cannot scaffold workspace link ${linkPath}: already exists and points to ${fs.realpathSync(linkPath)}, expected ${fs.realpathSync(targetPath)}`);
+    }
+    return;
+  }
+  try {
+    fs.symlinkSync(targetPath, linkPath, process.platform === "win32" ? "junction" : "dir");
+  } catch (err) {
+    throw new Error(`Cannot scaffold workspace link ${linkPath} -> ${targetPath}: ${(err as Error).message}`);
+  }
+  if (fs.realpathSync(linkPath) !== fs.realpathSync(targetPath)) throw new Error(`Workspace link ${linkPath} did not resolve to ${targetPath}`);
+}
+
+export function scaffoldWorkspaceLinks(root: string, toolkitRoot = findToolkitRoot()): void {
+  for (const name of ["migration", "package", "stacks"]) {
+    ensureLinkOrJunction(path.join(root, name), path.join(toolkitRoot, name));
+  }
+}
+
 export function resolveGuildConfig(options: { cwd?: string; profile?: string; overrides?: JsonMap } = {}): ResolvedGuildConfig {
   const guildRoot = ensureGuildRoot(options.cwd);
   const configPath = guildConfigPath(guildRoot);
@@ -226,10 +306,13 @@ export function scaffoldGuildConfig(root = process.cwd(), force = false): string
   if (fs.existsSync(configPath) && !force) return configPath;
   const cfg = clone(DEFAULT_GUILD_CONFIG as unknown as JsonMap);
   (cfg.workspace as JsonMap).name = path.basename(root) || os.hostname();
+  if (!isObject(cfg["database"])) cfg["database"] = {};
+  (cfg["database"] as JsonMap)["path"] = ".guild/registry.db";
   fs.mkdirSync(path.join(guildDir, "prompts", "default"), { recursive: true });
   fs.mkdirSync(path.join(guildDir, "runs"), { recursive: true });
   fs.mkdirSync(path.join(guildDir, "evidence"), { recursive: true });
   writeGuildConfig(cfg, configPath);
+  scaffoldWorkspaceLinks(root);
   const envExample = path.join(guildDir, ".env.example");
   if (!fs.existsSync(envExample) || force) fs.writeFileSync(envExample, "OPENROUTER_API_KEY=\nOPENAI_API_KEY=\nANTHROPIC_API_KEY=\n", "utf8");
   return configPath;

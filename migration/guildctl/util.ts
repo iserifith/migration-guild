@@ -1,9 +1,9 @@
 import * as fs from "fs";
 import * as path from "path";
-import { DEFAULT_DB_PATH } from "../registry/db/connection";
+import { resolveRegistryDbPath } from "./config";
 
 export function assertDbExists(dbPath?: string): void {
-  const resolved = dbPath ?? process.env["REGISTRY_DB"] ?? DEFAULT_DB_PATH;
+  const resolved = resolveRegistryDbPath({ explicitPath: dbPath });
   if (!fs.existsSync(resolved)) {
     process.stderr.write(
       `\n  ✗ Registry not found: ${resolved}\n\n` +
