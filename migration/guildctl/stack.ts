@@ -8,7 +8,7 @@ export type InterpolationKey = "symbol" | "line" | "text" | "version" | "target"
 
 export interface StackAuditRule {
   id: string;
-  finding: "jvm" | "dependency";
+  finding: "jvm" | "dependency" | "python-compat";
   category: string;
   severity: "critical" | "warning";
   match: string;
