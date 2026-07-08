@@ -8,7 +8,7 @@ export type InterpolationKey = "symbol" | "line" | "text" | "version" | "target"
 
 export interface StackAuditRule {
   id: string;
-  finding: "jvm" | "dependency";
+  finding: "jvm" | "dependency" | "python-compat";
   category: string;
   severity: "critical" | "warning";
   match: string;
@@ -165,6 +165,34 @@ export function findMatchingFiles(dir: string, globs: string[]): string[] {
   };
   visit(dir);
   return results;
+}
+
+// TASK-03: count files in dir that match a stack pack's source globs.
+export function countFilesForStack(dir: string, pack: LoadedStackPack): number {
+  return findMatchingFiles(dir, pack.manifest.source_globs).length;
+}
+
+// TASK-03: language census — count ALL source-like files under dir by extension
+// (case-insensitive), ignoring node_modules/.git. Returns ext (lower-case, with
+// leading dot) -> count, plus the total.
+export function censusSourceFiles(dir: string): { counts: Map<string, number>; total: number } {
+  const counts = new Map<string, number>();
+  let total = 0;
+  const visit = (current: string): void => {
+    if (!fs.existsSync(current)) return;
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name === ".git") continue;
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) { visit(full); continue; }
+      if (!entry.isFile()) continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      if (!ext) continue;
+      counts.set(ext, (counts.get(ext) ?? 0) + 1);
+      total += 1;
+    }
+  };
+  visit(dir);
+  return { counts, total };
 }
 
 export function detectStack(workspaceRoot: string): string {

@@ -18,7 +18,7 @@ project_types:
     template: scaffold/pyproject.web.toml.template
     any:
       roles: [rest-endpoint, controller, view]
-      frameworks: [django, flask, fastapi, starlette]
+      frameworks: [django, flask, fastapi, starlette, pylons]
       paths: [/web/, /views/, /api/]
   library:
     template: scaffold/pyproject.library.toml.template
