@@ -175,7 +175,11 @@ const dbPath = () => program.opts()["db"] as string | undefined;
 program
   .command("inventory")
   .description("Phase 1: Scan legacy Java files and register them in the registry")
-  .action(async () => {
+  .option("--batch-size <n>", "Artifacts per classification agent call (default 100; resumable)")
+  .option("--resume", "Only classify artifacts still missing a classification (default behavior)", false)
+  .action(async (opts) => {
+    if (opts.batchSize) process.env["GUILDCTL_CLASSIFICATION_BATCH_SIZE"] = String(opts.batchSize);
+    assertDbExists(dbPath());
     await runInventory(db());
   });
 
