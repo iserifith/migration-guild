@@ -58,16 +58,18 @@ function versionText(version: string | null): string {
   return version ? ` (${version})` : "";
 }
 
-function detectJvmFindings(content: string, rules: StackAuditRule[]): JvmAuditFindingInput[] {
-  return rules.filter((rule) => rule.finding === "jvm").flatMap((rule) => collectLineMatches(content, rule).map((match) => ({
-    tool: "source-scan",
-    category: rule.category as JvmAuditFindingInput["category"],
-    severity: rule.severity,
-    symbol: match.symbol,
-    summary: interpolate(rule.summary_template, match),
-    evidence: `L${match.line}: ${match.text}`,
-    remediation: rule.remediation,
-  })));
+function detectAuditFindings(content: string, rules: StackAuditRule[]): JvmAuditFindingInput[] {
+  return rules
+    .filter((rule) => rule.finding === "jvm" || rule.finding === "python-compat")
+    .flatMap((rule) => collectLineMatches(content, rule).map((match) => ({
+      tool: "source-scan",
+      category: rule.category as JvmAuditFindingInput["category"],
+      severity: rule.severity,
+      symbol: match.symbol,
+      summary: interpolate(rule.summary_template, match),
+      evidence: `L${match.line}: ${match.text}`,
+      remediation: rule.remediation,
+    })));
 }
 
 function detectDependencyFindings(content: string, rules: StackAuditRule[], versions: Map<string, string>): DependencyFindingInput[] {
@@ -105,7 +107,7 @@ export function refreshCompatibilityAudits(db: Database.Database, projectRoot: s
       continue;
     }
     const content = fs.readFileSync(absPath, "utf8");
-    const jvmFindings = detectJvmFindings(content, pack.rules);
+    const jvmFindings = detectAuditFindings(content, pack.rules);
     const dependencyFindings = detectDependencyFindings(content, pack.rules, dependencyVersions);
     replaceJvmAuditFindings(db, artifact.id, jvmFindings);
     replaceDependencyFindings(db, artifact.id, dependencyFindings);

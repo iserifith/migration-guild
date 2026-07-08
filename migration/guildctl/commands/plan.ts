@@ -91,6 +91,7 @@ interface PlanDeps {
   startPolling?: typeof startPolling;
   getLogDir?: typeof getLogDir;
   workspaceRoot?: string;
+  overrideAudit?: boolean;
 }
 
 export async function runPlan(
@@ -129,15 +130,24 @@ export async function runPlan(
   }
 
   if (jvmBlock) {
-    setNext(db, {
-      summary: jvmBlock.summary,
-      reason: jvmBlock.reason,
-      recommendedCommand: jvmBlock.command,
-    });
-    process.stderr.write(`  ✗ ${jvmBlock.summary}\n`);
-    process.stderr.write(`    ${jvmBlock.reason}\n`);
-    process.stderr.write(`    Run: ${jvmBlock.command}\n\n`);
-    process.exit(1);
+    if (deps.overrideAudit) {
+      setNext(db, {
+        summary: "Pre-plan audit override applied (--override-audit).",
+        reason: `Blocked by ${initialReadiness.blockingJvmFindings.length} critical compatibility finding(s); operator bypassed the gate.`,
+        recommendedCommand: "node migration/registry/dist/cli.js findings list --severity critical",
+      });
+      process.stderr.write(`  ⚠ Pre-plan audit OVERRIDDEN via --override-audit (${initialReadiness.blockingJvmFindings.length} critical finding(s) bypassed).\n`);
+    } else {
+      setNext(db, {
+        summary: jvmBlock.summary,
+        reason: jvmBlock.reason,
+        recommendedCommand: jvmBlock.command,
+      });
+      process.stderr.write(`  ✗ ${jvmBlock.summary}\n`);
+      process.stderr.write(`    ${jvmBlock.reason}\n`);
+      process.stderr.write(`    Run: ${jvmBlock.command}\n\n`);
+      process.exit(1);
+    }
   }
 
   if (initialReadiness.warningJvmFindings.length > 0) {
