@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import type Database from "better-sqlite3";
 import { spawnAgent } from "../runner";
+import type { AgentRunResult } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printStatusSummary } from "../dashboard";
 import { getLogDir } from "../util";
@@ -192,6 +193,25 @@ function inventoryTimeoutMs(): number {
   return Math.max(1, Number.isFinite(minutes) ? minutes : 30) * 60_000;
 }
 
+// TASK-02: default batch size (artifacts per agent call). Override via env or
+// config key inventory.classificationBatchSize.
+function classificationBatchSize(cwd?: string): number {
+  const raw = process.env["GUILDCTL_CLASSIFICATION_BATCH_SIZE"];
+  if (raw) {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 1) return Math.floor(n);
+  }
+  const cfg = resolveGuildConfig({ cwd: cwd ?? process.cwd() });
+  return cfg.inventory?.classificationBatchSize ?? 100;
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  if (size < 1) size = 1;
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 function artifactIds(db: Database.Database): string[] {
   return db.prepare("SELECT id FROM artifacts ORDER BY id").pluck().all() as string[];
 }
@@ -228,38 +248,113 @@ export async function runInventory(db: Database.Database, workspaceRoot = resolv
   const pack = loadActiveStack(cfg, projectRoot);
   const spec = loadClassificationSpec(pack);
   const model = resolvePhaseModel("inventory", cfg);
-  const expectedArtifactIds = (db.prepare("SELECT id FROM artifacts WHERE tier = 'first-class' ORDER BY id").pluck().all() as string[]);
-  const allowedArtifactIdsBeforeAgent = artifactIds(db);
-  const specForPrompt = JSON.stringify(spec, null, 2);
-  console.log(`  Agent: context-agent   Model: ${model}\n`);
-  const result = await (deps.spawnAgent ?? spawnAgent)({
-    agent: "context-agent",
-    model,
-    prompt:
-        "Classify ONLY the orchestrator-registered first-class artifacts. Do not register new artifacts. " +
-        "Write a structured JSON batch with id, module, role, framework, confidence, evidence, ambiguous/signals when needed, then apply it using " +
-        "`node migration/registry/dist/cli.js batch-classify --file <json>`. Do not use arbitrary tags; lifecycle tags are not classification evidence. " +
-        "evidence MUST be a JSON array of strings, e.g. [\"negative-evidence: no configured framework signal matched\", \"django: Django Model import\"]. " +
-        "When the batch is applied, record explicit phase completion evidence with `node migration/registry/dist/cli.js mark-inventory-complete`.\n\n" +
-        `Expected artifact IDs (${expectedArtifactIds.length}):\n${expectedArtifactIds.join("\n")}\n\n` +
-        "Classification contract JSON:\n" + specForPrompt + "\n\n" +
-        readStackInstruction(pack, "classify"),
-    db,
-    logDir: (deps.getLogDir ?? getLogDir)(),
-    phase: "inventory",
-    timeoutMs: inventoryTimeoutMs(),
-  });
+// TASK-02: classify in batches so a single slow/timeout repo no longer loses
+  // ALL work. Each batch is its own agent call with its own timeout; completed
+  // batches persist independently. Re-running inventory resumes from the first
+  // artifact that still lacks a classification (idempotent on a finished repo).
+  const batchSize = classificationBatchSize(projectRoot);
+  const maxBatchRetries = cfg.inventory?.maxBatchRetries ?? 2;
 
-  if (result.exitCode !== 0) {
-    stopPolling();
-    removeArtifacts(db, artifactIds(db).filter((id) => !allowedArtifactIdsBeforeAgent.includes(id)));
-    recordInventoryCompletion(db, { status: "failed", runId: result.runId, reason: `classification agent exited with code ${result.exitCode}` });
-    throw new Error(`Classification agent exited with code ${result.exitCode}`);
+  // Resume support: only artifacts that are still unclassified.
+  const firstClassIds = db
+    .prepare("SELECT id FROM artifacts WHERE tier = 'first-class' ORDER BY id")
+    .pluck()
+    .all() as string[];
+  const unclassifiedIds = db
+    .prepare(
+      `SELECT a.id FROM artifacts a
+       LEFT JOIN artifact_classifications c ON c.artifact_id = a.id
+       WHERE a.tier = 'first-class' AND c.artifact_id IS NULL
+       ORDER BY a.id`,
+    )
+    .pluck()
+    .all() as string[];
+  const expectedArtifactIds = firstClassIds;
+  const allowedArtifactIdsBeforeAgent = artifactIds(db);
+
+  const total = firstClassIds.length;
+  if (unclassifiedIds.length === 0) {
+    process.stdout.write(`  ✓ All ${total} first-class artifact(s) already classified — inventory is a no-op\n`);
+  } else {
+    const batches = chunk(unclassifiedIds, batchSize);
+    process.stdout.write(
+      `  Classifying ${unclassifiedIds.length}/${total} unclassified artifact(s) in ${batches.length} batch(es) of ≤${batchSize}\n`,
+    );
+
+    let persistedBatches = 0;
+    let failedBatches = 0;
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      const batchLabel = `batch ${i + 1}/${batches.length} (${batch.length} artifacts)`;
+      let attempt = 0;
+      let result: AgentRunResult | null = null;
+      while (attempt <= maxBatchRetries) {
+        attempt += 1;
+        console.log(`\n  Agent: context-agent · ${batchLabel} · attempt ${attempt}\n`);
+        result = await (deps.spawnAgent ?? spawnAgent)({
+          agent: "context-agent",
+          model,
+          prompt:
+            "Classify ONLY the orchestrator-registered first-class artifacts listed below. Do not register new artifacts. " +
+            "Write a structured JSON batch with id, module, role, framework, confidence, evidence, ambiguous/signals when needed, then apply it using " +
+            "`node migration/registry/dist/cli.js batch-classify --file <json>`. Do not use arbitrary tags; lifecycle tags are not classification evidence. " +
+            "evidence MUST be a JSON array of strings, e.g. [\"negative-evidence: no configured framework signal matched\", \"django: Django Model import\"]. " +
+            "When the batch is applied, record explicit phase completion evidence with `node migration/registry/dist/cli.js mark-inventory-complete`.\n\n" +
+            `Batch artifact IDs (${batch.length}):\n${batch.join("\n")}\n\n` +
+            "Classification contract JSON:\n" + JSON.stringify(spec, null, 2) + "\n\n" +
+            readStackInstruction(pack, "classify"),
+          db,
+          logDir: (deps.getLogDir ?? getLogDir)(),
+          phase: "inventory",
+          timeoutMs: inventoryTimeoutMs(),
+        });
+        if (result.exitCode === 0) break;
+        process.stderr.write(`  ✗ ${batchLabel} attempt ${attempt} exited with code ${result.exitCode}\n`);
+        if (attempt > maxBatchRetries) {
+          failedBatches += 1;
+          process.stderr.write(`  ✗ ${batchLabel} failed after ${maxBatchRetries} retry(ies)\n`);
+        }
+      }
+      // A persisted batch is one whose artifacts now have classifications. Only
+      // count it when the agent succeeded; a failed batch keeps its prior state.
+      const classifiedNow = db
+        .prepare(
+          `SELECT COUNT(*) c FROM artifact_classifications WHERE artifact_id IN (${batch.map(() => "?").join(",")})`,
+        )
+        .all(...batch) as { c: number }[];
+      if (classifiedNow[0].c === batch.length) persistedBatches += 1;
+    }
+
+    const stillUnclassified = db
+      .prepare(
+        `SELECT COUNT(*) c FROM artifacts a
+         LEFT JOIN artifact_classifications c ON c.artifact_id = a.id
+         WHERE a.tier = 'first-class' AND c.artifact_id IS NULL`,
+      )
+      .get() as { c: number };
+    process.stdout.write(
+      `\n  Classification summary: ${total - stillUnclassified.c}/${total} classified across ${persistedBatches} persisted batch(es), ${failedBatches} failed batch(es)\n`,
+    );
+    if (stillUnclassified.c > 0) {
+      process.stderr.write(
+        `  ⚠ ${stillUnclassified.c} artifact(s) remain unclassified — NOT silently defaulted. Re-run inventory to resume.\n`,
+      );
+    }
   }
 
   stopPolling();
+
   const completionStatus = getInventoryCompletionStatus(db);
   const createdArtifactIds = artifactIds(db).filter((id) => !allowedArtifactIdsBeforeAgent.includes(id));
+  // Guard: an agent must never register artifacts outside the scan (TASK-02 keeps
+  // each batch self-contained, so any new id is a contract violation).
+  const unexpected = createdArtifactIds.filter((id) => !allowedArtifactIdsBeforeAgent.includes(id));
+  if (unexpected.length > 0) {
+    removeArtifacts(db, createdArtifactIds);
+    recordInventoryCompletion(db, { status: "failed", runId: "n/a", reason: `unexpected registration of ${unexpected.length} artifact(s)` });
+    throw new Error(`Unexpected registration of artifacts by agent: ${unexpected.join(", ")}`);
+  }
+
   const validation = validateInventoryQuality(db, spec, {
     expectedArtifactIds,
     allowedSecondClassArtifactIds: allowedArtifactIdsBeforeAgent.filter((id) => !expectedArtifactIds.includes(id)),
@@ -269,7 +364,7 @@ export async function runInventory(db: Database.Database, workspaceRoot = resolv
   });
   if (!validation.valid) {
     removeArtifacts(db, createdArtifactIds);
-    recordInventoryCompletion(db, { status: "failed", runId: result.runId, reason: validation.errors.join("; ") || "inventory validation failed" });
+    recordInventoryCompletion(db, { status: "failed", runId: "n/a", reason: validation.errors.join("; ") || "inventory validation failed" });
     const reportText = formatInventoryValidationReport(validation);
     setNext(db, {
       summary: "Inventory quality gate failed.",

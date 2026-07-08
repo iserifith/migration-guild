@@ -16,6 +16,7 @@ export interface GuildConfig {
   evidence: { output_dir: string; include_git_diff: boolean; include_static_scan: boolean; include_dependency_scan: boolean };
   approval: { mode: "manual" | "smart" | "off"; destructive_commands: "manual" | "smart" | "off" };
   migration: { default_mode: string; require_evidence_before_intent: boolean; max_autonomous_steps: number };
+  inventory: { classificationBatchSize: number; maxBatchRetries: number };
   // TASK-07: agent liveliness limits (seconds). inactivity = kill on silence;
   // ceiling = backstop wall-clock kill so a chatty-but-stuck agent can't run forever.
   agent_limits: { inactivity_timeout_seconds: number; ceiling_seconds: number };
@@ -49,6 +50,7 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   evidence: { output_dir: ".guild/evidence", include_git_diff: true, include_static_scan: true, include_dependency_scan: true },
   approval: { mode: "manual", destructive_commands: "manual" },
   migration: { default_mode: "init", require_evidence_before_intent: true, max_autonomous_steps: 3 },
+  inventory: { classificationBatchSize: 100, maxBatchRetries: 2 },
   agent_limits: { inactivity_timeout_seconds: 120, ceiling_seconds: 1800 },
   profiles: {
     default: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "deepseek-v4-pro", api_key_env: "DASHSCOPE_API_KEY" },

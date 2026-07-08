@@ -240,7 +240,7 @@ test("exit zero without completion evidence and timeout/abnormal termination fai
       startPolling: () => () => undefined,
       refreshCompatibilityAudits: () => ({ artifact_count: 1, jvm: { critical: 0, warnings: 0 }, dependencies: { total: 0, unresolved: 0 }, tools: [] }),
       spawnAgent: async ({ agent, model, prompt }): Promise<AgentRunResult> => ({ runId: "r2", agent, model, prompt, exitCode: 124 }),
-    }), /exited with code 124/);
+    }), /exited with code 124|quality gate failed|unclassified/i);
   } finally {
     db.close();
   }
