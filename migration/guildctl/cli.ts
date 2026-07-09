@@ -38,6 +38,8 @@ import {
   readGuildConfig,
   resolveGuildConfig,
   resolveWorkspaceRoot,
+  resolveRegistryDbPath,
+  registryPathWarning,
   scaffoldGuildConfig,
   setDottedPath,
   writeGuildConfig,
@@ -73,9 +75,13 @@ program.option("--workspace <path>", "Workspace root for migration phases (overr
 // Bridge --workspace to GUILD_WORKSPACE before any command action runs, so the
 // resolver (resolveWorkspaceRoot) and every cwd-defaulting helper agree on the
 // same root without threading the flag through every signature.
-program.hook("preAction", () => {
-  const ws = program.opts()["workspace"] as string | undefined;
-  if (ws) process.env.GUILD_WORKSPACE = path.resolve(ws);
+program.hook("preAction", (_thisCommand, actionCommand) => {
+  const flag = program.opts()["workspace"] as string | undefined;
+  if (flag) process.env.GUILD_WORKSPACE = path.resolve(flag);
+  if (!["init", "config", "config-set"].includes(actionCommand.name())) {
+    const warning = registryPathWarning(dbPath(), workspaceRoot());
+    if (warning) process.stderr.write(`${warning}\n`);
+  }
 });
 
 // Resolve the active workspace root honoring --workspace / GUILD_WORKSPACE.
@@ -182,8 +188,15 @@ program
     if (checks.some(([ok]) => !ok) || stateFailed) process.exit(1);
   });
 
-const db = () => getDb(program.opts()["db"] as string | undefined);
-const dbPath = () => program.opts()["db"] as string | undefined;
+const dbPath = () => resolveRegistryDbPath({ explicitPath: program.opts()["db"] as string | undefined, workspaceRoot: workspaceRoot() });
+const warnRegistryPathIfNeeded = () => {
+  const warning = registryPathWarning(dbPath(), workspaceRoot());
+  if (warning) process.stderr.write(`${warning}\n`);
+};
+const db = () => {
+  warnRegistryPathIfNeeded();
+  return getDb(dbPath(), workspaceRoot());
+};
 
 
 // ─── inventory ────────────────────────────────────────────────────────────────
@@ -195,6 +208,7 @@ program
   .option("--resume", "Only classify artifacts still missing a classification (default behavior)", false)
   .action(async (opts) => {
     if (opts.batchSize) process.env["GUILDCTL_CLASSIFICATION_BATCH_SIZE"] = String(opts.batchSize);
+    warnRegistryPathIfNeeded();
     assertDbExists(dbPath());
     await runInventory(db());
   });
