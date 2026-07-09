@@ -251,6 +251,7 @@ export interface ArtifactClaim {
   claimed_at: string;
   heartbeat_at: string;
   lease_expires_at: string;
+  expected_output_paths: string | null;
   finished_at: string | null;
   finish_reason: string | null;
 }

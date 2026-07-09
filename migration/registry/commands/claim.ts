@@ -299,6 +299,209 @@ export function releaseClaimedArtifactsForOwner(
   return rows.map((claim) => releaseClaimRecord(db, claim, agent, reason));
 }
 
+// ─── TASK-05: single-owner claim protocol ────────────────────────────────────
+//
+// The migrate runner pre-claims an artifact on behalf of an agent and hands it
+// off via GUILDCTL_ARTIFACT_ID (plus GUILDCTL_CLAIM_ID / GUILDCTL_CLAIM_TOKEN).
+// An agent that instead calls `claim` (claimNextTask) grabs a DIFFERENT artifact,
+// leaving the pre-claimed one dangling — the B5 double-claim bug. These helpers
+// make the handoff mechanically binding: an agent-side claim resolves the env
+// var and refuses to grab any other artifact.
+
+/**
+ * Derive the allowed output path(s) for a claimed artifact. The legacy file
+ * lives under `legacy/`; its migrated twin is expected under the `modern/`
+ * mirror at the same relative position. Returned as a JSON array of strings
+ * (TASK-04 consumes this to compute the per-pool allowed-path union).
+ */
+export function deriveExpectedOutputPaths(artifact: Artifact): string[] {
+  const p = artifact.path ?? "";
+  const modernPath = p.replace(/(^|\/)legacy\//, "$1modern/");
+  if (modernPath === p) return []; // no legacy/ prefix → nothing predictable
+  return [modernPath];
+}
+
+/**
+ * Claim a specific artifact by id (or resolve from GUILDCTL_ARTIFACT_ID when
+ * `artifactId` is omitted). Enforces single-owner semantics:
+ *  - a different owner already holds an active claim → reject (name the owner)
+ *  - same owner already holds it → idempotent success (no duplicate row)
+ *  - GUILDCTL_ARTIFACT_ID is set to a different id → reject (work your assigned artifact)
+ */
+export function claimArtifactById(
+  db: Database.Database,
+  opts: {
+    artifactId?: string;
+    agent: string;
+    ownerId?: string;
+    runId?: string;
+    model?: string;
+    fromStatus?: Status;
+    leaseMinutes?: number;
+    /** read from process.env by the caller when binding to a pre-claim */
+    envArtifactId?: string;
+  },
+): ClaimedArtifact {
+  const envAssigned = opts.envArtifactId?.trim() || undefined;
+  const requestedId = opts.artifactId?.trim() || envAssigned;
+
+  if (!requestedId) {
+    throw new RegistryError(
+      1,
+      "No artifact specified and GUILDCTL_ARTIFACT_ID is not set. " +
+        "Provide --id <artifactId> or run under a pre-claimed handoff.",
+    );
+  }
+
+  // Handoff binding: the runner told this agent to work a specific artifact.
+  if (envAssigned && envAssigned !== requestedId) {
+    throw new RegistryError(
+      3,
+      `This agent is assigned artifact "${envAssigned}" (GUILDCTL_ARTIFACT_ID). ` +
+        `Refusing to claim "${requestedId}". Work your assigned artifact.`,
+    );
+  }
+
+  const owner = opts.ownerId ?? opts.agent;
+  const fromStatus = opts.fromStatus ?? "planned";
+
+  return db.transaction((): ClaimedArtifact => {
+    const artifact = db
+      .prepare("SELECT * FROM artifacts WHERE id = ?")
+      .get(requestedId) as Artifact | undefined;
+    if (!artifact) {
+      throw new RegistryError(2, `Artifact not found: "${requestedId}"`);
+    }
+
+    const existing = getActiveClaimByArtifactId(db, requestedId);
+    if (existing) {
+      if (existing.owner_id !== owner) {
+        const ageMin = db
+          .prepare(
+            `SELECT CAST((julianday('now') - julianday(claimed_at)) * 1440 AS INTEGER) AS m
+             FROM artifact_claims WHERE claim_id = ?`,
+          )
+          .get(existing.claim_id) as { m: number };
+        throw new RegistryError(
+          3,
+          `Artifact "${requestedId}" is claimed by a different owner "${existing.owner_id}" ` +
+            `(claim ${existing.claim_id.slice(0, 8)}, ${ageMin.m}m old). ` +
+            `Refusing conflicting claim.`,
+        );
+      }
+      // Same owner re-claiming: idempotent — return the existing claim handle.
+      return loadClaimedArtifact(db, requestedId);
+    }
+
+    if (artifact.status !== fromStatus) {
+      throw new RegistryError(
+        3,
+        `Artifact "${requestedId}" has status "${artifact.status}", expected "${fromStatus}". ` +
+          `Refusing claim.`,
+      );
+    }
+
+    const claimId = makeOpaqueId();
+    const claimToken = makeOpaqueId();
+    const leaseMinutes = opts.leaseMinutes ?? DEFAULT_LEASE_MINUTES;
+    const attemptRow = db
+      .prepare(
+        `SELECT COALESCE(MAX(attempt_no), 0) AS attempt_no
+         FROM artifact_claims WHERE artifact_id = ?`,
+      )
+      .get(requestedId) as { attempt_no: number };
+
+    const update = db.prepare(`
+      UPDATE artifacts
+      SET status = 'in-progress',
+          claimed_by = @claimed_by,
+          claimed_at = datetime('now'),
+          claimed_from = @claimed_from,
+          updated_at = datetime('now')
+      WHERE id = @id AND status = @from_status
+    `).run({
+      id: requestedId,
+      claimed_by: owner,
+      claimed_from: fromStatus,
+      from_status: fromStatus,
+    });
+    if (update.changes !== 1) {
+      throw new RegistryError(3, `Failed to claim "${requestedId}": status changed concurrently.`);
+    }
+
+    db.prepare(`
+      INSERT INTO artifact_claims (
+        claim_id, artifact_id, run_id, owner_id, agent, from_status,
+        claim_token, state, attempt_no, expected_output_paths,
+        claimed_at, heartbeat_at, lease_expires_at
+      ) VALUES (
+        @claim_id, @artifact_id, @run_id, @owner_id, @agent, @from_status,
+        @claim_token, 'active', @attempt_no, @expected_output_paths,
+        datetime('now'), datetime('now'),
+        datetime('now', '+' || @lease_minutes || ' minutes')
+      )
+    `).run({
+      claim_id: claimId,
+      artifact_id: requestedId,
+      run_id: opts.runId ?? null,
+      owner_id: owner,
+      agent: opts.agent,
+      from_status: fromStatus,
+      claim_token: claimToken,
+      attempt_no: attemptRow.attempt_no + 1,
+      expected_output_paths: JSON.stringify(deriveExpectedOutputPaths(artifact)),
+      lease_minutes: leaseMinutes,
+    });
+
+    db.prepare(`
+      INSERT INTO events (event_id, artifact_id, type, agent, model, summary, event_data)
+      VALUES (lower(hex(randomblob(8))), @artifact_id, 'claimed', @agent, @model,
+        @summary, @event_data)
+    `).run({
+      artifact_id: requestedId,
+      agent: opts.agent,
+      model: opts.model ?? null,
+      summary: `Claimed by ${owner} (from ${fromStatus}) [explicit id]`,
+      event_data: JSON.stringify({
+        claim_id: claimId,
+        run_id: opts.runId ?? null,
+        owner_id: owner,
+        attempt_no: attemptRow.attempt_no + 1,
+        lease_minutes: leaseMinutes,
+      }),
+    });
+
+    return loadClaimedArtifact(db, requestedId);
+  })();
+}
+
+/**
+ * Release a single claim by its id+token. Only the owning claim (matching
+ * claim_token) may release it; `--force` allows an operator/runner to release
+ * a claim whose token it does not hold (e.g. crashed-runner cleanup).
+ */
+export function releaseClaim(
+  db: Database.Database,
+  claimId: string,
+  claimToken: string,
+  agent: string,
+  force = false,
+  reason?: string,
+): Artifact {
+  const claim = loadActiveClaimById(db, claimId);
+  if (!claim) {
+    throw new RegistryError(3, `Active claim "${claimId}" not found.`);
+  }
+  if (!force && claim.claim_token !== claimToken) {
+    throw new RegistryError(
+      3,
+      `Claim token mismatch for "${claimId}". Only the owning agent may release ` +
+        `(use --force to override as an operator).`,
+    );
+  }
+  return releaseClaimRecord(db, claim, agent, reason);
+}
+
 export function reconcileStaleClaims(
   db: Database.Database,
   agent = "system",
@@ -452,6 +655,7 @@ export function claimNextTask(
         claim_token,
         state,
         attempt_no,
+        expected_output_paths,
         claimed_at,
         heartbeat_at,
         lease_expires_at
@@ -465,6 +669,7 @@ export function claimNextTask(
         @claim_token,
         'active',
         @attempt_no,
+        @expected_output_paths,
         datetime('now'),
         datetime('now'),
         datetime('now', '+' || @lease_minutes || ' minutes')
@@ -478,6 +683,7 @@ export function claimNextTask(
       from_status: fromStatus,
       claim_token: claimToken,
       attempt_no: attemptRow.attempt_no + 1,
+      expected_output_paths: JSON.stringify(deriveExpectedOutputPaths(candidate)),
       lease_minutes: leaseMinutes,
     });
 
