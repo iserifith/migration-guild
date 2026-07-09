@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import * as path from "path";
 import { applySchema } from "./schema";
+import { resolveRegistryDbPath } from "../../guildctl/config";
 
 export const DEFAULT_DB_PATH = path.resolve(
   __dirname,   // registry/dist/
@@ -12,9 +13,9 @@ export const DEFAULT_DB_PATH = path.resolve(
 let _db: Database.Database | null = null;
 let _dbPath: string | null = null;
 
-export function getDb(dbPath?: string): Database.Database {
+export function getDb(dbPath?: string, workspaceRoot?: string): Database.Database {
   // Use || not ?? — empty string from REGISTRY_DB= in .env should fall back to default
-  const resolved = dbPath || process.env["REGISTRY_DB"] || DEFAULT_DB_PATH;
+  const resolved = dbPath || resolveRegistryDbPath({ workspaceRoot });
   if (_db && _dbPath === resolved) return _db;
 
   const db = new Database(resolved);
