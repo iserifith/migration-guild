@@ -84,6 +84,17 @@ CREATE TABLE IF NOT EXISTS dependencies (
     PRIMARY KEY (artifact_id, depends_on_id, relation)
 );
 
+-- TASK-10: source-level code dependencies between registered artifacts, used for
+-- dependency-aware parallel pool assignment. `auto` rows are (re)written on each
+-- inventory; `manual` rows (added via `deps add`) are preserved across re-runs.
+CREATE TABLE IF NOT EXISTS source_dependencies (
+    dependent_id    TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    dependency_id   TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    signal          TEXT NOT NULL CHECK (signal IN ('import', 'inheritance', 'manual')),
+    created_by      TEXT NOT NULL DEFAULT 'auto',
+    PRIMARY KEY (dependent_id, dependency_id, signal)
+);
+
 -- ─── Event Log (append-only) ─────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS events (

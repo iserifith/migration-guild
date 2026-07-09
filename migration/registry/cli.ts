@@ -28,6 +28,12 @@ import { appendEvent } from "./commands/events";
 import { startServer } from "./commands/serve";
 import { startRun, finishRun, listRuns, setRunPid } from "./commands/runs";
 import {
+  addManualDependency,
+  findCycles,
+  listDependencies as listSourceDependencies,
+  removeDependency,
+} from "./commands/sourceDeps";
+import {
   confirmMapping,
   createMapping,
   getMappingsSummary,
@@ -815,5 +821,47 @@ program
     pre_plan_audit: getOperatorState(db(), "pre_plan_audit"),
     next: getOperatorState(db(), "next"),
   })));
+
+program
+  .command("deps")
+  .description("Manage source-level dependency links between artifacts (TASK-10)")
+  .addCommand(
+    new Command("add")
+      .argument("<dependent>", "artifact id that depends on <dependency>")
+      .argument("<dependency>", "artifact id that <dependent> depends on")
+      .description("Add a manual dependency link (survives inventory re-runs)")
+      .action((dependent: string, dependency: string) => run(() => {
+        addManualDependency(db(), dependent, dependency);
+        return { ok: true, dependent, dependency, created_by: "manual" };
+      })),
+  )
+  .addCommand(
+    new Command("list")
+      .argument("[dependent]", "optional artifact id to filter by")
+      .description("List source-level dependency links")
+      .action((dependent?: string) => run(() => listSourceDependencies(db(), dependent))),
+  )
+  .addCommand(
+    new Command("remove")
+      .argument("<dependent>", "artifact id")
+      .argument("<dependency>", "artifact id")
+      .description("Remove a dependency link")
+      .action((dependent: string, dependency: string) => run(() => {
+        removeDependency(db(), dependent, dependency);
+        return { ok: true, dependent, dependency };
+      })),
+  )
+  .addCommand(
+    new Command("validate")
+      .description("Detect cycles in the source-dependency graph")
+      .action(() => run(() => {
+        const cycles = findCycles(db());
+        return {
+          ok: true,
+          cycles_detected: cycles.length,
+          cycles: cycles.map((c) => ({ members: c.members, edges: c.edges })),
+        };
+      })),
+  );
 
 program.parse();
