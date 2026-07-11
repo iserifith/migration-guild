@@ -8,6 +8,10 @@ import { printPhaseHeader, printEvent, printStatusSummary } from "../dashboard";
 import { getLogDir } from "../util";
 import { resolveGuildConfig, resolvePhaseModel, resolveWorkspaceRoot } from "../config";
 import { registerArtifact } from "../../registry/commands/artifacts";
+import {
+  extractSourceDependencies,
+  recordAutoDependencies,
+} from "../../registry/commands/sourceDeps";
 import { setNext } from "../../registry/commands/operator";
 import { applySchema } from "../../registry/db/schema";
 import { refreshCompatibilityAudits } from "../audit";
@@ -122,6 +126,9 @@ export function scanAndRegister(db: Database.Database, projectRoot: string): num
   const seen = new Set<string>();
   const skipCounts: Record<string, number> = {};
   const skipDetails: SkipRecord[] = [];
+  // TASK-10: collect (id, content, lang) so source-level deps can be extracted
+  // after every artifact is registered (so cross-references resolve).
+  const sourceFiles: Array<{ id: string; content: string; lang: "java" | "python" | "other" }> = [];
 
   function recordSkip(relPath: string, reason: string): void {
     skipCounts[reason] = (skipCounts[reason] ?? 0) + 1;
@@ -130,6 +137,7 @@ export function scanAndRegister(db: Database.Database, projectRoot: string): num
   }
 
   let registered = 0;
+  const ext = pack.manifest.scaffold.source_extension;
 
   for (const file of files) {
     const relPath = path.relative(projectRoot, file);
@@ -153,6 +161,15 @@ export function scanAndRegister(db: Database.Database, projectRoot: string): num
       registerArtifact(db, { id, kind: "legacy-source", path: relPath, module });
       registered++;
       seen.add(id);
+      // TASK-10: capture source for dependency extraction (skip test files).
+      if (!/\/test\//i.test(relPath) && !/\/tests\//i.test(relPath)) {
+        const lang: "java" | "python" | "other" = ext === ".java" ? "java" : ext === ".py" ? "python" : "other";
+        try {
+          sourceFiles.push({ id, content: fs.readFileSync(file, "utf-8"), lang });
+        } catch {
+          // unreadable source — leave it out of the dep graph
+        }
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.includes("already registered")) {
@@ -167,6 +184,21 @@ export function scanAndRegister(db: Database.Database, projectRoot: string): num
 
   const report = reconcileInventoryCounts(files.length, registered, skipCounts);
   process.stdout.write(report);
+
+  // TASK-10: extract source-level dependency links now that all artifacts are
+  // registered, so imports/extends can resolve to real artifact ids.
+  const idSet = new Set<string>(
+    (db.prepare("SELECT id FROM artifacts").all() as Array<{ id: string }>).map((r) => r.id),
+  );
+  let autoLinks = 0;
+  for (const sf of sourceFiles) {
+    const deps = extractSourceDependencies(sf.id, sf.content, sf.lang, idSet);
+    if (deps.length > 0) {
+      recordAutoDependencies(db, sf.id, deps);
+      autoLinks += deps.length;
+    }
+  }
+  process.stdout.write(`  [deps] source-level links auto-detected: ${autoLinks}\n`);
 
   if (skipDetails.length > 0) {
     process.stdout.write(`  [scan] ${skipDetails.length} file(s) skipped — see ${skipLogPath}\n`);
