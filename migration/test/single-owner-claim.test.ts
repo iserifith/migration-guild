@@ -21,7 +21,7 @@ import { startRun } from "../registry/commands/runs";
 import { applySchema } from "../registry/db/schema";
 import { deriveExpectedOutputPaths } from "../registry/commands/claim";
 
-const REGISTRY_CLI = path.resolve(__dirname, "../dist/registry/cli.js");
+const REGISTRY_CLI = path.resolve(__dirname, "../registry/cli.ts");
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 
 function createDb(): Database.Database {
@@ -191,8 +191,9 @@ test("TASK-05: concurrency smoke — two processes race to claim the same artifa
   seed.close();
 
   const env = { ...process.env, REGISTRY_DB: dbPath };
-  const p1 = spawnSync("node", [REGISTRY_CLI, "claim", "--id", "legacy-source:com.acme:Race", "--agent", "a1", "--owner", "owner-A", "--run-id", "run-6"], { cwd: PROJECT_ROOT, env, encoding: "utf8" });
-  const p2 = spawnSync("node", [REGISTRY_CLI, "claim", "--id", "legacy-source:com.acme:Race", "--agent", "a2", "--owner", "owner-B", "--run-id", "run-6"], { cwd: PROJECT_ROOT, env, encoding: "utf8" });
+  const cliPrefix = ["--import", "tsx", REGISTRY_CLI];
+  const p1 = spawnSync(process.execPath, [...cliPrefix, "claim", "--id", "legacy-source:com.acme:Race", "--agent", "a1", "--owner", "owner-A", "--run-id", "run-6"], { cwd: PROJECT_ROOT, env, encoding: "utf8" });
+  const p2 = spawnSync(process.execPath, [...cliPrefix, "claim", "--id", "legacy-source:com.acme:Race", "--agent", "a2", "--owner", "owner-B", "--run-id", "run-6"], { cwd: PROJECT_ROOT, env, encoding: "utf8" });
 
   const okCount = [p1, p2].filter((p) => p.status === 0).length;
   const errCount = [p1, p2].filter((p) => p.status !== 0 && p.status !== 2).length;
