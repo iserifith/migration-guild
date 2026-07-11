@@ -19,7 +19,7 @@ import { registerArtifact } from "../registry/commands/artifacts";
 import { scanAndRegister } from "../guildctl/commands/inventory";
 import { applySchema } from "../registry/db/schema";
 
-const REGISTRY_CLI = path.resolve(__dirname, "../dist/registry/cli.js");
+const REGISTRY_CLI = path.resolve(__dirname, "../registry/cli.ts");
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
@@ -295,8 +295,9 @@ test("TASK-10: deps CLI — add/list/validate round-trip via spawned registry CL
   seed.close();
 
   const env = { ...process.env, REGISTRY_DB: dbPath };
+  const cliPrefix = ["--import", "tsx", REGISTRY_CLI];
   const cli = (...args: string[]) =>
-    spawnSync("node", [REGISTRY_CLI, "deps", ...args], { cwd: PROJECT_ROOT, env, encoding: "utf8" });
+    spawnSync(process.execPath, [...cliPrefix, "deps", ...args], { cwd: PROJECT_ROOT, env, encoding: "utf8" });
 
   const add = cli("add", "legacy-source:com.acme:A", "legacy-source:com.acme:B");
   assert.equal(add.status, 0, add.stderr);
