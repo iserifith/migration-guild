@@ -75,12 +75,12 @@ CREATE TABLE IF NOT EXISTS dependencies (
     artifact_id      TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
     depends_on_id    TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
     relation         TEXT NOT NULL CHECK (relation IN (
-                         'source-of',
-                         'produced-by',
-                         'verified-by',
-                         'part-of',
-                         'related-issue'
-                     )),
+                        'source-of',
+                        'produced-by',
+                        'verified-by',
+                        'part-of',
+                        'related-issue'
+                    )),
     PRIMARY KEY (artifact_id, depends_on_id, relation)
 );
 
@@ -284,6 +284,7 @@ CREATE TABLE IF NOT EXISTS artifact_claims (
     claimed_at        TEXT NOT NULL DEFAULT (datetime('now')),
     heartbeat_at      TEXT NOT NULL DEFAULT (datetime('now')),
     lease_expires_at  TEXT NOT NULL,
+    expected_output_paths TEXT,
     finished_at       TEXT,
     finish_reason     TEXT
 );
@@ -435,4 +436,11 @@ ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_reasoning INTEGER NOT NULL DEFAU
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_cache_read INTEGER NOT NULL DEFAULT 0 CHECK (token_cache_read >= 0);
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_cache_write INTEGER NOT NULL DEFAULT 0 CHECK (token_cache_write >= 0);
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_fresh INTEGER NOT NULL DEFAULT 0 CHECK (token_fresh >= 0);
+
+-- TASK-05: expected output paths recorded on each claim so the runner-enforced
+-- filesystem isolation (TASK-04) knows the allowed path union for a parallel pool.
+-- Note: SQLite in this build rejects `ADD COLUMN IF NOT EXISTS`, so schema.ts
+-- adds this column at runtime via a plain ALTER guarded by a column-existence check.
+ALTER TABLE artifact_claims ADD COLUMN expected_output_paths TEXT;
+
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_total INTEGER NOT NULL DEFAULT 0 CHECK (token_total >= 0);

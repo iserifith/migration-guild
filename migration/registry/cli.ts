@@ -8,7 +8,7 @@ import { loadActiveStack } from "../guildctl/stack";
 import { loadClassificationSpec } from "../guildctl/classification";
 import { applySchema } from "./db/schema";
 import { RegistryError } from "./types";
-import type { Agent, ArtifactTier, EventType, Kind, MappingStrategy, Relation, Role, Status } from "./types";
+import type { Agent, Artifact, ArtifactClaim, ArtifactTier, EventType, Kind, MappingStrategy, Relation, Role, Status } from "./types";
 import {
   addTag,
   registerArtifact,
@@ -18,7 +18,7 @@ import {
   setArtifactWave,
   updateArtifact,
 } from "./commands/artifacts";
-import { claimNextTask, heartbeatClaim, reconcileStaleClaims } from "./commands/claim";
+import { claimNextTask, claimArtifactById, heartbeatClaim, reconcileStaleClaims, releaseClaim } from "./commands/claim";
 import {
   linkArtifacts,
   listDependencies,
@@ -493,11 +493,13 @@ program
 program
   .command("claim")
   .description(
-    "Atomically claim the next available planned artifact for migration. " +
-    "Skips artifacts whose dependencies are not yet migrated. " +
-    "Returns the claimed artifact as JSON, or exits with code 2 if nothing is available."
+    "Claim a migration task. With --id (or GUILDCTL_ARTIFACT_ID), claim that specific " +
+    "artifact using single-owner semantics; without it, claim the next available planned " +
+    "artifact. Skips artifacts whose dependencies are not yet migrated. " +
+    "Returns the claimed artifact as JSON, or exits with code 2 if nothing is available.",
   )
   .requiredOption("--agent <agent>", "Name of the agent claiming the task")
+  .option("--id <artifactId>", "Claim this specific artifact (binds to GUILDCTL_ARTIFACT_ID handoff when omitted)")
   .option("--owner <owner>", "Stable owner/session ID for this claim attempt")
   .option("--wave <n>", "Only claim from this wave number", parseInt)
   .option("--from-status <status>", "Claim artifacts with this status (default: planned)", "planned")
@@ -505,17 +507,66 @@ program
   .option("--model <model>", "Model running this agent (logged to events)")
   .option("--run-id <runId>", "Owning run ID for this claim attempt")
   .option("--lease-minutes <n>", "Lease duration in minutes", parseInt)
-  .action((opts) => run(() => claimNextTask(
-    db(),
-    opts.agent,
-    opts.wave,
-    opts.fromStatus,
-    opts.model,
-    opts.tier,
-    opts.runId,
-    opts.owner,
-    opts.leaseMinutes,
-  )));
+  .option("--env-artifact-id <id>", "Internal: value of GUILDCTL_ARTIFACT_ID (default: process.env.GUILDCTL_ARTIFACT_ID)")
+  .action((opts) => {
+    const envArtifactId = opts.envArtifactId ?? process.env["GUILDCTL_ARTIFACT_ID"];
+    if (opts.id || envArtifactId) {
+      run(() =>
+        claimArtifactById(db(), {
+          artifactId: opts.id,
+          agent: opts.agent,
+          ownerId: opts.owner,
+          runId: opts.runId,
+          model: opts.model,
+          fromStatus: opts.fromStatus,
+          leaseMinutes: opts.leaseMinutes,
+          envArtifactId,
+        }),
+      );
+      return;
+    }
+    run(() =>
+      claimNextTask(
+        db(),
+        opts.agent,
+        opts.wave,
+        opts.fromStatus,
+        opts.model,
+        opts.tier,
+        opts.runId,
+        opts.owner,
+        opts.leaseMinutes,
+      ),
+    );
+  });
+
+program
+  .command("reap-claims")
+  .description(
+    "Release stale active claims older than the given threshold (crashed-runner cleanup). " +
+    "Lists what it released.",
+  )
+  .requiredOption("--older-than <mins>", "Only release claims older than N minutes", parseInt)
+  .option("--agent <agent>", "Agent recorded on the reap events", "guildctl")
+  .action((opts) => {
+    run(() => {
+      const rows = db()
+        .prepare(
+          `SELECT c.*
+           FROM artifact_claims c
+           WHERE c.state = 'active'
+             AND (julianday('now') - julianday(c.claimed_at)) * 1440 >= ?`,
+        )
+        .all(opts.olderThan) as ArtifactClaim[];
+      const released = rows.map((claim) =>
+        releaseClaim(db(), claim.claim_id, claim.claim_token, opts.agent, true, `Reaped after ${opts.olderThan}m`),
+      );
+      return {
+        reaped: released.length,
+        artifacts: released.map((a) => ({ id: a.id, status: a.status })),
+      };
+    });
+  });
 
 program
   .command("heartbeat-claim")
