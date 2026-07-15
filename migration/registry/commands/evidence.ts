@@ -5,6 +5,7 @@ import { signRuntimeEvidence } from "../../guildctl/verify";
 import { RegistryError, validateId } from "../types";
 import type {
   AcceptanceEvidence,
+  ApprovedCompanionOutput,
   ArbitrationDecision,
   ArbitrationDecisionValue,
   Artifact,
@@ -28,6 +29,8 @@ export interface AddAcceptanceEvidenceOptions {
   logSha256?: string | null;
   durationMs?: number | null;
   authenticity?: string | null;
+  contentSha256?: string | null;
+  signatureJson?: string | null;
 }
 
 export interface RecordArbitrationDecisionOptions {
@@ -107,7 +110,9 @@ function insertAcceptanceEvidence(
        output_excerpt,
        log_sha256,
        duration_ms,
-       authenticity
+       authenticity,
+       content_sha256,
+       signature_json
      ) VALUES (
        @artifact_id,
        @run_id,
@@ -121,7 +126,9 @@ function insertAcceptanceEvidence(
        @output_excerpt,
        @log_sha256,
        @duration_ms,
-       @authenticity
+       @authenticity,
+       @content_sha256,
+       @signature_json
      )`,
   ).run({
     artifact_id: opts.artifactId,
@@ -137,6 +144,8 @@ function insertAcceptanceEvidence(
     log_sha256: opts.logSha256 ?? null,
     duration_ms: opts.durationMs ?? null,
     authenticity: opts.authenticity ?? null,
+    content_sha256: opts.contentSha256 ?? null,
+    signature_json: opts.signatureJson ?? null,
   });
 
   return db.prepare("SELECT * FROM acceptance_evidence WHERE rowid = ?").get(result.lastInsertRowid) as AcceptanceEvidence;
@@ -517,4 +526,83 @@ export function rejectArtifactWithEvidence(
   });
 
   return tx();
+}
+
+// ─── Approved Companion Outputs ──────────────────────────────────────────────
+
+export interface AddCompanionOutputOptions {
+  artifactId: string;
+  outputPath: string;
+  contentSha256: string;
+  signatureJson?: string | null;
+  approvedBy: string;
+}
+
+export function addApprovedCompanionOutput(
+  db: Database.Database,
+  opts: AddCompanionOutputOptions,
+): ApprovedCompanionOutput {
+  assertArtifactExists(db, opts.artifactId);
+  if (!opts.outputPath.trim()) {
+    throw new RegistryError(1, "Companion output path is required");
+  }
+  if (!opts.contentSha256.match(/^[a-f0-9]{64}$/)) {
+    throw new RegistryError(1, "Companion output requires a SHA-256 content digest");
+  }
+  if (!opts.approvedBy.trim()) {
+    throw new RegistryError(1, "Companion output approver is required");
+  }
+
+  const result = db.prepare(
+    `INSERT INTO approved_companion_outputs (
+       artifact_id,
+       output_path,
+       content_sha256,
+       signature_json,
+       approved_by
+     ) VALUES (
+       @artifact_id,
+       @output_path,
+       @content_sha256,
+       @signature_json,
+       @approved_by
+     )
+     ON CONFLICT(artifact_id, output_path) DO UPDATE SET
+       content_sha256 = excluded.content_sha256,
+       signature_json = excluded.signature_json,
+       approved_by = excluded.approved_by,
+       approved_at = datetime('now')`,
+  ).run({
+    artifact_id: opts.artifactId,
+    output_path: opts.outputPath,
+    content_sha256: opts.contentSha256,
+    signature_json: opts.signatureJson ?? null,
+    approved_by: opts.approvedBy,
+  });
+
+  return db.prepare(
+    "SELECT * FROM approved_companion_outputs WHERE artifact_id = ? AND output_path = ?",
+  ).get(opts.artifactId, opts.outputPath) as ApprovedCompanionOutput;
+}
+
+export function listApprovedCompanionOutputs(
+  db: Database.Database,
+  artifactId: string,
+): ApprovedCompanionOutput[] {
+  assertArtifactExists(db, artifactId);
+  return db.prepare(
+    `SELECT * FROM approved_companion_outputs
+     WHERE artifact_id = ?
+     ORDER BY rowid DESC`,
+  ).all(artifactId) as ApprovedCompanionOutput[];
+}
+
+export function getApprovedCompanionOutput(
+  db: Database.Database,
+  artifactId: string,
+  outputPath: string,
+): ApprovedCompanionOutput | null {
+  return db.prepare(
+    "SELECT * FROM approved_companion_outputs WHERE artifact_id = ? AND output_path = ?",
+  ).get(artifactId, outputPath) as ApprovedCompanionOutput | undefined ?? null;
 }
