@@ -202,9 +202,24 @@ test("validateCompanionOutputPath rejects non-normalized paths", () => {
   );
 });
 
+test("validateCompanionOutputPath rejects whitespace and Windows separators", () => {
+  assert.throws(
+    () => validateCompanionOutputPath(" modern/src/Foo.java "),
+    /canonical POSIX/i,
+  );
+  assert.throws(
+    () => validateCompanionOutputPath("modern\\src\\Foo.java"),
+    /canonical POSIX/i,
+  );
+});
+
 test("validateCompanionOutputPath accepts valid paths under modern/", () => {
   const result = validateCompanionOutputPath("modern/src/main/java/com/acme/FooTest.java");
   assert.equal(result, "modern/src/main/java/com/acme/FooTest.java");
+  assert.equal(
+    validateCompanionOutputPath("modern/src/Foo..generated.java"),
+    "modern/src/Foo..generated.java",
+  );
 });
 
 test("addApprovedCompanionOutput rejects absolute path", () => {

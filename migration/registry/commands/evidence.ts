@@ -553,14 +553,21 @@ export function validateCompanionOutputPath(rawPath: string): string {
       `Companion output path must be relative (got absolute): "${trimmed}"`,
     );
   }
-  const normalized = trimmed.split("/").filter(Boolean).join("/");
-  if (normalized !== trimmed) {
+  if (trimmed !== rawPath || trimmed.includes("\\")) {
+    throw new RegistryError(
+      3,
+      `Companion output path is not a canonical POSIX path: "${rawPath}"`,
+    );
+  }
+  const segments = trimmed.split("/");
+  const normalized = path.posix.normalize(trimmed);
+  if (normalized !== trimmed || segments.some((segment) => segment === "" || segment === ".")) {
     throw new RegistryError(
       3,
       `Companion output path is not normalized: "${trimmed}" (expected "${normalized}")`,
     );
   }
-  if (normalized.includes("..")) {
+  if (segments.includes("..")) {
     throw new RegistryError(
       3,
       `Companion output path must not contain ".." segments: "${trimmed}"`,
@@ -580,7 +587,7 @@ export function addApprovedCompanionOutput(
   opts: AddCompanionOutputOptions,
 ): ApprovedCompanionOutput {
   assertArtifactExists(db, opts.artifactId);
-  validateCompanionOutputPath(opts.outputPath);
+  const outputPath = validateCompanionOutputPath(opts.outputPath);
   if (!opts.approvedBy.trim()) {
     throw new RegistryError(1, "Companion output approver is required");
   }
@@ -600,13 +607,13 @@ export function addApprovedCompanionOutput(
        approved_at = datetime('now')`,
   ).run({
     artifact_id: opts.artifactId,
-    output_path: opts.outputPath,
+    output_path: outputPath,
     approved_by: opts.approvedBy,
   });
 
   return db.prepare(
     "SELECT * FROM approved_companion_outputs WHERE artifact_id = ? AND output_path = ?",
-  ).get(opts.artifactId, opts.outputPath) as ApprovedCompanionOutput;
+  ).get(opts.artifactId, outputPath) as ApprovedCompanionOutput;
 }
 
 export function listApprovedCompanionOutputs(
