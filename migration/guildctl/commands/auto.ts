@@ -4,7 +4,7 @@ import path from "node:path";
 import type Database from "better-sqlite3";
 import { preflightProviderCredential, resolveGuildConfig, resolveProviderRoute, resolveWorkspaceRoot } from "../config";
 import { resolveHarness, type HarnessResolution } from "../harness";
-import { runAuto, type AutoReviewDecision, type AutoReviewInput, type AutoWorkerInput } from "../supervisor/loop";
+import { runAuto, type AutoResult, type AutoReviewDecision, type AutoReviewInput, type AutoWorkerInput } from "../supervisor/loop";
 
 export interface AutoCliOptions {
   artifact: string;
@@ -13,6 +13,8 @@ export interface AutoCliOptions {
   resume?: boolean;
   json?: boolean;
   registryDbPath?: string;
+  setExitCode?: boolean;
+  quiet?: boolean;
 }
 
 export const REVIEW_MARKER = "MIGRATION_GUILD_REVIEW:";
@@ -283,7 +285,7 @@ function scriptedWorker(
   });
 }
 
-export async function runAutoCommand(db: Database.Database, opts: AutoCliOptions): Promise<void> {
+export async function runAutoCommand(db: Database.Database, opts: AutoCliOptions): Promise<AutoResult> {
   const workspaceRoot = resolveWorkspaceRoot();
   const cfg = resolveGuildConfig({ cwd: workspaceRoot });
   const harness = resolveHarness(cfg, workspaceRoot);
@@ -305,10 +307,12 @@ export async function runAutoCommand(db: Database.Database, opts: AutoCliOptions
     worker: scriptedWorker(workspaceRoot, harness, models, cfg, (model) => { lastProducerModel = model; }, opts.registryDbPath),
     review: harnessReviewer(workspaceRoot, harness, cfg, () => lastProducerModel),
   });
-  if (result.status === "blocked") process.exitCode = 1;
+  if (result.status === "blocked" && opts.setExitCode !== false) process.exitCode = 1;
+  if (opts.quiet) return result;
   if (opts.json) {
     process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-    return;
+    return result;
   }
   process.stdout.write(`auto ${result.status} artifact=${opts.artifact} attempts=${result.attempts} run=${result.runId}\n`);
+  return result;
 }

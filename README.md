@@ -27,7 +27,7 @@ cd migration && npm install && npm run build && cd ..
 
 cp .env.example .env   # set your API key (DashScope / OpenRouter / OpenAI / local)
 
-node migration/guildctl/dist/cli.js --help
+node migration/dist/guildctl/cli.js --help
 ```
 
 Then point it at a legacy repo and run the pipeline phase by phase. The full walkthrough — setup wizard, workspace layout, per-phase commands — is in **[GETTING-STARTED.md](GETTING-STARTED.md)**. Contributor docs live in **[DEVELOPMENT.md](DEVELOPMENT.md)**; agent roles are specified in **[AGENTS.md](AGENTS.md)**.
@@ -75,9 +75,12 @@ graph TB
 | Inventory | `guildctl inventory` | Every file classified (kind, role, framework) with signals recorded |
 | Plan | `guildctl plan` | Dependency graph resolved; artifacts assigned to executable waves |
 | Migrate | `guildctl migrate` | Tests written first; code lands in `modern/`; evidence filed |
+| Autonomous queue | `guildctl auto-run` | Dependency-ready artifacts run sequentially through bounded migrate, verify, repair, and independent review loops |
 | Review | `guildctl review` / `arbitrate` | Independent critic verdict; arbiter gate approves or sends to `needs-rework` |
 
 `guildctl status` and `guildctl watch` show live progress; `guildctl remediate` recovers stalled or failed artifacts.
+
+`guildctl auto-run` is fail-closed and silence-first: it emits one final summary, continues independent work after an artifact blocks, and stops on systemic executor errors without dispatching another artifact. Only `reviewed`, `completed`, or `skipped` dependencies unlock downstream work; a merely `migrated` artifact must still pass independent review. Migrated crash states resume automatically before fresh planned work. Use `--wave` and `--limit` for bounded canaries; `--no-resume` exists only for diagnostic runs that intentionally leave migrated state untouched.
 
 ## Roadmap
 

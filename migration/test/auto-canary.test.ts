@@ -338,6 +338,47 @@ test("runAuto repairs a structured reviewer rejection with bounded same-owner re
   }
 });
 
+test("runAuto --resume re-verifies a migrated artifact even when crash left no evidence", async () => {
+  const db = createDb();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-auto-resume-no-evidence-"));
+  try {
+    fs.mkdirSync(path.join(workspace, "legacy"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "modern"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "legacy", "AutoCanary.js"), "module.exports = 0;\n");
+    fs.writeFileSync(path.join(workspace, "modern", "AutoCanary.js"), "function ok() { return 1; }\n");
+    const id = seed(db);
+    setArtifactStatus(db, id, "migrated", { agent: "test", reason: "crashed before verifier evidence" });
+    let workerCalls = 0;
+    let reviewCalls = 0;
+
+    const result = await runAuto(db, {
+      artifactId: id,
+      workspaceRoot: workspace,
+      commands: ["node --check modern/AutoCanary.js"],
+      resume: true,
+      worker: async () => { workerCalls += 1; },
+      review: async ({ evidence }) => {
+        reviewCalls += 1;
+        assert.equal(evidence.at(-1)?.pass, 1);
+        return {
+          approved: true,
+          reason: "fresh verification after evidence-less crash passed",
+          reviewerAgent: "review-agent",
+          reviewerModel: "review-model",
+        };
+      },
+    });
+
+    assert.equal(result.status, "complete");
+    assert.equal(workerCalls, 0);
+    assert.equal(reviewCalls, 1);
+    assert.equal((db.prepare("SELECT status FROM artifacts WHERE id = ?").get(id) as { status: string }).status, "reviewed");
+  } finally {
+    db.close();
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 test("runAuto --resume repairs from SQLite after an interrupted failed verify", async () => {
   const db = createDb();
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-auto-resume-fail-"));
