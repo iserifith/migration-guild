@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { createHash, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
+import path from "node:path";
 import { signRuntimeEvidence } from "../../guildctl/verify";
 import { RegistryError, validateId } from "../types";
 import type {
@@ -536,14 +537,50 @@ export interface AddCompanionOutputOptions {
   approvedBy: string;
 }
 
+/**
+ * Validate a companion output path: must be a normalized relative path, must
+ * not escape the working tree (no leading `/`, no `..` segments), and must
+ * live under `modern/`.  Fail-closed on any violation.
+ */
+export function validateCompanionOutputPath(rawPath: string): string {
+  const trimmed = rawPath.trim();
+  if (!trimmed) {
+    throw new RegistryError(1, "Companion output path is required");
+  }
+  if (path.isAbsolute(trimmed)) {
+    throw new RegistryError(
+      3,
+      `Companion output path must be relative (got absolute): "${trimmed}"`,
+    );
+  }
+  const normalized = trimmed.split("/").filter(Boolean).join("/");
+  if (normalized !== trimmed) {
+    throw new RegistryError(
+      3,
+      `Companion output path is not normalized: "${trimmed}" (expected "${normalized}")`,
+    );
+  }
+  if (normalized.includes("..")) {
+    throw new RegistryError(
+      3,
+      `Companion output path must not contain ".." segments: "${trimmed}"`,
+    );
+  }
+  if (!normalized.startsWith("modern/")) {
+    throw new RegistryError(
+      3,
+      `Companion output path must be under modern/ (got "${trimmed}")`,
+    );
+  }
+  return normalized;
+}
+
 export function addApprovedCompanionOutput(
   db: Database.Database,
   opts: AddCompanionOutputOptions,
 ): ApprovedCompanionOutput {
   assertArtifactExists(db, opts.artifactId);
-  if (!opts.outputPath.trim()) {
-    throw new RegistryError(1, "Companion output path is required");
-  }
+  validateCompanionOutputPath(opts.outputPath);
   if (!opts.approvedBy.trim()) {
     throw new RegistryError(1, "Companion output approver is required");
   }

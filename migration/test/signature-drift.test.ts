@@ -392,11 +392,11 @@ test("addApprovedCompanionOutput stores and returns row", () => {
     registerFixture(db);
     const output = addApprovedCompanionOutput(db, {
       artifactId: ARTIFACT_ID,
-      outputPath: "artifacts/sig-digest.json",
+      outputPath: "modern/artifacts/sig-digest.json",
       approvedBy: "review-agent",
     });
     assert.equal(output.artifact_id, ARTIFACT_ID);
-    assert.equal(output.output_path, "artifacts/sig-digest.json");
+    assert.equal(output.output_path, "modern/artifacts/sig-digest.json");
     assert.equal(output.approved_by, "review-agent");
   } finally {
     db.close();
@@ -409,12 +409,12 @@ test("addApprovedCompanionOutput is idempotent via UPSERT", () => {
     registerFixture(db);
     const first = addApprovedCompanionOutput(db, {
       artifactId: ARTIFACT_ID,
-      outputPath: "artifacts/sig-digest.json",
+      outputPath: "modern/artifacts/sig-digest.json",
       approvedBy: "agent-a",
     });
     const second = addApprovedCompanionOutput(db, {
       artifactId: ARTIFACT_ID,
-      outputPath: "artifacts/sig-digest.json",
+      outputPath: "modern/artifacts/sig-digest.json",
       approvedBy: "agent-b",
     });
     assert.equal(first.approved_by, "agent-a");
@@ -432,18 +432,18 @@ test("listApprovedCompanionOutputs returns rows ordered by approved_at DESC", ()
     registerFixture(db);
     addApprovedCompanionOutput(db, {
       artifactId: ARTIFACT_ID,
-      outputPath: "out/a.json",
+      outputPath: "modern/out/a.json",
       approvedBy: "agent-a",
     });
     addApprovedCompanionOutput(db, {
       artifactId: ARTIFACT_ID,
-      outputPath: "out/b.json",
+      outputPath: "modern/out/b.json",
       approvedBy: "agent-b",
     });
     const rows = listApprovedCompanionOutputs(db, ARTIFACT_ID);
     assert.equal(rows.length, 2);
-    assert.equal(rows[0]!.output_path, "out/b.json");
-    assert.equal(rows[1]!.output_path, "out/a.json");
+    assert.equal(rows[0]!.output_path, "modern/out/b.json");
+    assert.equal(rows[1]!.output_path, "modern/out/a.json");
   } finally {
     db.close();
   }
