@@ -8,6 +8,7 @@ import type Database from "better-sqlite3";
 import type { PhaseKey } from "./config";
 import { resolveGuildConfig, resolveWorkspaceRoot } from "./config";
 import { resolveHarness } from "./harness";
+import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions, type WardenSnapshot } from "./warden";
 import { releaseClaimedArtifactsForOwner } from "../registry/commands/artifacts";
 import { releaseClaimsForRun } from "../registry/commands/claim";
 import { startRun, finishRun, setRunPid, type RunTokenUsage } from "../registry/commands/runs";
@@ -345,6 +346,8 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   let preClaimedArtifactId: string | undefined;
   let preClaimId: string | undefined;
   let preClaimToken: string | undefined;
+  let wardenSnapshot: WardenSnapshot | undefined;
+  let wardenAllowedPaths: string[] = [];
 
   if (opts.preClaim) {
     const claimArgs = [
@@ -379,10 +382,16 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
       return Promise.resolve({ runId: run.run_id, agent, model, prompt, logFile, exitCode: 1 });
     }
     try {
-      const claimed = JSON.parse(claimResult.stdout) as { id: string; claim_id: string; claim_token: string };
+      const claimed = JSON.parse(claimResult.stdout) as { id: string; claim_id: string; claim_token: string; expected_output_paths?: string | null };
       preClaimedArtifactId = claimed.id;
       preClaimId = claimed.claim_id;
       preClaimToken = claimed.claim_token;
+      try {
+        wardenAllowedPaths = JSON.parse(claimed.expected_output_paths ?? "[]") as string[];
+      } catch {
+        wardenAllowedPaths = [];
+      }
+      wardenSnapshot = snapshotWorkspaceForWardenWithExclusions(projectRoot, activeSqliteWardenExclusions(db));
     } catch {
       process.stderr.write(`[guildctl] pre-claim: failed to parse claim JSON\n`);
       finishRun(db, { runId: run.run_id, exitCode: 1, reason: "pre-claim: failed to parse claim JSON" });
@@ -467,6 +476,22 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
       clearLivelinessTimers();
       let finalExitCode = exitCode;
       try {
+        if (preClaimedArtifactId && wardenSnapshot) {
+          const warden = enforceWardenSnapshot(db, {
+            artifactId: preClaimedArtifactId,
+            workspaceRoot: projectRoot,
+            snapshot: wardenSnapshot,
+            allowedPaths: wardenAllowedPaths,
+            excludedPaths: activeSqliteWardenExclusions(db),
+            agent: "guildctl-warden",
+          });
+          if (!warden.clean) {
+            finalExitCode = 1;
+            const msg = `[guildctl] filesystem warden restored ${warden.violations.length} unauthorized change(s); marking run failed`;
+            process.stderr.write(msg + "\n");
+            writeLogLine(logStream, msg);
+          }
+        }
         if (exitCode === 0) {
           let released = releaseClaimsForRun(
             db,

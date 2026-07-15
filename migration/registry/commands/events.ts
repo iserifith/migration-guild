@@ -36,6 +36,7 @@ const VALID_EVENT_TYPES: readonly EventType[] = [
   "evaluated",
   "auto-completed",
   "auto-rework",
+  "filesystem-violation",
   "thread-created",
   "dependency-strategy-set",
 ];

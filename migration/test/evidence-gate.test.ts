@@ -41,6 +41,96 @@ test("schema creates acceptance evidence and arbitration tables", () => {
   }
 });
 
+test("schema migration upgrades existing DBs with runtime evidence and operator credential columns", () => {
+  const db = new Database(":memory:");
+  try {
+    db.exec(`
+      CREATE TABLE artifacts (
+        id TEXT PRIMARY KEY,
+        slug TEXT,
+        kind TEXT,
+        tier TEXT,
+        path TEXT,
+        module TEXT,
+        role TEXT,
+        framework TEXT,
+        status TEXT,
+        wave INTEGER,
+        data_path TEXT,
+        claimed_by TEXT,
+        claimed_at TEXT,
+        claimed_from TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE TABLE runs (
+        run_id TEXT PRIMARY KEY,
+        agent TEXT,
+        owner_id TEXT,
+        phase TEXT,
+        model TEXT,
+        prompt TEXT,
+        log_file TEXT,
+        pid INTEGER,
+        started_at TEXT,
+        finished_at TEXT,
+        exit_code INTEGER,
+        termination_reason TEXT,
+        token_input INTEGER,
+        token_output INTEGER,
+        token_reasoning INTEGER,
+        token_cache_read INTEGER,
+        token_cache_write INTEGER,
+        token_fresh INTEGER,
+        status TEXT
+      );
+      CREATE TABLE artifact_claims (
+        claim_id TEXT PRIMARY KEY,
+        artifact_id TEXT,
+        run_id TEXT,
+        owner_id TEXT,
+        agent TEXT,
+        from_status TEXT,
+        claim_token TEXT,
+        state TEXT,
+        attempt_no INTEGER,
+        claimed_at TEXT,
+        heartbeat_at TEXT,
+        lease_expires_at TEXT,
+        finished_at TEXT,
+        finish_reason TEXT
+      );
+      CREATE TABLE acceptance_evidence (
+        evidence_id TEXT PRIMARY KEY,
+        artifact_id TEXT,
+        run_id TEXT,
+        produced_by TEXT,
+        evidence_type TEXT,
+        command TEXT,
+        exit_code INTEGER,
+        pass INTEGER,
+        summary TEXT,
+        output_path TEXT,
+        output_excerpt TEXT,
+        created_at TEXT
+      );
+    `);
+    applySchema(db);
+
+    const claimColumns = db.prepare("SELECT name FROM pragma_table_info('artifact_claims')").all() as Array<{ name: string }>;
+    const evidenceColumns = db.prepare("SELECT name FROM pragma_table_info('acceptance_evidence')").all() as Array<{ name: string }>;
+    const credentialTable = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'run_operator_credentials'").get();
+
+    assert.ok(claimColumns.some((column) => column.name === "expected_output_paths"));
+    assert.ok(evidenceColumns.some((column) => column.name === "log_sha256"));
+    assert.ok(evidenceColumns.some((column) => column.name === "duration_ms"));
+    assert.ok(evidenceColumns.some((column) => column.name === "authenticity"));
+    assert.ok(credentialTable);
+  } finally {
+    db.close();
+  }
+});
+
 test("evidence rows require an existing artifact", () => {
   const db = createDb();
   try {

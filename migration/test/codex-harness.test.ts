@@ -26,3 +26,16 @@ test("Codex adapter parses standard arguments and injects the selected persona",
   assert.ok(invocation.args.includes('model_providers.migration_guild.env_key="TEST_KEY"'));
   assert.equal(invocation.args.at(-1), "Persona X\n\n---\n\nZ");
 });
+
+test("Codex adapter maps review read-only flag to read-only sandbox", async () => {
+  const moduleUrl = pathToFileURL(path.resolve("..", "package", "harness", "codex.mjs")).href;
+  const { buildCodexInvocation } = await import(moduleUrl);
+
+  const invocation = buildCodexInvocation(["--agent", "review-agent", "--model", "Y", "--read-only", "-p", "review"], {
+    cwd: process.cwd(),
+    env: { AGENT_PROVIDER_BASE_URL: "https://example.test/v1", AGENT_PROVIDER_API_KEY_ENV: "TEST_KEY" },
+  });
+
+  assert.deepEqual(invocation.args.slice(0, 2), ["--sandbox", "read-only"]);
+  assert.equal(invocation.parsed.readOnly, true);
+});

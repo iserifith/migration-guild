@@ -156,12 +156,13 @@ test("TASK-05: reap releases only claims older than the threshold", () => {
   applySchema(db);
   const old = "legacy-source:com.acme:Old";
   const fresh = "legacy-source:com.acme:Fresh";
-  startRun(db, { runId: "run-5", agent: "analyze-agent", ownerId: "owner-A" });
+  startRun(db, { runId: "run-5-old", agent: "analyze-agent", ownerId: "owner-A" });
+  startRun(db, { runId: "run-5-fresh", agent: "analyze-agent", ownerId: "owner-A" });
   registerPlanned(db, old);
   registerPlanned(db, fresh);
 
-  const oldClaim = claimArtifactById(db, { artifactId: old, agent: "analyze-agent", ownerId: "owner-A", runId: "run-5" });
-  claimArtifactById(db, { artifactId: fresh, agent: "analyze-agent", ownerId: "owner-A", runId: "run-5" });
+  const oldClaim = claimArtifactById(db, { artifactId: old, agent: "analyze-agent", ownerId: "owner-A", runId: "run-5-old" });
+  claimArtifactById(db, { artifactId: fresh, agent: "analyze-agent", ownerId: "owner-A", runId: "run-5-fresh" });
   db.prepare("UPDATE artifact_claims SET claimed_at = datetime('now', '-120 minutes') WHERE claim_id = ?").run(oldClaim.claim_id);
 
   const before = db.prepare("SELECT COUNT(*) AS n FROM artifact_claims WHERE state='active'").get() as { n: number };

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Reference Migration Guild harness adapter. Contract:
-//   1. Accept --agent, --model, --yolo, and -p/--prompt.
+//   1. Accept --agent, --model, --yolo/--read-only, and -p/--prompt.
 //   2. Prepend the body of .github/agents/<agent>.agent.md to the prompt.
 //   3. Configure an OpenAI-compatible provider from AGENT_PROVIDER_BASE_URL and
 //      the key named by AGENT_PROVIDER_API_KEY_ENV.
@@ -12,12 +12,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export function parseArgs(argv) {
-  const out = { agent: "", model: "", prompt: "", yolo: false };
+  const out = { agent: "", model: "", prompt: "", yolo: false, readOnly: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--agent") out.agent = argv[++i] ?? "";
     else if (arg === "--model") out.model = argv[++i] ?? "";
     else if (arg === "--yolo") out.yolo = true;
+    else if (arg === "--read-only") out.readOnly = true;
     else if (arg === "-p" || arg === "--prompt") out.prompt = argv[++i] ?? "";
   }
   return out;
@@ -45,7 +46,7 @@ export function buildCodexInvocation(argv, options = {}) {
   const baseUrl = env.AGENT_PROVIDER_BASE_URL || "https://api.openai.com/v1";
   const apiKeyEnv = env.AGENT_PROVIDER_API_KEY_ENV || "OPENAI_API_KEY";
   const args = [
-    "--sandbox", "workspace-write",
+    "--sandbox", parsed.readOnly ? "read-only" : "workspace-write",
     "--ask-for-approval", "never",
     "exec",
     "--skip-git-repo-check",
