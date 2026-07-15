@@ -224,7 +224,6 @@ CREATE TABLE IF NOT EXISTS acceptance_evidence (
                        'test-command',
                        'build-command',
                        'static-check',
-                       'signature-check',
                        'review-verdict',
                        'benchmark-result'
                      )),
@@ -283,19 +282,14 @@ CREATE INDEX IF NOT EXISTS idx_benchmark_runs_fixture ON benchmark_runs(fixture)
 CREATE INDEX IF NOT EXISTS idx_benchmark_runs_started ON benchmark_runs(started_at);
 
 -- ─── Approved Companion Outputs ──────────────────────────────────────────────
--- Tracks per-artifact companion output files (e.g. signature digests, bytecode
--- snapshots) that have been reviewed and approved. Each row links an artifact to
--- a specific output path, ensuring idempotent re-recording.
-
+-- Operator-approved companion paths expand a claim's fail-closed output allow-list.
+-- Approval authorizes only the path; verifier evidence authenticates written content.
 CREATE TABLE IF NOT EXISTS approved_companion_outputs (
-    id             TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-    artifact_id    TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
-    output_path    TEXT NOT NULL,
-    content_sha256 TEXT NOT NULL,
-    signature_json TEXT,
-    approved_by    TEXT NOT NULL,
-    approved_at    TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (artifact_id, output_path)
+    artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    output_path TEXT NOT NULL,
+    approved_by TEXT NOT NULL,
+    approved_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (artifact_id, output_path)
 );
 
 CREATE INDEX IF NOT EXISTS idx_companion_outputs_artifact ON approved_companion_outputs(artifact_id);
