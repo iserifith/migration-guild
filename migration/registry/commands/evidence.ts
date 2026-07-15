@@ -533,8 +533,6 @@ export function rejectArtifactWithEvidence(
 export interface AddCompanionOutputOptions {
   artifactId: string;
   outputPath: string;
-  contentSha256: string;
-  signatureJson?: string | null;
   approvedBy: string;
 }
 
@@ -546,9 +544,6 @@ export function addApprovedCompanionOutput(
   if (!opts.outputPath.trim()) {
     throw new RegistryError(1, "Companion output path is required");
   }
-  if (!opts.contentSha256.match(/^[a-f0-9]{64}$/)) {
-    throw new RegistryError(1, "Companion output requires a SHA-256 content digest");
-  }
   if (!opts.approvedBy.trim()) {
     throw new RegistryError(1, "Companion output approver is required");
   }
@@ -557,26 +552,18 @@ export function addApprovedCompanionOutput(
     `INSERT INTO approved_companion_outputs (
        artifact_id,
        output_path,
-       content_sha256,
-       signature_json,
        approved_by
      ) VALUES (
        @artifact_id,
        @output_path,
-       @content_sha256,
-       @signature_json,
        @approved_by
      )
      ON CONFLICT(artifact_id, output_path) DO UPDATE SET
-       content_sha256 = excluded.content_sha256,
-       signature_json = excluded.signature_json,
        approved_by = excluded.approved_by,
        approved_at = datetime('now')`,
   ).run({
     artifact_id: opts.artifactId,
     output_path: opts.outputPath,
-    content_sha256: opts.contentSha256,
-    signature_json: opts.signatureJson ?? null,
     approved_by: opts.approvedBy,
   });
 

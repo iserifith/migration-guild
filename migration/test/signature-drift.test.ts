@@ -338,7 +338,7 @@ test("evidence records accept content_sha256 and signature_json", () => {
     const evidence = addAcceptanceEvidence(db, {
       artifactId: ARTIFACT_ID,
       producedBy: "signature-agent",
-      evidenceType: "signature-check",
+      evidenceType: "static-check",
       pass: 1,
       summary: "signature drift check",
       contentSha256: "a".repeat(64),
@@ -346,7 +346,7 @@ test("evidence records accept content_sha256 and signature_json", () => {
     });
     assert.equal(evidence.content_sha256, "a".repeat(64));
     assert.equal(evidence.signature_json, sigJson);
-    assert.equal(evidence.evidence_type, "signature-check");
+    assert.equal(evidence.evidence_type, "static-check");
   } finally {
     db.close();
   }
@@ -393,13 +393,10 @@ test("addApprovedCompanionOutput stores and returns row", () => {
     const output = addApprovedCompanionOutput(db, {
       artifactId: ARTIFACT_ID,
       outputPath: "artifacts/sig-digest.json",
-      contentSha256: "b".repeat(64),
-      signatureJson: JSON.stringify({ sha256: "abc" }),
       approvedBy: "review-agent",
     });
     assert.equal(output.artifact_id, ARTIFACT_ID);
     assert.equal(output.output_path, "artifacts/sig-digest.json");
-    assert.equal(output.content_sha256, "b".repeat(64));
     assert.equal(output.approved_by, "review-agent");
   } finally {
     db.close();
@@ -413,17 +410,15 @@ test("addApprovedCompanionOutput is idempotent via UPSERT", () => {
     const first = addApprovedCompanionOutput(db, {
       artifactId: ARTIFACT_ID,
       outputPath: "artifacts/sig-digest.json",
-      contentSha256: "c".repeat(64),
       approvedBy: "agent-a",
     });
     const second = addApprovedCompanionOutput(db, {
       artifactId: ARTIFACT_ID,
       outputPath: "artifacts/sig-digest.json",
-      contentSha256: "d".repeat(64),
       approvedBy: "agent-b",
     });
-    assert.equal(first.content_sha256, "c".repeat(64));
-    assert.equal(second.content_sha256, "d".repeat(64));
+    assert.equal(first.approved_by, "agent-a");
+    assert.equal(second.approved_by, "agent-b");
     const rows = listApprovedCompanionOutputs(db, ARTIFACT_ID);
     assert.equal(rows.length, 1, "UPSERT should not create duplicate rows");
   } finally {
@@ -438,13 +433,11 @@ test("listApprovedCompanionOutputs returns rows ordered by approved_at DESC", ()
     addApprovedCompanionOutput(db, {
       artifactId: ARTIFACT_ID,
       outputPath: "out/a.json",
-      contentSha256: "e".repeat(64),
       approvedBy: "agent-a",
     });
     addApprovedCompanionOutput(db, {
       artifactId: ARTIFACT_ID,
       outputPath: "out/b.json",
-      contentSha256: "f".repeat(64),
       approvedBy: "agent-b",
     });
     const rows = listApprovedCompanionOutputs(db, ARTIFACT_ID);

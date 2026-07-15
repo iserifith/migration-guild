@@ -168,7 +168,6 @@ export type EvidenceType =
   | "test-command"
   | "build-command"
   | "static-check"
-  | "signature-check"
   | "review-verdict"
   | "benchmark-result";
 
@@ -403,11 +402,8 @@ export interface StackMapping {
 }
 
 export interface ApprovedCompanionOutput {
-  id: string;
   artifact_id: string;
   output_path: string;
-  content_sha256: string;
-  signature_json: string | null;
   approved_by: string;
   approved_at: string;
 }
