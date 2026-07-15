@@ -6,6 +6,12 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### July 15, 2026
+
+- Changed inventory ID derivation to preserve existing non-colliding IDs while assigning deterministic path-qualified IDs to same-module basename collisions, including safe repair of partially populated registries.
+- Changed Java and Python source dependency resolution to prefer exact qualified matches and reject ambiguous simple-name matches instead of selecting by registry insertion order.
+- Added regression and real-codebase acceptance coverage for collision-free registration, idempotent rescans, partial-registry upgrades, and FQCN dependency resolution.
+
 ### July 6, 2026
 
 - Added the stack-pack inventory classification contract (`classification.yaml`), Java/Python stack specs, alias normalization, ambiguous/fallback semantics, structured confidence/evidence storage, and atomic `registry batch-classify` / `mark-inventory-complete` commands.
