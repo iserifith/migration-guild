@@ -171,6 +171,9 @@ test("checkEvidenceFreshness rejects stale evidence after repair", () => {
     registerFixture(db);
     markMigrated(db);
     setupSignedEvidence(db, { pass: 1, log: "evidence before repair\n" });
+    db.prepare(
+      "UPDATE acceptance_evidence SET created_at = datetime('now', '-2 seconds') WHERE artifact_id = ?",
+    ).run(ARTIFACT_ID);
 
     appendEvent(db, {
       id: ARTIFACT_ID,
@@ -239,6 +242,9 @@ test("approveArtifactWithEvidence blocks stale evidence from a prior repair cycl
 
     const first = setupSignedEvidence(db, { pass: 1 });
     dirs.push(first.runId);
+    db.prepare(
+      "UPDATE acceptance_evidence SET created_at = datetime('now', '-2 seconds') WHERE run_id = ?",
+    ).run(first.runId);
 
     appendEvent(db, {
       id: ARTIFACT_ID,
@@ -247,8 +253,6 @@ test("approveArtifactWithEvidence blocks stale evidence from a prior repair cycl
       summary: "Repair after first attempt",
       data: JSON.stringify({ failure: { kind: "test-failure" } }),
     });
-
-    const second = setupSignedEvidence(db, { pass: 1 });
 
     assert.throws(
       () => approveArtifactWithEvidence(db, {

@@ -538,7 +538,7 @@ export function checkEvidenceFreshness(
      ORDER BY rowid DESC LIMIT 1`,
   ).get(artifactId) as { ts: string } | undefined;
 
-  if (latestRepairEvent && latestEvidence.created_at <= latestRepairEvent.ts) {
+  if (latestRepairEvent && latestEvidence.created_at < latestRepairEvent.ts) {
     return {
       ok: false,
       reason: "Stale evidence: latest runtime evidence predates a repair event; fresh evidence is required after repair",
