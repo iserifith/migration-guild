@@ -33,6 +33,7 @@ import { runAuditCoverage, formatCoverageReport } from "./commands/audit";
 import { runEvidenceAdd, runEvidenceList } from "./commands/evidence";
 import { runVerifyCommand } from "./commands/verify";
 import { runAutoCommand } from "./commands/auto";
+import { runAutoRunCommand } from "./commands/auto-run";
 import { runArbitrate } from "./commands/arbitrate";
 import { runSocietyReport } from "./commands/society-report";
 import { runBenchmarkBaselineWorker, runBenchmarkCompare, runBenchmarkGuildReviewWorker, runBenchmarkGuildReworkWorker, runBenchmarkRecord, runBenchmarkReport, runBenchmarkRun } from "./commands/benchmark";
@@ -420,6 +421,20 @@ program
   .action(async (opts) => {
     assertDbExists(dbPath());
     await runAutoCommand(db(), { ...opts, registryDbPath: dbPath() });
+  });
+
+program
+  .command("auto-run")
+  .description("Process dependency-ready artifacts sequentially through the bounded autonomous supervisor")
+  .option("--command <cmd...>", "Verification command(s); repeat or separate with ;;")
+  .option("--max-attempts <n>", "Maximum migrate/repair attempts per artifact", parseInt)
+  .option("-w, --wave <n>", "Only process artifacts in this wave", parseInt)
+  .option("--limit <n>", "Stop cleanly after processing N artifacts", parseInt)
+  .option("--no-resume", "Do not resume migrated crash states before dispatching new planned work")
+  .option("--json", "Print one final queue result as JSON")
+  .action(async (opts) => {
+    assertDbExists(dbPath());
+    await runAutoRunCommand(db(), { ...opts, registryDbPath: dbPath() });
   });
 
 

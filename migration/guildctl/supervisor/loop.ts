@@ -230,7 +230,8 @@ export async function runAuto(
     let reviewReason: string | undefined;
     if (opts.resume) {
       const latest = latestRuntimeEvidence(db, opts.artifactId);
-      if (latest?.pass === 1) {
+      const artifact = db.prepare("SELECT status FROM artifacts WHERE id = ?").get(opts.artifactId) as { status: string } | undefined;
+      if (artifact?.status === "migrated" && latest?.pass !== 0) {
         const verification = await verifier();
         if (!verification.pass) {
           const failureText = verification.evidence.map((item) => item.output_excerpt ?? item.summary).join("\n");
