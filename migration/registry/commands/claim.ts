@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { createHash, randomUUID, timingSafeEqual } from "crypto";
 import type Database from "better-sqlite3";
 import { RegistryError } from "../types";
 import type { Artifact, ArtifactClaim, ClaimedArtifact, Status } from "../types";
@@ -10,6 +10,46 @@ const DEFAULT_LEASE_MINUTES = Math.max(
 
 function makeOpaqueId(): string {
   return randomUUID().replace(/-/g, "");
+}
+
+function hashOperatorToken(token: string): string {
+  return createHash("sha256").update(token, "utf8").digest("hex");
+}
+
+export function createRunOperatorCredential(
+  db: Database.Database,
+  runId: string,
+): { runId: string; token: string } {
+  const run = db.prepare("SELECT run_id FROM runs WHERE run_id = ?").get(runId);
+  if (!run) {
+    throw new RegistryError(2, `Run not found: "${runId}"`);
+  }
+  const token = makeOpaqueId() + makeOpaqueId();
+  db.prepare(`
+    INSERT INTO run_operator_credentials (run_id, token_hash)
+    VALUES (@run_id, @token_hash)
+    ON CONFLICT(run_id) DO UPDATE SET
+      token_hash = excluded.token_hash,
+      created_at = datetime('now')
+  `).run({ run_id: runId, token_hash: hashOperatorToken(token) });
+  return { runId, token };
+}
+
+export function validateRunOperatorCredential(
+  db: Database.Database,
+  runId: string | undefined | null,
+  token: string | undefined | null,
+): boolean {
+  if (!runId || !token) return false;
+  const row = db.prepare(`
+    SELECT token_hash
+    FROM run_operator_credentials
+    WHERE run_id = ?
+  `).get(runId) as { token_hash: string } | undefined;
+  if (!row) return false;
+  const expected = Buffer.from(row.token_hash, "hex");
+  const actual = Buffer.from(hashOperatorToken(token), "hex");
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
 function loadClaimedArtifact(
@@ -25,7 +65,8 @@ function loadClaimedArtifact(
       c.owner_id AS claim_owner_id,
       c.lease_expires_at,
       c.heartbeat_at,
-      c.attempt_no
+      c.attempt_no,
+      c.expected_output_paths
     FROM artifacts a
     JOIN artifact_claims c
       ON c.artifact_id = a.id
@@ -97,6 +138,26 @@ function validateClaimOwnership(
     );
   }
   return claim;
+}
+
+function assertRunHasNoActiveClaim(
+  db: Database.Database,
+  runId: string | undefined,
+): void {
+  if (!runId) return;
+  const existing = db.prepare(`
+    SELECT claim_id, artifact_id
+    FROM artifact_claims
+    WHERE run_id = ?
+      AND state = 'active'
+    LIMIT 1
+  `).get(runId) as { claim_id: string; artifact_id: string } | undefined;
+  if (existing) {
+    throw new RegistryError(
+      3,
+      `Run "${runId}" already has an active claim "${existing.claim_id}" for artifact "${existing.artifact_id}".`,
+    );
+  }
 }
 
 function finishClaimRecord(
@@ -393,6 +454,8 @@ export function claimArtifactById(
       return loadClaimedArtifact(db, requestedId);
     }
 
+    assertRunHasNoActiveClaim(db, opts.runId);
+
     if (artifact.status !== fromStatus) {
       throw new RegistryError(
         3,
@@ -550,6 +613,7 @@ export function claimNextTask(
   const owner = ownerId ?? agent;
 
   const claim = db.transaction((): ClaimedArtifact => {
+    assertRunHasNoActiveClaim(db, runId);
     const params: Record<string, string | number> = { fromStatus };
     let waveClause = "";
     let tierClause = "";

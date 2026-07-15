@@ -6,6 +6,7 @@ import {
   getActiveClaimByArtifactId,
   releaseClaimByArtifactId,
   releaseClaimedArtifactsForOwner as releaseClaimedArtifactsForOwnerImpl,
+  validateRunOperatorCredential,
 } from "./claim";
 
 export interface RegisterArtifactOptions {
@@ -32,6 +33,8 @@ export interface SetArtifactStatusOptions {
   reason?: string;
   claimId?: string;
   claimToken?: string;
+  runId?: string;
+  operatorToken?: string;
 }
 
 export function registerArtifact(
@@ -103,7 +106,7 @@ export function setArtifactStatus(
       if (artifact.status === "in-progress" && activeClaim) {
         if (opts.claimId && opts.claimToken) {
           completeClaimForArtifact(db, id, opts.claimId, opts.claimToken, opts.agent ?? activeClaim.agent, status);
-        } else if ((opts.agent ?? "") === "operator" || (opts.agent ?? "") === "remediation-agent" || (opts.agent ?? "") === "guildctl") {
+        } else if (validateRunOperatorCredential(db, opts.runId, opts.operatorToken)) {
           releaseClaimByArtifactId(
             db,
             id,
@@ -113,7 +116,7 @@ export function setArtifactStatus(
         } else {
           throw new RegistryError(
             3,
-            `Status change for "${id}" requires an active claim token while the artifact is in-progress.`,
+            `Status change for "${id}" requires an active claim token or valid run operator credential while the artifact is in-progress.`,
           );
         }
       }

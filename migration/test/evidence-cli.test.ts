@@ -150,29 +150,20 @@ test("arbitrate --approve fails without evidence", () => {
     ]);
 
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /no passing executable evidence/i);
+    assert.match(result.stderr, /runtime evidence/i);
   });
 });
 
-test("arbitrate --approve succeeds with independent passing evidence", () => {
+test("arbitrate --approve rejects runtime evidence without a run operator credential", () => {
   withFixture((fixture) => {
-    const addResult = runCli(fixture, [
-      "evidence",
-      "add",
+    const verifyResult = runCli(fixture, [
+      "verify",
       "--artifact",
       ARTIFACT_ID,
-      "--type",
-      "test-command",
-      "--produced-by",
-      "critic-agent",
       "--command",
-      "npm test --prefix migration",
-      "--exit-code",
-      "0",
-      "--summary",
-      "tests passed",
+      "node -e \"console.log('runtime ok')\"",
     ]);
-    assert.equal(addResult.status, 0, addResult.stderr);
+    assert.equal(verifyResult.status, 0, verifyResult.stderr);
 
     const result = runCli(fixture, [
       "arbitrate",
@@ -182,19 +173,38 @@ test("arbitrate --approve succeeds with independent passing evidence", () => {
       "--arbiter",
       "arbiter-agent",
       "--reason",
-      "passing independent test evidence",
+      "passing independent runtime evidence",
     ]);
 
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /approved/);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /valid run operator credential/i);
     const db = new Database(fixture.dbPath);
     try {
-      assert.equal(getArtifactById(db, ARTIFACT_ID).status, "reviewed");
+      assert.equal(getArtifactById(db, ARTIFACT_ID).status, "migrated");
       const decisions = db.prepare("SELECT * FROM arbitration_decisions WHERE artifact_id = ?").all(ARTIFACT_ID);
-      assert.equal(decisions.length, 1);
+      assert.equal(decisions.length, 0);
     } finally {
       db.close();
     }
+  });
+});
+
+test("verify --json exits nonzero when runtime verification fails", () => {
+  withFixture((fixture) => {
+    const result = runCli(fixture, [
+      "verify",
+      "--artifact",
+      ARTIFACT_ID,
+      "--command",
+      "node -e \"process.exit(9)\"",
+      "--json",
+    ]);
+
+    assert.equal(result.status, 1);
+    const payload = JSON.parse(result.stdout) as { pass: boolean; evidence: Array<{ exit_code: number; pass: number }> };
+    assert.equal(payload.pass, false);
+    assert.equal(payload.evidence[0]?.exit_code, 9);
+    assert.equal(payload.evidence[0]?.pass, 0);
   });
 });
 

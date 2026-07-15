@@ -1,4 +1,7 @@
 import type Database from "better-sqlite3";
+import { createHash, timingSafeEqual } from "node:crypto";
+import fs from "node:fs";
+import { signRuntimeEvidence } from "../../guildctl/verify";
 import { RegistryError, validateId } from "../types";
 import type {
   AcceptanceEvidence,
@@ -8,6 +11,7 @@ import type {
   EvidenceType,
 } from "../types";
 import { setArtifactStatus } from "./artifacts";
+import { validateRunOperatorCredential } from "./claim";
 import { appendEvent } from "./events";
 
 export interface AddAcceptanceEvidenceOptions {
@@ -21,6 +25,9 @@ export interface AddAcceptanceEvidenceOptions {
   summary: string;
   outputPath?: string | null;
   outputExcerpt?: string | null;
+  logSha256?: string | null;
+  durationMs?: number | null;
+  authenticity?: string | null;
 }
 
 export interface RecordArbitrationDecisionOptions {
@@ -42,6 +49,8 @@ export interface ApproveArtifactWithEvidenceOptions {
   arbiter: string;
   reason: string;
   evidenceIds?: string[];
+  runId?: string | null;
+  operatorToken?: string | null;
 }
 
 export interface RejectArtifactWithEvidenceOptions {
@@ -52,9 +61,7 @@ export interface RejectArtifactWithEvidenceOptions {
 }
 
 const EXECUTABLE_EVIDENCE_TYPES: readonly EvidenceType[] = [
-  "test-command",
-  "build-command",
-  "static-check",
+  "runtime",
 ];
 
 function assertArtifactExists(db: Database.Database, artifactId: string): void {
@@ -65,6 +72,16 @@ function assertArtifactExists(db: Database.Database, artifactId: string): void {
 }
 
 export function addAcceptanceEvidence(
+  db: Database.Database,
+  opts: AddAcceptanceEvidenceOptions,
+): AcceptanceEvidence {
+  if (opts.evidenceType === "runtime") {
+    throw new RegistryError(3, "runtime evidence must be recorded by guildctl verify");
+  }
+  return insertAcceptanceEvidence(db, opts);
+}
+
+function insertAcceptanceEvidence(
   db: Database.Database,
   opts: AddAcceptanceEvidenceOptions,
 ): AcceptanceEvidence {
@@ -87,7 +104,10 @@ export function addAcceptanceEvidence(
        pass,
        summary,
        output_path,
-       output_excerpt
+       output_excerpt,
+       log_sha256,
+       duration_ms,
+       authenticity
      ) VALUES (
        @artifact_id,
        @run_id,
@@ -98,7 +118,10 @@ export function addAcceptanceEvidence(
        @pass,
        @summary,
        @output_path,
-       @output_excerpt
+       @output_excerpt,
+       @log_sha256,
+       @duration_ms,
+       @authenticity
      )`,
   ).run({
     artifact_id: opts.artifactId,
@@ -111,9 +134,44 @@ export function addAcceptanceEvidence(
     summary: opts.summary,
     output_path: opts.outputPath ?? null,
     output_excerpt: opts.outputExcerpt ?? null,
+    log_sha256: opts.logSha256 ?? null,
+    duration_ms: opts.durationMs ?? null,
+    authenticity: opts.authenticity ?? null,
   });
 
   return db.prepare("SELECT * FROM acceptance_evidence WHERE rowid = ?").get(result.lastInsertRowid) as AcceptanceEvidence;
+}
+
+export function addVerifierRuntimeEvidence(
+  db: Database.Database,
+  opts: Omit<AddAcceptanceEvidenceOptions, "evidenceType" | "producedBy"> & {
+    producedBy?: string;
+    logSha256: string;
+    durationMs: number;
+    authenticity: string;
+  },
+): AcceptanceEvidence {
+  if (!opts.logSha256.match(/^[a-f0-9]{64}$/)) {
+    throw new RegistryError(1, "Runtime evidence requires a SHA-256 log digest");
+  }
+  if (!opts.authenticity.trim()) {
+    throw new RegistryError(1, "Runtime evidence requires verifier authenticity data");
+  }
+  return insertAcceptanceEvidence(db, {
+    artifactId: opts.artifactId,
+    runId: opts.runId,
+    command: opts.command,
+    exitCode: opts.exitCode,
+    pass: opts.pass,
+    summary: opts.summary,
+    outputPath: opts.outputPath,
+    outputExcerpt: opts.outputExcerpt,
+    logSha256: opts.logSha256,
+    durationMs: opts.durationMs,
+    authenticity: opts.authenticity,
+    evidenceType: "runtime",
+    producedBy: opts.producedBy ?? "guildctl-verify",
+  });
 }
 
 export function listAcceptanceEvidence(
@@ -195,7 +253,7 @@ function getLatestExecutableEvidence(
     `SELECT *
      FROM acceptance_evidence
      WHERE artifact_id = @artifact_id
-       AND evidence_type IN ('test-command', 'build-command', 'static-check')
+       AND evidence_type = 'runtime'
      ORDER BY created_at DESC, rowid DESC
      LIMIT 1`,
   ).get({ artifact_id: artifactId }) as AcceptanceEvidence | undefined;
@@ -238,6 +296,8 @@ function assertApprovalEvidenceIsIndependent(
   artifactId: string,
   evidenceIds: string[],
   arbiter: string,
+  runId: string | null | undefined,
+  operatorToken: string | null | undefined,
 ): void {
   if (evidenceIds.length === 0) {
     throw new RegistryError(1, "Approval requires at least one evidence record");
@@ -246,13 +306,24 @@ function assertApprovalEvidenceIsIndependent(
   if (rows.length !== new Set(evidenceIds).size) {
     throw new RegistryError(2, "One or more evidence records were not found for this artifact");
   }
-  const invalid = rows.find((row) => !EXECUTABLE_EVIDENCE_TYPES.includes(row.evidence_type) || row.pass !== 1);
+  const invalid = rows.find((row) =>
+    !EXECUTABLE_EVIDENCE_TYPES.includes(row.evidence_type) ||
+    row.pass !== 1 ||
+    !row.authenticity ||
+    !row.log_sha256
+  );
   if (invalid) {
-    throw new RegistryError(1, "Approval evidence must be passing executable evidence");
+    throw new RegistryError(1, "Approval evidence must be passing verifier-generated runtime evidence");
   }
   const selfApproved = rows.find((row) => row.produced_by === arbiter);
   if (selfApproved) {
     throw new RegistryError(1, "Arbiter must be independent from the evidence producer");
+  }
+  for (const row of rows) {
+    const validation = validateRuntimeEvidence(db, row, runId, operatorToken);
+    if (!validation.ok) {
+      throw new RegistryError(1, validation.reason);
+    }
   }
 }
 
@@ -260,6 +331,7 @@ export function canApproveArtifact(
   db: Database.Database,
   artifactId: string,
   arbiter: string,
+  opts: { runId?: string | null; operatorToken?: string | null } = {},
 ): CanApproveArtifactResult {
   const artifact = getArtifact(db, artifactId);
   if (!artifact) {
@@ -278,21 +350,28 @@ export function canApproveArtifact(
     return {
       ok: false,
       evidenceIds: [],
-      reason: "Artifact has no passing executable evidence (test-command, build-command, or static-check).",
+    reason: "Artifact has no verifier-generated runtime evidence.",
     };
   }
   if (latestEvidence.pass !== 1) {
     return {
       ok: false,
       evidenceIds: [latestEvidence.evidence_id],
-      reason: "Latest executable evidence failed; arbitration approval requires the latest executable evidence to pass.",
+      reason: "latest runtime evidence failed; arbitration approval requires the latest verifier evidence to pass.",
     };
   }
   if (!EXECUTABLE_EVIDENCE_TYPES.includes(latestEvidence.evidence_type)) {
     return {
       ok: false,
       evidenceIds: [],
-      reason: "Artifact has no passing executable evidence (test-command, build-command, or static-check).",
+    reason: "Artifact has no verifier-generated runtime evidence.",
+    };
+  }
+  if (!latestEvidence.authenticity || !latestEvidence.log_sha256) {
+    return {
+      ok: false,
+      evidenceIds: [latestEvidence.evidence_id],
+      reason: "Runtime evidence is missing verifier authenticity data.",
     };
   }
   if (latestEvidence.produced_by === arbiter) {
@@ -300,6 +379,14 @@ export function canApproveArtifact(
       ok: false,
       evidenceIds: [latestEvidence.evidence_id],
       reason: "Arbiter must be independent from the evidence producer.",
+    };
+  }
+  const validation = validateRuntimeEvidence(db, latestEvidence, opts.runId, opts.operatorToken);
+  if (!validation.ok) {
+    return {
+      ok: false,
+      evidenceIds: [latestEvidence.evidence_id],
+      reason: validation.reason,
     };
   }
 
@@ -315,12 +402,15 @@ export function approveArtifactWithEvidence(
   opts: ApproveArtifactWithEvidenceOptions,
 ): ArbitrationDecision {
   const tx = db.transaction(() => {
-    const approval = canApproveArtifact(db, opts.artifactId, opts.arbiter);
+    const approval = canApproveArtifact(db, opts.artifactId, opts.arbiter, {
+      runId: opts.runId,
+      operatorToken: opts.operatorToken,
+    });
     if (!approval.ok) {
       throw new RegistryError(1, approval.reason);
     }
     const evidenceIds = opts.evidenceIds ?? approval.evidenceIds;
-    assertApprovalEvidenceIsIndependent(db, opts.artifactId, evidenceIds, opts.arbiter);
+    assertApprovalEvidenceIsIndependent(db, opts.artifactId, evidenceIds, opts.arbiter, opts.runId, opts.operatorToken);
 
     const decision = recordArbitrationDecision(db, {
       artifactId: opts.artifactId,
@@ -346,6 +436,52 @@ export function approveArtifactWithEvidence(
   });
 
   return tx();
+}
+
+function sha256File(file: string): string {
+  return createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+function validateRuntimeEvidence(
+  db: Database.Database,
+  row: AcceptanceEvidence,
+  runId: string | null | undefined,
+  operatorToken: string | null | undefined,
+): { ok: true } | { ok: false; reason: string } {
+  if (row.evidence_type !== "runtime") return { ok: false, reason: "Approval evidence must be runtime evidence." };
+  if (!row.run_id) return { ok: false, reason: "Runtime evidence is missing run binding." };
+  if (runId && runId !== row.run_id) return { ok: false, reason: "Approval run credential does not match runtime evidence." };
+  if (!validateRunOperatorCredential(db, row.run_id, operatorToken)) {
+    return { ok: false, reason: "Approval requires a valid run operator credential." };
+  }
+  if (!row.command || row.exit_code == null || !row.log_sha256 || !row.authenticity) {
+    return { ok: false, reason: "Runtime evidence is missing verifier authenticity data." };
+  }
+  if (!row.output_path || !fs.existsSync(row.output_path)) {
+    return { ok: false, reason: "Runtime evidence log is missing." };
+  }
+  const actualLogSha = sha256File(row.output_path);
+  if (!safeEqual(actualLogSha, row.log_sha256)) {
+    return { ok: false, reason: "Runtime evidence log digest does not match output_path." };
+  }
+  const expected = signRuntimeEvidence({
+    artifactId: row.artifact_id,
+    runId: row.run_id,
+    command: row.command,
+    exitCode: row.exit_code,
+    pass: row.pass,
+    logSha256: row.log_sha256,
+  }, operatorToken ?? "");
+  if (!safeEqual(expected, row.authenticity)) {
+    return { ok: false, reason: "Runtime evidence authenticity check failed." };
+  }
+  return { ok: true };
 }
 
 export function rejectArtifactWithEvidence(

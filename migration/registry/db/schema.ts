@@ -50,6 +50,9 @@ export function applySchema(db: Database.Database): void {
   // column was added to the base CREATE TABLE. Plain ALTER (this SQLite build
   // rejects ADD COLUMN IF NOT EXISTS).
   ensureColumn(db, "artifact_claims", "expected_output_paths", "TEXT");
+  ensureColumn(db, "acceptance_evidence", "log_sha256", "TEXT");
+  ensureColumn(db, "acceptance_evidence", "duration_ms", "INTEGER");
+  ensureColumn(db, "acceptance_evidence", "authenticity", "TEXT");
 }
 
 function ensureColumn(

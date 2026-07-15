@@ -11,6 +11,7 @@ export interface GuildConfig {
   workspace: { name: string; root: string };
   database: { path: string };
   model: { model: string; base_url?: string | null; api_key_env?: string | null; context_length?: number };
+  provider: { routes: Record<string, string[] | string> };
   agents: Record<string, JsonMap>;
   tools: Record<string, boolean>;
   prompts: { directory: string; active_pack: string };
@@ -37,10 +38,17 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   workspace: { name: "migration-guild-workspace", root: "." },
   database: { path: ".guild/registry.db" },
   model: {
-    model: "deepseek-v4-pro",
-    base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-    api_key_env: "DASHSCOPE_API_KEY",
+    model: "fiq/hy3-tencent",
+    base_url: "https://rootsys.cloud/v1",
+    api_key_env: "ROOTSYS_API_KEY",
     context_length: 131072,
+  },
+  provider: {
+    routes: {
+      default: ["fiq/hy3-tencent", "fiq/deepseek-v4-pro", "fiq/grok-4.5"],
+      census: ["fiq/deepseek-v4-flash", "fiq/minimax-m3"],
+      review: ["fiq/gpt-5.5-review", "fiq/glm-5.2"],
+    },
   },
   agents: {
     default: { model: "deepseek-v4-pro", temperature: 0.2 },
@@ -55,7 +63,7 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   inventory: { classificationBatchSize: 100, maxBatchRetries: 2 },
   agent_limits: { inactivity_timeout_seconds: 120, ceiling_seconds: 1800 },
   profiles: {
-    default: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "deepseek-v4-pro", api_key_env: "DASHSCOPE_API_KEY" },
+    default: { base_url: "https://rootsys.cloud/v1", model: "fiq/hy3-tencent", api_key_env: "ROOTSYS_API_KEY" },
     dashscope: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "deepseek-v4-pro", api_key_env: "DASHSCOPE_API_KEY" },
     cheap: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "deepseek-v4-flash", api_key_env: "DASHSCOPE_API_KEY" },
     reviewer: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "glm-5.1", api_key_env: "DASHSCOPE_API_KEY" },
@@ -63,6 +71,37 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
     local: { base_url: "http://localhost:1234/v1", model: "qwen2.5-coder" },
   },
 };
+
+export function resolveProviderRoute(config: GuildConfig, route: string): string[] {
+  const routes = config.provider?.routes ?? {};
+  const value = routes[route] ?? routes["default"] ?? config.model.model;
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  return String(value).split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+export function preflightProviderCredential(
+  config: GuildConfig,
+  env: Record<string, string | undefined> = process.env,
+): { ok: true; envVar: string } {
+  const envVar = config.model.api_key_env;
+  if (!envVar) return { ok: true, envVar: "" };
+  if (!env[envVar]) {
+    throw new Error(`${envVar} is missing; export it in the trusted launcher environment before a live run`);
+  }
+  return { ok: true, envVar };
+}
+
+export function redactConfigForDisplay(
+  config: GuildConfig,
+  env: Record<string, string | undefined> = process.env,
+): JsonMap {
+  const redacted = clone(config as unknown as JsonMap);
+  const envVar = config.model.api_key_env;
+  if (envVar && env[envVar]) {
+    redacted["credential"] = { env: envVar, value: "<redacted>" };
+  }
+  return redacted;
+}
 
 export function findGuildRoot(startDir = process.cwd()): string | undefined {
   let current = path.resolve(startDir);
