@@ -224,6 +224,7 @@ CREATE TABLE IF NOT EXISTS acceptance_evidence (
                        'test-command',
                        'build-command',
                        'static-check',
+                       'signature-check',
                        'review-verdict',
                        'benchmark-result'
                      )),
@@ -236,6 +237,8 @@ CREATE TABLE IF NOT EXISTS acceptance_evidence (
     log_sha256      TEXT,
     duration_ms     INTEGER,
     authenticity    TEXT,
+    content_sha256  TEXT,
+    signature_json  TEXT,
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -278,6 +281,25 @@ CREATE TABLE IF NOT EXISTS benchmark_runs (
 CREATE INDEX IF NOT EXISTS idx_benchmark_runs_mode ON benchmark_runs(mode);
 CREATE INDEX IF NOT EXISTS idx_benchmark_runs_fixture ON benchmark_runs(fixture);
 CREATE INDEX IF NOT EXISTS idx_benchmark_runs_started ON benchmark_runs(started_at);
+
+-- ─── Approved Companion Outputs ──────────────────────────────────────────────
+-- Tracks per-artifact companion output files (e.g. signature digests, bytecode
+-- snapshots) that have been reviewed and approved. Each row links an artifact to
+-- a specific output path, ensuring idempotent re-recording.
+
+CREATE TABLE IF NOT EXISTS approved_companion_outputs (
+    id             TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+    artifact_id    TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    output_path    TEXT NOT NULL,
+    content_sha256 TEXT NOT NULL,
+    signature_json TEXT,
+    approved_by    TEXT NOT NULL,
+    approved_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (artifact_id, output_path)
+);
+
+CREATE INDEX IF NOT EXISTS idx_companion_outputs_artifact ON approved_companion_outputs(artifact_id);
+CREATE INDEX IF NOT EXISTS idx_companion_outputs_path     ON approved_companion_outputs(output_path);
 
 -- ─── Claim Attempts ───────────────────────────────────────────────────────────
 
@@ -469,6 +491,8 @@ ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_total INTEGER NOT NULL DEFAULT 0
 ALTER TABLE acceptance_evidence ADD COLUMN IF NOT EXISTS log_sha256 TEXT;
 ALTER TABLE acceptance_evidence ADD COLUMN IF NOT EXISTS duration_ms INTEGER;
 ALTER TABLE acceptance_evidence ADD COLUMN IF NOT EXISTS authenticity TEXT;
+ALTER TABLE acceptance_evidence ADD COLUMN IF NOT EXISTS content_sha256 TEXT;
+ALTER TABLE acceptance_evidence ADD COLUMN IF NOT EXISTS signature_json TEXT;
 
 CREATE TABLE IF NOT EXISTS run_operator_credentials (
     run_id       TEXT PRIMARY KEY REFERENCES runs(run_id) ON DELETE CASCADE,

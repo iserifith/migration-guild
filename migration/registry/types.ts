@@ -168,6 +168,7 @@ export type EvidenceType =
   | "test-command"
   | "build-command"
   | "static-check"
+  | "signature-check"
   | "review-verdict"
   | "benchmark-result";
 
@@ -186,6 +187,8 @@ export interface AcceptanceEvidence {
   log_sha256: string | null;
   duration_ms: number | null;
   authenticity: string | null;
+  content_sha256: string | null;
+  signature_json: string | null;
   created_at: string;
 }
 
@@ -393,10 +396,20 @@ export interface StackMapping {
   target_framework: string;
   strategy: MappingStrategy | null;
   notes: string | null;
-  confirmed: number; // 0 | 1 (SQLite boolean)
+  confirmed: number;
   confirmed_by: string | null;
   confirmed_at: string | null;
   created_at: string;
+}
+
+export interface ApprovedCompanionOutput {
+  id: string;
+  artifact_id: string;
+  output_path: string;
+  content_sha256: string;
+  signature_json: string | null;
+  approved_by: string;
+  approved_at: string;
 }
 
 /** `legacy:pcsl:BadRequestExceptionHandler` → `legacy--pcsl--badrequestexceptionhandler` */
