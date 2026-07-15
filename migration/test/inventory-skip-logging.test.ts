@@ -102,23 +102,24 @@ test("already-registered files are counted with reason and logged per-file", () 
   }
 });
 
-test("duplicate-slug collision is counted and logged with the colliding path", () => {
+test("duplicate basenames are registered with distinct path-qualified ids", () => {
   const root = makeRoot();
   const db = makeDb();
   try {
     // Same module (app) + same class name in two subdirs -> identical artifact id.
-    const a = writeJava(root, "app/src/main/java/com/acme/Collision.java", "class Collision {}");
-    const b = writeJava(root, "app/src/main/java/com/acme/nested/Collision.java", "class Collision {}");
+    writeJava(root, "app/src/main/java/com/acme/Collision.java", "class Collision {}");
+    writeJava(root, "app/src/main/java/com/acme/nested/Collision.java", "class Collision {}");
+    writeJava(root, "app/src/main/java/com/acme/lower/collision.java", "class collision {}");
     const out = captureStdout(() => scanAndRegister(db, root));
-    assert.match(out, /discovered: 2  registered: 1  skipped: 1/);
-    assert.match(out, /skip reasons: duplicate-slug: 1/);
+    assert.match(out, /discovered: 3  registered: 3  skipped: 0/);
+    assert.doesNotMatch(out, /skip reasons:/);
 
     const logPath = path.join(root, ".guild", "logs", "inventory-skips.log");
-    const logLines = fs.readFileSync(logPath, "utf8").trim().split("\n");
-    assert.equal(logLines.length, 1);
-    assert.match(logLines[0], /duplicate-slug$/);
-    // The logged path must be the *second* (colliding) file, not the registered one.
-    assert.ok(logLines[0].startsWith(b));
+    assert.equal(fs.existsSync(logPath), false);
+    const rows = db.prepare("SELECT id, slug FROM artifacts ORDER BY id").all() as Array<{ id: string; slug: string }>;
+    assert.equal(rows.length, 3);
+    assert.equal(new Set(rows.map((row) => row.id)).size, 3);
+    assert.equal(new Set(rows.map((row) => row.slug)).size, 3);
   } finally {
     db.close();
     fs.rmSync(root, { recursive: true, force: true });
@@ -130,16 +131,16 @@ test("mixed fixture reconciles across reasons", () => {
   const db = makeDb();
   try {
     writeJava(root, "app/src/main/java/com/acme/A.java", "class A {}");
-    writeJava(root, "app/src/main/java/com/acme/nested/A.java", "class A {}"); // duplicate-slug
+    writeJava(root, "app/src/main/java/com/acme/nested/A.java", "class A {}"); // collision-safe id
     const pre = writeJava(root, "app/src/main/java/com/acme/B.java", "class B {}");
     register(db, "legacy-source:app:B", pre); // already-registered
     const out = captureStdout(() => scanAndRegister(db, root));
-    assert.match(out, /discovered: 3  registered: 1  skipped: 2/);
-    assert.match(out, /skip reasons: already-registered: 1, duplicate-slug: 1/);
+    assert.match(out, /discovered: 3  registered: 2  skipped: 1/);
+    assert.match(out, /skip reasons: already-registered: 1/);
 
     const logPath = path.join(root, ".guild", "logs", "inventory-skips.log");
     const logLines = fs.readFileSync(logPath, "utf8").trim().split("\n");
-    assert.equal(logLines.length, 2);
+    assert.equal(logLines.length, 1);
   } finally {
     db.close();
     fs.rmSync(root, { recursive: true, force: true });
