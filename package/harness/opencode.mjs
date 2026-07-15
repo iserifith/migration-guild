@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // opencode harness adapter. Contract (same as the other adapters):
-//   1. Accept --agent, --model, --yolo, and -p/--prompt.
+//   1. Accept --agent, --model, --yolo/--read-only, and -p/--prompt.
 //   2. Prepend the body of .github/agents/<agent>.agent.md to the prompt.
 //   3. Configure an OpenAI-compatible provider from AGENT_PROVIDER_BASE_URL and
 //      the key named by AGENT_PROVIDER_API_KEY_ENV (chat/completions wire API).
@@ -20,12 +20,13 @@ import { fileURLToPath } from "node:url";
 const PROVIDER_ID = "guild";
 
 export function parseArgs(argv) {
-  const out = { agent: "", model: "", prompt: "", yolo: false };
+  const out = { agent: "", model: "", prompt: "", yolo: false, readOnly: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--agent") out.agent = argv[++i] ?? "";
     else if (arg === "--model") out.model = argv[++i] ?? "";
     else if (arg === "--yolo") out.yolo = true;
+    else if (arg === "--read-only") out.readOnly = true;
     else if (arg === "-p" || arg === "--prompt") out.prompt = argv[++i] ?? "";
   }
   return out;
@@ -164,7 +165,9 @@ export function buildOpencodeInvocation(argv, options = {}) {
   const persona = loadPersona(parsed.agent, options.cwd);
   const fullPrompt = persona ? `${persona}\n\n---\n\n${parsed.prompt}` : parsed.prompt;
   const configPath = writeProviderConfig(parsed.model, env);
-  const args = ["run", "--dangerously-skip-permissions", "--format", "json"];
+  const args = parsed.readOnly
+    ? ["run", "--format", "json"]
+    : ["run", "--dangerously-skip-permissions", "--format", "json"];
   if (parsed.model) args.push("-m", `${PROVIDER_ID}/${parsed.model}`);
   args.push(fullPrompt);
   return {

@@ -31,6 +31,8 @@ import { runRelease } from "./commands/release";
 import { runRemediate } from "./commands/remediate";
 import { runAuditCoverage, formatCoverageReport } from "./commands/audit";
 import { runEvidenceAdd, runEvidenceList } from "./commands/evidence";
+import { runVerifyCommand } from "./commands/verify";
+import { runAutoCommand } from "./commands/auto";
 import { runArbitrate } from "./commands/arbitrate";
 import { runSocietyReport } from "./commands/society-report";
 import { runBenchmarkBaselineWorker, runBenchmarkCompare, runBenchmarkGuildReviewWorker, runBenchmarkGuildReworkWorker, runBenchmarkRecord, runBenchmarkReport, runBenchmarkRun } from "./commands/benchmark";
@@ -382,6 +384,17 @@ evidence
   });
 
 program
+  .command("verify")
+  .description("Run configured runtime verification commands and record verifier-owned evidence")
+  .requiredOption("--artifact <id>", "Artifact ID")
+  .option("--command <cmd...>", "Verification command(s); repeat or separate with ;;")
+  .option("--json", "Print verification result as JSON")
+  .action(async (opts) => {
+    assertDbExists(dbPath());
+    await runVerifyCommand(db(), opts);
+  });
+
+program
   .command("arbitrate")
   .description("Approve or reject a migrated artifact from recorded evidence")
   .requiredOption("--artifact <id>", "Artifact ID")
@@ -394,6 +407,19 @@ program
   .action(async (opts) => {
     assertDbExists(dbPath());
     await runArbitrate(db(), opts);
+  });
+
+program
+  .command("auto")
+  .description("Run one artifact through migrate, verify, repair, and reverify under a bounded supervisor")
+  .requiredOption("--artifact <id>", "Artifact ID")
+  .option("--command <cmd...>", "Verification command(s); repeat or separate with ;;")
+  .option("--max-attempts <n>", "Maximum migrate/repair attempts", parseInt)
+  .option("--resume", "Resume the artifact from persisted verifier/arbitration state")
+  .option("--json", "Print supervisor result as JSON")
+  .action(async (opts) => {
+    assertDbExists(dbPath());
+    await runAutoCommand(db(), { ...opts, registryDbPath: dbPath() });
   });
 
 

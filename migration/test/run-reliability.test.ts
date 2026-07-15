@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
 import { isGitWorktree, snapshotChangedFiles, spawnAgent } from "../guildctl/runner";
-import { registerArtifact, setArtifactStatus } from "../registry/commands/artifacts";
+import { registerArtifact, setArtifactStatus, setArtifactWave } from "../registry/commands/artifacts";
 import { startRun, reapDeadRuns } from "../registry/commands/runs";
 import { applySchema } from "../registry/db/schema";
 
@@ -206,6 +206,88 @@ test("spawnAgent treats lingering claimed artifacts after exit 0 as failure", as
     }
     rmSync(workDir, { recursive: true, force: true });
     db.close();
+  }
+});
+
+test("spawnAgent pre-claim permits default workspace-local registry DB sidecars", async () => {
+  const workDir = mkdtempSync(path.join(tmpdir(), "guildctl-runner-local-db-"));
+  const dbPath = path.join(workDir, ".guild", "registry.db");
+  const stubPath = path.join(workDir, "fake-agent.cjs");
+  const repoMigrationRoot = path.resolve(__dirname, "..");
+  const tsxLoader = path.join(repoMigrationRoot, "node_modules", "tsx", "dist", "loader.mjs");
+  const registryCli = path.join(repoMigrationRoot, "registry", "cli.ts");
+  const originalAgent = process.env["AGENT_CMD"];
+  const originalWorkspace = process.env["GUILD_WORKSPACE"];
+  const originalRegistry = process.env["REGISTRY_DB"];
+  mkdirSync(path.join(workDir, ".guild"), { recursive: true });
+  mkdirSync(path.join(workDir, "legacy"), { recursive: true });
+  mkdirSync(path.join(workDir, "migration", "registry", "dist"), { recursive: true });
+  writeFileSync(path.join(workDir, "migration", "registry", "dist", "cli.js"), `
+const { spawnSync } = require("node:child_process");
+const result = spawnSync(process.execPath, [
+  "--import", ${JSON.stringify(tsxLoader)},
+  ${JSON.stringify(registryCli)},
+  ...process.argv.slice(2)
+], { stdio: "inherit", env: process.env, cwd: process.cwd() });
+process.exit(result.status ?? 1);
+`, "utf8");
+  writeFileSync(path.join(workDir, "legacy", "WidgetDto.js"), "module.exports = 0;\n");
+  const db = new Database(dbPath);
+
+  try {
+    applySchema(db);
+    const artifactId = "legacy-source:com.acme:WidgetDto";
+    registerArtifact(db, {
+      id: artifactId,
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/WidgetDto.js",
+    });
+    setArtifactWave(db, artifactId, 1);
+    setArtifactStatus(db, artifactId, "planned");
+    writeFileSync(stubPath, `
+const { execFileSync } = require("node:child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+fs.mkdirSync(path.join(process.cwd(), "modern"), { recursive: true });
+fs.writeFileSync(path.join(process.cwd(), "modern", "WidgetDto.js"), "module.exports = 1;\\n");
+execFileSync(process.execPath, [
+  "migration/registry/dist/cli.js",
+  "set-artifact-status",
+  "--id", process.env.GUILDCTL_ARTIFACT_ID,
+  "--status", "migrated",
+  "--agent", "code-writer-agent",
+  "--claim-id", process.env.GUILDCTL_CLAIM_ID,
+  "--claim-token", process.env.GUILDCTL_CLAIM_TOKEN
+], { cwd: process.cwd(), stdio: "inherit", env: process.env });
+`, "utf8");
+
+    process.env["AGENT_CMD"] = stubPath;
+    process.env["GUILD_WORKSPACE"] = workDir;
+    process.env["REGISTRY_DB"] = dbPath;
+
+    const result = await spawnAgent({
+      agent: "code-writer-agent",
+      model: "test-model",
+      prompt: "manual preclaim local db sidecar regression",
+      db,
+      preClaim: { fromStatus: "planned" },
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal((db.prepare("SELECT status FROM artifacts WHERE id = ?").get(artifactId) as { status: string }).status, "migrated");
+    assert.equal((db.prepare("SELECT COUNT(*) AS n FROM artifact_claims WHERE state = 'active'").get() as { n: number }).n, 0);
+    assert.equal(readFileSync(path.join(workDir, "modern", "WidgetDto.js"), "utf8"), "module.exports = 1;\n");
+    assert.equal(existsSync(`${dbPath}-wal`) || existsSync(`${dbPath}-shm`) || existsSync(`${dbPath}-journal`), true);
+  } finally {
+    if (originalAgent == null) delete process.env["AGENT_CMD"];
+    else process.env["AGENT_CMD"] = originalAgent;
+    if (originalWorkspace == null) delete process.env["GUILD_WORKSPACE"];
+    else process.env["GUILD_WORKSPACE"] = originalWorkspace;
+    if (originalRegistry == null) delete process.env["REGISTRY_DB"];
+    else process.env["REGISTRY_DB"] = originalRegistry;
+    db.close();
+    rmSync(workDir, { recursive: true, force: true });
   }
 });
 

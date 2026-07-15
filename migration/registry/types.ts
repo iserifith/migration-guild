@@ -82,6 +82,7 @@ export type EventType =
   | "evaluated"
   | "auto-completed"
   | "auto-rework"
+  | "filesystem-violation"
   | "thread-created"
   | "dependency-strategy-set";
 
@@ -163,6 +164,7 @@ export interface Event {
 }
 
 export type EvidenceType =
+  | "runtime"
   | "test-command"
   | "build-command"
   | "static-check"
@@ -181,6 +183,9 @@ export interface AcceptanceEvidence {
   summary: string;
   output_path: string | null;
   output_excerpt: string | null;
+  log_sha256: string | null;
+  duration_ms: number | null;
+  authenticity: string | null;
   created_at: string;
 }
 
@@ -256,6 +261,12 @@ export interface ArtifactClaim {
   finish_reason: string | null;
 }
 
+export interface RunOperatorCredential {
+  run_id: string;
+  token_hash: string;
+  created_at: string;
+}
+
 export interface ClaimedArtifact extends Artifact {
   claim_id: string;
   claim_token: string;
@@ -264,6 +275,7 @@ export interface ClaimedArtifact extends Artifact {
   lease_expires_at: string;
   heartbeat_at: string;
   attempt_no: number;
+  expected_output_paths: string | null;
 }
 
 export interface AgentContext {

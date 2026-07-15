@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
+import { signRuntimeEvidence, sha256 } from "../guildctl/verify";
+import { createRunOperatorCredential } from "../registry/commands/claim";
 import { registerArtifact, setArtifactStatus } from "../registry/commands/artifacts";
 import { getEvents } from "../registry/commands/events";
 import {
   addAcceptanceEvidence,
+  addVerifierRuntimeEvidence,
   approveArtifactWithEvidence,
   canApproveArtifact,
   getLatestArbitrationDecision,
@@ -33,6 +39,38 @@ function markMigrated(db: Database.Database): void {
     agent: "builder-agent",
     reason: "builder submitted migration proposal",
   });
+}
+
+function signedRuntimeEvidence(
+  db: Database.Database,
+  opts: { producedBy?: string; pass?: 0 | 1; exitCode?: number; command?: string; log?: string } = {},
+): { evidenceId: string; runId: string; operatorToken: string; dir: string } {
+  const runId = `run-${Math.random().toString(16).slice(2)}`;
+  db.prepare("INSERT INTO runs (run_id, agent, owner_id, status) VALUES (?, 'guildctl-verify', 'guildctl', 'running')").run(runId);
+  const operatorToken = createRunOperatorCredential(db, runId).token;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "guild-arbiter-evidence-"));
+  const log = opts.log ?? "runtime ok\n";
+  const logPath = path.join(dir, "runtime.log");
+  fs.writeFileSync(logPath, log);
+  const logSha256 = sha256(log);
+  const command = opts.command ?? "npm test";
+  const exitCode = opts.exitCode ?? 0;
+  const pass = opts.pass ?? 1;
+  const evidence = addVerifierRuntimeEvidence(db, {
+    artifactId: ARTIFACT_ID,
+    producedBy: opts.producedBy ?? "critic-agent",
+    runId,
+    command,
+    exitCode,
+    pass,
+    summary: pass ? "runtime passed" : "runtime failed",
+    outputPath: logPath,
+    outputExcerpt: log,
+    logSha256,
+    durationMs: 10,
+    authenticity: signRuntimeEvidence({ artifactId: ARTIFACT_ID, runId, command, exitCode, pass, logSha256 }, operatorToken),
+  });
+  return { evidenceId: evidence.evidence_id, runId, operatorToken, dir };
 }
 
 test("cannot approve a planned artifact", () => {
@@ -64,7 +102,7 @@ test("cannot approve a migrated artifact with no evidence", () => {
     const result = canApproveArtifact(db, ARTIFACT_ID, "arbiter-agent");
 
     assert.equal(result.ok, false);
-    assert.match(result.reason, /passing executable evidence/i);
+    assert.match(result.reason, /runtime evidence/i);
   } finally {
     db.close();
   }
@@ -72,87 +110,65 @@ test("cannot approve a migrated artifact with no evidence", () => {
 
 test("cannot approve when latest executable evidence fails", () => {
   const db = createDb();
+  const dirs: string[] = [];
   try {
     markMigrated(db);
-    addAcceptanceEvidence(db, {
-      artifactId: ARTIFACT_ID,
-      producedBy: "critic-agent",
-      evidenceType: "test-command",
-      command: "npm test",
-      exitCode: 0,
-      pass: 1,
-      summary: "tests passed",
-    });
-    const failing = addAcceptanceEvidence(db, {
-      artifactId: ARTIFACT_ID,
-      producedBy: "critic-agent",
-      evidenceType: "test-command",
-      command: "npm test",
-      exitCode: 1,
-      pass: 0,
-      summary: "tests failed after retry",
-    });
+    dirs.push(signedRuntimeEvidence(db).dir);
+    const failing = signedRuntimeEvidence(db, { pass: 0, exitCode: 1, log: "tests failed after retry\n" });
+    dirs.push(failing.dir);
 
     const result = canApproveArtifact(db, ARTIFACT_ID, "arbiter-agent");
 
     assert.equal(result.ok, false);
-    assert.deepEqual(result.evidenceIds, [failing.evidence_id]);
-    assert.match(result.reason, /latest executable evidence failed/i);
+    assert.deepEqual(result.evidenceIds, [failing.evidenceId]);
+    assert.match(result.reason, /runtime evidence failed/i);
   } finally {
+    for (const dir of dirs) fs.rmSync(dir, { recursive: true, force: true });
     db.close();
   }
 });
 
 test("cannot approve when arbiter equals evidence producer", () => {
   const db = createDb();
+  let dir: string | undefined;
   try {
     markMigrated(db);
-    addAcceptanceEvidence(db, {
-      artifactId: ARTIFACT_ID,
-      producedBy: "arbiter-agent",
-      evidenceType: "build-command",
-      command: "npm run build",
-      exitCode: 0,
-      pass: 1,
-      summary: "build passed",
-    });
+    dir = signedRuntimeEvidence(db, { producedBy: "arbiter-agent", command: "npm run build" }).dir;
 
     const result = canApproveArtifact(db, ARTIFACT_ID, "arbiter-agent");
 
     assert.equal(result.ok, false);
     assert.match(result.reason, /arbiter.*evidence producer/i);
   } finally {
+    if (dir) fs.rmSync(dir, { recursive: true, force: true });
     db.close();
   }
 });
 
-test("can approve with independent passing test evidence", () => {
+test("can approve with independent passing runtime evidence", () => {
   const db = createDb();
   try {
     markMigrated(db);
-    const evidence = addAcceptanceEvidence(db, {
-      artifactId: ARTIFACT_ID,
-      producedBy: "critic-agent",
-      evidenceType: "test-command",
-      command: "npm test --prefix migration",
-      exitCode: 0,
-      pass: 1,
-      summary: "tool tests passed",
-    });
+    const signed = signedRuntimeEvidence(db, { command: "npm test --prefix migration" });
+    try {
+      const decision = approveArtifactWithEvidence(db, {
+        artifactId: ARTIFACT_ID,
+        arbiter: "arbiter-agent",
+        reason: "independent executable evidence passed",
+        runId: signed.runId,
+        operatorToken: signed.operatorToken,
+      });
 
-    const decision = approveArtifactWithEvidence(db, {
-      artifactId: ARTIFACT_ID,
-      arbiter: "arbiter-agent",
-      reason: "independent executable evidence passed",
-    });
-
-    assert.equal(decision.decision, "approved");
-    assert.deepEqual(JSON.parse(decision.evidence_ids), [evidence.evidence_id]);
-    assert.equal(getArtifactById(db, ARTIFACT_ID).status, "reviewed");
-    assert.equal(getLatestArbitrationDecision(db, ARTIFACT_ID)?.decision_id, decision.decision_id);
-    const events = getEvents(db, ARTIFACT_ID, "arbitration-approved", 1);
-    assert.equal(events.length, 1);
-    assert.match(events[0].summary, /approved/i);
+      assert.equal(decision.decision, "approved");
+      assert.deepEqual(JSON.parse(decision.evidence_ids), [signed.evidenceId]);
+      assert.equal(getArtifactById(db, ARTIFACT_ID).status, "reviewed");
+      assert.equal(getLatestArbitrationDecision(db, ARTIFACT_ID)?.decision_id, decision.decision_id);
+      const events = getEvents(db, ARTIFACT_ID, "arbitration-approved", 1);
+      assert.equal(events.length, 1);
+      assert.match(events[0].summary, /approved/i);
+    } finally {
+      fs.rmSync(signed.dir, { recursive: true, force: true });
+    }
   } finally {
     db.close();
   }

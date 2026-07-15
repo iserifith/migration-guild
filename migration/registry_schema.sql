@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS events (
                      'evaluated',
                      'auto-completed',
                      'auto-rework',
+                     'filesystem-violation',
                       'thread-created',
                       'dependency-strategy-set'
                   )),
@@ -205,6 +206,12 @@ CREATE INDEX IF NOT EXISTS idx_runs_agent  ON runs(agent);
 CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
 CREATE INDEX IF NOT EXISTS idx_runs_owner  ON runs(owner_id);
 
+CREATE TABLE IF NOT EXISTS run_operator_credentials (
+    run_id       TEXT PRIMARY KEY REFERENCES runs(run_id) ON DELETE CASCADE,
+    token_hash   TEXT NOT NULL,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- ─── Acceptance Evidence Gate ────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS acceptance_evidence (
@@ -213,6 +220,7 @@ CREATE TABLE IF NOT EXISTS acceptance_evidence (
     run_id          TEXT REFERENCES runs(run_id) ON DELETE SET NULL,
     produced_by     TEXT NOT NULL,
     evidence_type   TEXT NOT NULL CHECK (evidence_type IN (
+                       'runtime',
                        'test-command',
                        'build-command',
                        'static-check',
@@ -225,6 +233,9 @@ CREATE TABLE IF NOT EXISTS acceptance_evidence (
     summary         TEXT NOT NULL,
     output_path     TEXT,
     output_excerpt  TEXT,
+    log_sha256      TEXT,
+    duration_ms     INTEGER,
+    authenticity    TEXT,
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -455,3 +466,12 @@ ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_fresh INTEGER NOT NULL DEFAULT 0
 ALTER TABLE artifact_claims ADD COLUMN expected_output_paths TEXT;
 
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_total INTEGER NOT NULL DEFAULT 0 CHECK (token_total >= 0);
+ALTER TABLE acceptance_evidence ADD COLUMN IF NOT EXISTS log_sha256 TEXT;
+ALTER TABLE acceptance_evidence ADD COLUMN IF NOT EXISTS duration_ms INTEGER;
+ALTER TABLE acceptance_evidence ADD COLUMN IF NOT EXISTS authenticity TEXT;
+
+CREATE TABLE IF NOT EXISTS run_operator_credentials (
+    run_id       TEXT PRIMARY KEY REFERENCES runs(run_id) ON DELETE CASCADE,
+    token_hash   TEXT NOT NULL,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);

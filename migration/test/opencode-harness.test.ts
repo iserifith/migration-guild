@@ -53,3 +53,10 @@ test("opencode harness invokes opencode run with JSON format", () => {
   assert.deepEqual(invocation.args.slice(0, 4), ["run", "--dangerously-skip-permissions", "--format", "json"]);
   assert.ok(invocation.args.includes("guild/gpt-test"));
 });
+
+test("opencode harness read-only review mode does not request permission bypass", () => {
+  const invocation = harness.buildOpencodeInvocation(["--model", "gpt-test", "--read-only", "--prompt", "hello"], { cwd: process.cwd(), env: { ...process.env, OPENAI_API_KEY: "test" } });
+  assert.deepEqual(invocation.args.slice(0, 3), ["run", "--format", "json"]);
+  assert.equal(invocation.args.includes("--dangerously-skip-permissions"), false);
+  assert.equal(invocation.parsed.readOnly, true);
+});
