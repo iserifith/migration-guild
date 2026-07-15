@@ -99,6 +99,8 @@ function reviewPrompt(input: AutoReviewInput): string {
     `Producer agent: ${input.producerAgent}`,
     `Producer model: ${input.producerModel ?? "unknown"}`,
     "Review the migrated output and verifier evidence. Do not use claim, operator, or verifier tokens.",
+    "Do not invoke registry, guildctl, or any status/arbitration command. Do not mutate the workspace or registry database.",
+    "Do not record the verdict yourself; return the machine verdict marker only. The supervisor owns arbitration persistence.",
     `Evidence: ${JSON.stringify(evidence)}`,
     `Return exactly one machine verdict line: ${REVIEW_MARKER}{"approved":true|false,"reason":"short reason"}`,
   ].join("\n");

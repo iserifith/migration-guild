@@ -172,6 +172,12 @@ program
   .option("--claim-token <claimToken>", "Active claim token authorizing the status change")
   .action((opts) =>
     run(() => {
+      if (opts.status === "reviewed") {
+        throw new RegistryError(
+          1,
+          "Direct promotion to reviewed is forbidden; use evidence-backed arbitration through guildctl auto or guildctl arbitrate",
+        );
+      }
       setArtifactStatus(db(), opts.id, opts.status as Status, {
         agent: opts.agent,
         model: opts.model,
