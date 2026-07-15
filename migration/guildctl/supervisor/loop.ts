@@ -1,13 +1,15 @@
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import { appendEvent } from "../../registry/commands/events";
 import { claimArtifactById, createRunOperatorCredential, releaseClaimsForRun } from "../../registry/commands/claim";
 import { setArtifactStatus } from "../../registry/commands/artifacts";
-import { approveArtifactWithEvidence, rejectArtifactWithEvidence } from "../../registry/commands/evidence";
+import { approveArtifactWithEvidence, checkEvidenceFreshness, rejectArtifactWithEvidence } from "../../registry/commands/evidence";
 import { finishRun, startRun } from "../../registry/commands/runs";
 import type { AcceptanceEvidence, ClaimedArtifact } from "../../registry/types";
 import { isPathInside } from "../config";
+import { contentSha256, diffSignatures, signatureDigest, type DeltaKind, type SignatureDelta } from "../signature";
 import { runVerify, type VerifyResult } from "../verify";
 import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions } from "../warden";
 import { classifyFailure, FailureBudget } from "./failures";
@@ -57,6 +59,114 @@ export interface AutoResult {
 
 async function defaultWorker(): Promise<void> {
   throw new Error("guildctl auto requires a worker implementation in this build path");
+}
+
+export const highRiskDriftKinds: ReadonlySet<DeltaKind> = new Set([
+  "private-constructor-added",
+  "field-became-final",
+  "public-method-removed",
+  "visibility-narrowed",
+]);
+
+export interface DriftGateResult {
+  ok: boolean;
+  primaryContentSha256: string | null;
+  signatureJson: string | null;
+  highRisk: boolean;
+  deltas: SignatureDelta[];
+  methodAddedInfo: SignatureDelta[];
+}
+
+export interface DriftGateInput {
+  workspaceRoot: string;
+  legacyArtifactId: string;
+  legacyPath: string;
+  expectedOutputPaths: string[];
+  db: Database.Database;
+}
+
+export function computeDriftGate(input: DriftGateInput): DriftGateResult {
+  const legacyPath = path.join(input.workspaceRoot, input.legacyPath);
+  if (!fs.existsSync(legacyPath)) {
+    return { ok: true, primaryContentSha256: null, signatureJson: null, highRisk: false, deltas: [], methodAddedInfo: [] };
+  }
+
+  const primaryOutputPath = input.expectedOutputPaths[0];
+  if (!primaryOutputPath || !fs.existsSync(path.join(input.workspaceRoot, primaryOutputPath))) {
+    return { ok: true, primaryContentSha256: null, signatureJson: null, highRisk: false, deltas: [], methodAddedInfo: [] };
+  }
+
+  const modernPath = path.join(input.workspaceRoot, primaryOutputPath);
+  const legacyBytes = fs.readFileSync(legacyPath);
+  const modernBytes = fs.readFileSync(modernPath);
+  const legacyDigest = signatureDigest(legacyBytes.toString("utf8"), "java");
+  const modernDigest = signatureDigest(modernBytes.toString("utf8"), "java");
+  const diff = diffSignatures(legacyDigest, modernDigest);
+
+  const highRiskDeltas = diff.deltas.filter((d) => highRiskDriftKinds.has(d.kind));
+  const methodAdded = diff.deltas.filter((d) => d.kind === "method-added");
+
+  if (highRiskDeltas.length > 0) {
+    const detail = highRiskDeltas.map((d) => d.detail).join("; ");
+    appendEvent(input.db, {
+      id: input.legacyArtifactId,
+      type: "blocked",
+      agent: "guildctl-drift-gate",
+      summary: `High-risk drift detected: ${detail}`,
+      data: JSON.stringify({ high_risk_deltas: highRiskDeltas, deltas: diff.deltas }),
+    });
+    return {
+      ok: false,
+      primaryContentSha256: contentSha256(modernBytes),
+      signatureJson: JSON.stringify(diff),
+      highRisk: true,
+      deltas: diff.deltas,
+      methodAddedInfo: methodAdded,
+    };
+  }
+
+  for (const outputPath of input.expectedOutputPaths) {
+    if (!outputPath) continue;
+    const absPath = path.join(input.workspaceRoot, outputPath);
+    if (!isPathInside(absPath, input.workspaceRoot)) {
+      appendEvent(input.db, {
+        id: input.legacyArtifactId,
+        type: "blocked",
+        agent: "guildctl-drift-gate",
+        summary: `Expected output path escapes workspace: ${outputPath}`,
+        data: JSON.stringify({ outputPath }),
+      });
+      return {
+        ok: false,
+        primaryContentSha256: null,
+        signatureJson: null,
+        highRisk: false,
+        deltas: diff.deltas,
+        methodAddedInfo: methodAdded,
+      };
+    }
+    if (!fs.existsSync(absPath)) {
+      appendEvent(input.db, {
+        id: input.legacyArtifactId,
+        type: "auto-rework",
+        agent: "guildctl-drift-gate",
+        summary: `Expected output not found: ${outputPath}`,
+        data: JSON.stringify({ outputPath }),
+      });
+    }
+  }
+
+  const primaryContentSha256 = contentSha256(modernBytes);
+  const signatureJson = JSON.stringify(diff);
+
+  return {
+    ok: true,
+    primaryContentSha256,
+    signatureJson,
+    highRisk: false,
+    deltas: diff.deltas,
+    methodAddedInfo: methodAdded,
+  };
 }
 
 function parseAllowedPaths(claim: ClaimedArtifact): string[] {
@@ -246,6 +356,47 @@ export async function runAuto(
           fromStatus = "migrated";
           phase = "repair";
         } else {
+          const resumeArtifactRow = db.prepare("SELECT path FROM artifacts WHERE id = ?").get(opts.artifactId) as { path: string } | undefined;
+          const resumeClaimRow = db.prepare(
+            "SELECT expected_output_paths FROM artifact_claims WHERE artifact_id = ? ORDER BY rowid DESC LIMIT 1",
+          ).get(opts.artifactId) as { expected_output_paths: string | null } | undefined;
+          let resumeExpectedOutputs: string[] = [];
+          if (resumeClaimRow?.expected_output_paths) {
+            try { resumeExpectedOutputs = JSON.parse(resumeClaimRow.expected_output_paths); } catch { resumeExpectedOutputs = []; }
+          }
+          if (resumeArtifactRow && resumeExpectedOutputs.length > 0) {
+            const driftGate = computeDriftGate({
+              workspaceRoot: opts.workspaceRoot,
+              legacyArtifactId: opts.artifactId,
+              legacyPath: resumeArtifactRow.path,
+              expectedOutputPaths: resumeExpectedOutputs,
+              db,
+            });
+            if (!driftGate.ok) {
+              releaseClaimsForRun(db, runId, "guildctl", "resume drift gate rejection");
+              setArtifactStatus(db, opts.artifactId, "blocked", {
+                agent: "guildctl",
+                runId,
+                operatorToken: operator.token,
+                reason: "High-risk signature drift detected by drift gate on resume",
+              });
+              finishRun(db, { runId, exitCode: 1, reason: "high-risk drift detected on resume" });
+              return { status: "blocked", runId, attempts };
+            }
+            appendEvent(db, {
+              id: opts.artifactId,
+              type: "evidence-submitted",
+              agent: "guildctl-drift-gate",
+              summary: `Static-check acceptance evidence recorded (resume): content_sha256=${driftGate.primaryContentSha256 ? driftGate.primaryContentSha256.slice(0, 12) : "none"} deltas=${driftGate.deltas.length}`,
+              data: JSON.stringify({
+                content_sha256: driftGate.primaryContentSha256,
+                signature_json: driftGate.signatureJson,
+                method_added_info: driftGate.methodAddedInfo,
+                delta_count: driftGate.deltas.length,
+              }),
+            });
+          }
+
           const reviewResult = await guardedIndependentReview(db, opts, review, {
             artifactId: opts.artifactId,
             runId,
@@ -377,6 +528,47 @@ export async function runAuto(
         data: JSON.stringify({ attempts, evidence_count: verification.evidence.length }),
       });
       if (verification.pass) {
+        const artifactRow = db.prepare("SELECT path FROM artifacts WHERE id = ?").get(opts.artifactId) as { path: string } | undefined;
+        const claimRow = db.prepare(
+          "SELECT expected_output_paths FROM artifact_claims WHERE artifact_id = ? ORDER BY rowid DESC LIMIT 1",
+        ).get(opts.artifactId) as { expected_output_paths: string | null } | undefined;
+        let expectedOutputs: string[] = [];
+        if (claimRow?.expected_output_paths) {
+          try { expectedOutputs = JSON.parse(claimRow.expected_output_paths); } catch { expectedOutputs = []; }
+        }
+        if (artifactRow && expectedOutputs.length > 0) {
+          const driftGate = computeDriftGate({
+            workspaceRoot: opts.workspaceRoot,
+            legacyArtifactId: opts.artifactId,
+            legacyPath: artifactRow.path,
+            expectedOutputPaths: expectedOutputs,
+            db,
+          });
+          if (!driftGate.ok) {
+            releaseClaimsForRun(db, runId, "guildctl", "drift gate high-risk rejection");
+            setArtifactStatus(db, opts.artifactId, "blocked", {
+              agent: "guildctl",
+              runId,
+              operatorToken: operator.token,
+              reason: "High-risk signature drift detected by drift gate",
+            });
+            finishRun(db, { runId, exitCode: 1, reason: "high-risk drift detected" });
+            return { status: "blocked", runId, attempts };
+          }
+          appendEvent(db, {
+            id: opts.artifactId,
+            type: "evidence-submitted",
+            agent: "guildctl-drift-gate",
+            summary: `Static-check acceptance evidence recorded: content_sha256=${driftGate.primaryContentSha256 ? driftGate.primaryContentSha256.slice(0, 12) : "none"} deltas=${driftGate.deltas.length}`,
+            data: JSON.stringify({
+              content_sha256: driftGate.primaryContentSha256,
+              signature_json: driftGate.signatureJson,
+              method_added_info: driftGate.methodAddedInfo,
+              delta_count: driftGate.deltas.length,
+            }),
+          });
+        }
+
         const reviewResult = await guardedIndependentReview(db, opts, review, {
           artifactId: opts.artifactId,
           runId,
