@@ -5,7 +5,7 @@ import path from "node:path";
 import { appendEvent } from "../../registry/commands/events";
 import { claimArtifactById, createRunOperatorCredential, releaseClaimsForRun } from "../../registry/commands/claim";
 import { setArtifactStatus } from "../../registry/commands/artifacts";
-import { approveArtifactWithEvidence, checkEvidenceFreshness, rejectArtifactWithEvidence } from "../../registry/commands/evidence";
+import { addAcceptanceEvidence, approveArtifactWithEvidence, checkEvidenceFreshness, rejectArtifactWithEvidence } from "../../registry/commands/evidence";
 import { finishRun, startRun } from "../../registry/commands/runs";
 import type { AcceptanceEvidence, ClaimedArtifact } from "../../registry/types";
 import { isPathInside } from "../config";
@@ -83,20 +83,20 @@ export interface DriftGateInput {
   legacyPath: string;
   expectedOutputPaths: string[];
   db: Database.Database;
+  runId?: string;
 }
 
 export function computeDriftGate(input: DriftGateInput): DriftGateResult {
   const legacyPath = path.join(input.workspaceRoot, input.legacyPath);
-  if (!fs.existsSync(legacyPath)) {
-    return { ok: true, primaryContentSha256: null, signatureJson: null, highRisk: false, deltas: [], methodAddedInfo: [] };
+  if (!isPathInside(legacyPath, input.workspaceRoot) || !fs.existsSync(legacyPath)) {
+    return { ok: false, primaryContentSha256: null, signatureJson: null, highRisk: false, deltas: [], methodAddedInfo: [] };
   }
 
   const primaryOutputPath = input.expectedOutputPaths[0];
-  if (!primaryOutputPath || !fs.existsSync(path.join(input.workspaceRoot, primaryOutputPath))) {
-    return { ok: true, primaryContentSha256: null, signatureJson: null, highRisk: false, deltas: [], methodAddedInfo: [] };
+  const modernPath = primaryOutputPath ? path.join(input.workspaceRoot, primaryOutputPath) : "";
+  if (!primaryOutputPath || !isPathInside(modernPath, input.workspaceRoot) || !fs.existsSync(modernPath)) {
+    return { ok: false, primaryContentSha256: null, signatureJson: null, highRisk: false, deltas: [], methodAddedInfo: [] };
   }
-
-  const modernPath = path.join(input.workspaceRoot, primaryOutputPath);
   const legacyBytes = fs.readFileSync(legacyPath);
   const modernBytes = fs.readFileSync(modernPath);
   const legacyDigest = signatureDigest(legacyBytes.toString("utf8"), "java");
@@ -158,6 +158,17 @@ export function computeDriftGate(input: DriftGateInput): DriftGateResult {
 
   const primaryContentSha256 = contentSha256(modernBytes);
   const signatureJson = JSON.stringify(diff);
+  addAcceptanceEvidence(input.db, {
+    artifactId: input.legacyArtifactId,
+    runId: input.runId ?? null,
+    producedBy: "guildctl-drift-gate",
+    evidenceType: "static-check",
+    pass: 1,
+    summary: `API drift gate passed with ${diff.deltas.length} delta(s)`,
+    outputPath: modernPath,
+    contentSha256: primaryContentSha256,
+    signatureJson,
+  });
 
   return {
     ok: true,
@@ -371,6 +382,7 @@ export async function runAuto(
               legacyPath: resumeArtifactRow.path,
               expectedOutputPaths: resumeExpectedOutputs,
               db,
+              runId,
             });
             if (!driftGate.ok) {
               releaseClaimsForRun(db, runId, "guildctl", "resume drift gate rejection");
@@ -543,6 +555,7 @@ export async function runAuto(
             legacyPath: artifactRow.path,
             expectedOutputPaths: expectedOutputs,
             db,
+            runId,
           });
           if (!driftGate.ok) {
             releaseClaimsForRun(db, runId, "guildctl", "drift gate high-risk rejection");

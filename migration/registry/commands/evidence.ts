@@ -515,6 +515,23 @@ export function checkEvidenceFreshness(
   const latestEvidence = getLatestExecutableEvidence(db, artifactId);
   if (!latestEvidence) return { ok: true };
 
+  const latestStatic = db.prepare(
+    `SELECT * FROM acceptance_evidence
+     WHERE artifact_id = ? AND evidence_type = 'static-check' AND pass = 1
+     ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+  ).get(artifactId) as AcceptanceEvidence | undefined;
+  if (latestStatic) {
+    if (!latestStatic.content_sha256 || !latestStatic.output_path || !fs.existsSync(latestStatic.output_path)) {
+      return { ok: false, reason: "Stale evidence: static-check output or content hash is missing" };
+    }
+    if (latestStatic.run_id !== latestEvidence.run_id) {
+      return { ok: false, reason: "Static-check and runtime evidence must belong to the same run" };
+    }
+    if (!safeEqual(sha256File(latestStatic.output_path), latestStatic.content_sha256)) {
+      return { ok: false, reason: "Stale evidence: output content changed after the static-check gate" };
+    }
+  }
+
   const latestRepairEvent = db.prepare(
     `SELECT ts FROM events
      WHERE artifact_id = ? AND type = 'auto-rework'

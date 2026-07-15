@@ -373,6 +373,37 @@ test("drift gate records byte-identical content_sha256 from actual file hash", (
   }
 });
 
+test("content-bound static evidence becomes stale when the output changes", () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-drift-stale-content-"));
+  const legacyPath = "legacy/src/ContentTest.java";
+  const modernPath = "modern/src/ContentTest.java";
+  fs.mkdirSync(path.join(workspace, "legacy", "src"), { recursive: true });
+  fs.mkdirSync(path.join(workspace, "modern", "src"), { recursive: true });
+  fs.writeFileSync(path.join(workspace, legacyPath), "public class ContentTest {}\n");
+  fs.writeFileSync(path.join(workspace, modernPath), "public class ContentTest {}\n");
+  const db = createDb();
+  try {
+    registerFixture(db, legacyPath);
+    const signed = setupSignedEvidence(db, { pass: 1 });
+    const gate = computeDriftGate({
+      workspaceRoot: workspace,
+      legacyArtifactId: ARTIFACT_ID,
+      legacyPath,
+      expectedOutputPaths: [modernPath],
+      db,
+      runId: signed.runId,
+    });
+    assert.equal(gate.ok, true);
+    fs.appendFileSync(path.join(workspace, modernPath), "// changed after gate\n");
+    const freshness = checkEvidenceFreshness(db, ARTIFACT_ID);
+    assert.equal(freshness.ok, false);
+    if (!freshness.ok) assert.match(freshness.reason, /output content changed/i);
+  } finally {
+    db.close();
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 // ─── highRiskDriftKinds set is correctly defined ────────────────────────────
 
 test("highRiskDriftKinds contains all four rejection-worthy kinds", () => {
