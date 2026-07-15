@@ -9,6 +9,9 @@ ui-dist/
 .env
 .tmp-test-runtime/
 migration/logs/
+migration/migration/
+migration/node_modules
+migration/ui/node_modules
 .guild/
 temp/
 .test-workspace
