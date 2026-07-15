@@ -17,25 +17,40 @@ export interface SourceDep {
 
 // Resolve a fully-qualified class name (Java) or module path (Python) to a
 // registered artifact id, if one exists in the registry id set.
-function resolveJavaFqcn(fqcn: string, ids: Set<string>): string | null {
-  // fqcn like com.acme.SubscriptionEntry → candidate ids use the last segment
-  // as the class name (legacy-source:<module>:<ClassName>). Try exact and
-  // suffix matches against the registered id set.
-  const simple = fqcn.split(".").pop()!;
-  if (ids.has(`legacy-source:${simple}`)) return `legacy-source:${simple}`;
-  for (const id of ids) {
-    if (id.endsWith(`:${simple}`)) return id;
+function resolveQualifiedName(name: string, ids: Set<string>, aliases: ReadonlyMap<string, string>): string | null {
+  const simple = name.split(".").pop()!;
+  const qualified = new Set<string>();
+  const qualifierEnd = name.lastIndexOf(".");
+  if (qualifierEnd > 0) {
+    const legacyQualifiedId = `legacy-source:${name.slice(0, qualifierEnd)}:${simple}`;
+    if (ids.has(legacyQualifiedId)) qualified.add(legacyQualifiedId);
   }
-  return null;
+  for (const id of ids) {
+    if (id.endsWith(`:${name}`) || id.endsWith(`.${name}`)) qualified.add(id);
+  }
+  for (const [alias, id] of aliases) {
+    if (alias.endsWith(`:${name}`) || alias.endsWith(`.${name}`)) qualified.add(id);
+  }
+  if (qualified.size === 1) return [...qualified][0]!;
+  if (qualified.size > 1) return null;
+  if (name.includes(".")) return null;
+
+  if (ids.has(`legacy-source:${simple}`)) return `legacy-source:${simple}`;
+  const simpleMatches = new Set(
+    [...ids].filter((id) => id.endsWith(`:${simple}`) || id.endsWith(`.${simple}`)),
+  );
+  for (const [alias, id] of aliases) {
+    if (alias.endsWith(`:${simple}`) || alias.endsWith(`.${simple}`)) simpleMatches.add(id);
+  }
+  return simpleMatches.size === 1 ? [...simpleMatches][0]! : null;
 }
 
-function resolvePythonModule(mod: string, ids: Set<string>): string | null {
-  const simple = mod.split(".").pop()!;
-  if (ids.has(`legacy-source:${simple}`)) return `legacy-source:${simple}`;
-  for (const id of ids) {
-    if (id.endsWith(`:${simple}`)) return id;
-  }
-  return null;
+function resolveJavaFqcn(fqcn: string, ids: Set<string>, aliases: ReadonlyMap<string, string>): string | null {
+  return resolveQualifiedName(fqcn, ids, aliases);
+}
+
+function resolvePythonModule(mod: string, ids: Set<string>, aliases: ReadonlyMap<string, string>): string | null {
+  return resolveQualifiedName(mod, ids, aliases);
 }
 
 // Extract dependency links from a single source file's text.
@@ -44,6 +59,7 @@ export function extractSourceDependencies(
   content: string,
   lang: SourceLang,
   ids: Set<string>,
+  aliases: ReadonlyMap<string, string> = new Map(),
 ): SourceDep[] {
   const out: SourceDep[] = [];
   const seen = new Set<string>();
@@ -59,7 +75,7 @@ export function extractSourceDependencies(
 
   if (lang === "java") {
     for (const m of content.matchAll(/^\s*import\s+(?:static\s+)?([\w.]+)\s*;/gm)) {
-      push(resolveJavaFqcn(m[1], ids), "import");
+      push(resolveJavaFqcn(m[1], ids, aliases), "import");
     }
     // extends / implements of a registered type (single-type refs; generics handled
     // by stripping the first type argument only when it is a plain identifier).
@@ -67,15 +83,15 @@ export function extractSourceDependencies(
       for (const token of m[1].split(/[<>, ]+/)) {
         const name = token.trim();
         if (name.length === 0) continue;
-        push(resolveJavaFqcn(name, ids), "inheritance");
+        push(resolveJavaFqcn(name, ids, aliases), "inheritance");
       }
     }
   } else if (lang === "python") {
     for (const m of content.matchAll(/^\s*from\s+([\w.]+)\s+import\s+(?:[\w.* ]+)/gm)) {
-      push(resolvePythonModule(m[1], ids), "import");
+      push(resolvePythonModule(m[1], ids, aliases), "import");
     }
     for (const m of content.matchAll(/^\s*import\s+([\w.]+)/gm)) {
-      push(resolvePythonModule(m[1], ids), "import");
+      push(resolvePythonModule(m[1], ids, aliases), "import");
     }
   }
 

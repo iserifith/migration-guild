@@ -128,6 +128,33 @@ test("TASK-10: Python fixture — `from a import b` produces the link", () => {
   db.close();
 });
 
+test("qualified Java and Python imports fail closed when only a basename matches", () => {
+  const ids = new Set([
+    "legacy-source:app:Consumer",
+    "legacy-source:app:com.bar.Shared",
+    "legacy-source:app:bar.shared",
+  ]);
+
+  assert.deepEqual(
+    extractSourceDependencies(
+      "legacy-source:app:Consumer",
+      "import com.foo.Shared;\npublic class Consumer {}\n",
+      "java",
+      ids,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    extractSourceDependencies(
+      "legacy-source:app:Consumer",
+      "import foo.shared\n",
+      "python",
+      ids,
+    ),
+    [],
+  );
+});
+
 test("TASK-10: manual `deps add` survives auto re-run; auto links are refreshed", () => {
   const db = createDb();
   for (const cls of ["A", "X", "Y", "M"]) register(db, `legacy-source:com.acme:${cls}`);
@@ -279,6 +306,98 @@ test("TASK-10: end-to-end inventory — links auto-created; test-file imports pr
     assert.ok(rows[0].dependencyId.endsWith(":SubscriptionEntry"));
     // The test file was registered as an artifact but produced no outgoing links.
     assert.ok(!rows.some((r) => r.dependentId.endsWith(":SubscriptionTest")));
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("inventory registers colliding Java basenames and resolves explicit FQCN imports deterministically", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "guild-deps-collision-"));
+  const db = createDb();
+  try {
+    fs.cpSync(path.join(REPO_ROOT, "stacks"), path.join(root, "stacks"), { recursive: true });
+    fs.mkdirSync(path.join(root, ".guild"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".guild", "config.yaml"), "version: 1\nstack: java-spring\n");
+
+    const write = (rel: string, content: string) => {
+      const file = path.join(root, "legacy", ...rel.split("/"));
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, content, "utf8");
+    };
+    write("app/src/main/java/com/acme/one/Shared.java", "package com.acme.one;\npublic class Shared {}\n");
+    write("app/src/main/java/com/acme/two/Shared.java", "package com.acme.two;\npublic class Shared {}\n");
+    write(
+      "app/src/main/java/com/acme/Consumer.java",
+      "package com.acme;\nimport com.acme.two.Shared;\npublic class Consumer extends Shared {}\n",
+    );
+
+    assert.equal(scanAndRegister(db, root), 3);
+    const artifacts = db.prepare("SELECT id, path FROM artifacts ORDER BY path").all() as Array<{ id: string; path: string }>;
+    assert.equal(artifacts.length, 3);
+    assert.equal(new Set(artifacts.map((artifact) => artifact.id)).size, 3);
+
+    const one = artifacts.find((artifact) => artifact.path.includes("/one/Shared.java"));
+    const two = artifacts.find((artifact) => artifact.path.includes("/two/Shared.java"));
+    const consumer = artifacts.find((artifact) => artifact.path.endsWith("/Consumer.java"));
+    assert.ok(one && two && consumer);
+    assert.notEqual(one.id, two.id);
+
+    const deps = listDependencies(db, consumer.id);
+    assert.deepEqual(deps.map((dep) => dep.dependencyId), [two.id]);
+
+    const ambiguous = extractSourceDependencies(
+      "legacy-source:app:ConsumerWithoutImport",
+      "package com.acme;\npublic class ConsumerWithoutImport extends Shared {}\n",
+      "java",
+      new Set(artifacts.map((artifact) => artifact.id)),
+    );
+    assert.deepEqual(ambiguous, [], "ambiguous simple names must not resolve by insertion order");
+
+    assert.equal(scanAndRegister(db, root), 0, "repeat scan is idempotent");
+    assert.equal((db.prepare("SELECT COUNT(*) AS total FROM artifacts").get() as { total: number }).total, 3);
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("partial registry upgrade preserves base ids and refreshes stale auto dependencies", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "guild-deps-upgrade-"));
+  const db = createDb();
+  try {
+    fs.cpSync(path.join(REPO_ROOT, "stacks"), path.join(root, "stacks"), { recursive: true });
+    fs.mkdirSync(path.join(root, ".guild"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".guild", "config.yaml"), "version: 1\nstack: java-spring\n");
+
+    const write = (rel: string, content: string): string => {
+      const file = path.join(root, "legacy", ...rel.split("/"));
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, content, "utf8");
+      return path.relative(root, file);
+    };
+    const onePath = write("app/src/main/java/com/acme/one/Shared.java", "package com.acme.one;\npublic class Shared {}\n");
+    write("app/src/main/java/com/acme/two/Shared.java", "package com.acme.two;\npublic class Shared {}\n");
+    const consumerPath = write(
+      "app/src/main/java/com/acme/Consumer.java",
+      "package com.acme;\nimport com.acme.two.Shared;\npublic class Consumer extends Shared {}\n",
+    );
+
+    registerArtifact(db, { id: "legacy-source:app:Shared", kind: "legacy-source", path: onePath, module: "app" });
+    registerArtifact(db, { id: "legacy-source:app:Consumer", kind: "legacy-source", path: consumerPath, module: "app" });
+    recordAutoDependencies(db, "legacy-source:app:Consumer", [{
+      dependentId: "legacy-source:app:Consumer",
+      dependencyId: "legacy-source:app:Shared",
+      signal: "import",
+    }]);
+
+    assert.equal(scanAndRegister(db, root), 1);
+    const rows = db.prepare("SELECT id, path FROM artifacts ORDER BY path").all() as Array<{ id: string; path: string }>;
+    assert.equal(rows.length, 3);
+    assert.equal(rows.find((row) => row.path === onePath)?.id, "legacy-source:app:Shared");
+    const two = rows.find((row) => row.path.includes("/two/Shared.java"));
+    assert.ok(two);
+    assert.deepEqual(listDependencies(db, "legacy-source:app:Consumer").map((dep) => dep.dependencyId), [two.id]);
   } finally {
     db.close();
     fs.rmSync(root, { recursive: true, force: true });

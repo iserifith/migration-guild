@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import { spawnAgent } from "../runner";
 import type { AgentRunResult } from "../runner";
@@ -21,12 +22,20 @@ import { deriveArtifactModule, formatInventoryValidationReport, getInventoryComp
 
 // ─── File scanner ────────────────────────────────────────────────────────────
 
-function deriveArtifactId(filePath: string, projectRoot: string, legacyRoot: string, sourceExtension: string, module: string): string {
+function deriveArtifactId(filePath: string, legacyRoot: string, sourceExtension: string, module: string): string {
   const rel = path.relative(legacyRoot, filePath);
   const noExt = rel.endsWith(sourceExtension) ? rel.slice(0, -sourceExtension.length) : rel;
   const parts = noExt.split(path.sep);
   const className = parts[parts.length - 1];
   return `legacy-source:${module}:${className}`;
+}
+
+function derivePathQualifiedArtifactId(filePath: string, legacyRoot: string, sourceExtension: string, module: string): string {
+  const rel = path.relative(legacyRoot, filePath);
+  const noExt = rel.endsWith(sourceExtension) ? rel.slice(0, -sourceExtension.length) : rel;
+  const qualifiedPath = noExt.split(path.sep).join(".").replaceAll(":", "_");
+  const pathHash = createHash("sha256").update(qualifiedPath).digest("hex").slice(0, 12);
+  return `legacy-source:${module}:${pathHash}.${qualifiedPath}`;
 }
 
 // ─── Skip accounting ─────────────────────────────────────────────────────────
@@ -138,18 +147,51 @@ export function scanAndRegister(db: Database.Database, projectRoot: string): num
 
   let registered = 0;
   const ext = pack.manifest.scaffold.source_extension;
-
-  for (const file of files) {
+  const candidates = files.map((file) => {
     const relPath = path.relative(projectRoot, file);
     const module = deriveArtifactModule(spec, relPath);
-    const id = deriveArtifactId(file, projectRoot, legacyDir, pack.manifest.scaffold.source_extension, module);
+    const baseId = deriveArtifactId(file, legacyDir, ext, module);
+    return { file, relPath, module, baseId };
+  });
+  const baseIdCounts = new Map<string, number>();
+  for (const candidate of candidates) {
+    const slugKey = candidate.baseId.toLowerCase();
+    baseIdCounts.set(slugKey, (baseIdCounts.get(slugKey) ?? 0) + 1);
+  }
+
+  const resolvedCandidates = candidates.map((candidate) => {
+    const collision = (baseIdCounts.get(candidate.baseId.toLowerCase()) ?? 0) > 1;
+    const existingBase = collision
+      ? db.prepare("SELECT path FROM artifacts WHERE id = ?").get(candidate.baseId) as { path: string } | undefined
+      : undefined;
+    const qualifiedId = derivePathQualifiedArtifactId(candidate.file, legacyDir, ext, candidate.module);
+    const id = collision && existingBase?.path !== candidate.relPath ? qualifiedId : candidate.baseId;
+    return { ...candidate, id, qualifiedId };
+  });
+  const qualifiedAliases = new Map(resolvedCandidates.map((candidate) => [candidate.qualifiedId, candidate.id]));
+
+  for (const candidate of resolvedCandidates) {
+    const { file, relPath, module, id } = candidate;
     const exists = db.prepare("SELECT id FROM artifacts WHERE id = ?").get(id);
 
     if (seen.has(id)) {
-      // Two distinct files resolved to the same artifact id (slug collision).
+      // Path qualification should make this unreachable; retain explicit accounting
+      // so any future identity regression fails visibly rather than dropping a file.
       recordSkip(relPath, "duplicate-slug");
       continue;
     }
+
+    // Refresh source-derived dependencies for both new and already-registered
+    // artifacts so partial-registry upgrades replace stale ambiguous edges.
+    if (!/\/test\//i.test(relPath) && !/\/tests\//i.test(relPath)) {
+      const lang: "java" | "python" | "other" = ext === ".java" ? "java" : ext === ".py" ? "python" : "other";
+      try {
+        sourceFiles.push({ id, content: fs.readFileSync(file, "utf-8"), lang });
+      } catch {
+        // unreadable source — leave it out of the dep graph
+      }
+    }
+
     if (exists) {
       // Already in the registry from a prior run — benign dedup, not a loss.
       recordSkip(relPath, "already-registered");
@@ -161,15 +203,6 @@ export function scanAndRegister(db: Database.Database, projectRoot: string): num
       registerArtifact(db, { id, kind: "legacy-source", path: relPath, module });
       registered++;
       seen.add(id);
-      // TASK-10: capture source for dependency extraction (skip test files).
-      if (!/\/test\//i.test(relPath) && !/\/tests\//i.test(relPath)) {
-        const lang: "java" | "python" | "other" = ext === ".java" ? "java" : ext === ".py" ? "python" : "other";
-        try {
-          sourceFiles.push({ id, content: fs.readFileSync(file, "utf-8"), lang });
-        } catch {
-          // unreadable source — leave it out of the dep graph
-        }
-      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.includes("already registered")) {
@@ -192,11 +225,9 @@ export function scanAndRegister(db: Database.Database, projectRoot: string): num
   );
   let autoLinks = 0;
   for (const sf of sourceFiles) {
-    const deps = extractSourceDependencies(sf.id, sf.content, sf.lang, idSet);
-    if (deps.length > 0) {
-      recordAutoDependencies(db, sf.id, deps);
-      autoLinks += deps.length;
-    }
+    const deps = extractSourceDependencies(sf.id, sf.content, sf.lang, idSet, qualifiedAliases);
+    recordAutoDependencies(db, sf.id, deps);
+    autoLinks += deps.length;
   }
   process.stdout.write(`  [deps] source-level links auto-detected: ${autoLinks}\n`);
 
