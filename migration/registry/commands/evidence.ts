@@ -400,6 +400,15 @@ export function canApproveArtifact(
     };
   }
 
+  const freshness = checkEvidenceFreshness(db, artifactId);
+  if (!freshness.ok) {
+    return {
+      ok: false,
+      evidenceIds: [latestEvidence.evidence_id],
+      reason: freshness.reason,
+    };
+  }
+
   return {
     ok: true,
     evidenceIds: [latestEvidence.evidence_id],
@@ -411,6 +420,11 @@ export function approveArtifactWithEvidence(
   db: Database.Database,
   opts: ApproveArtifactWithEvidenceOptions,
 ): ArbitrationDecision {
+  const freshness = checkEvidenceFreshness(db, opts.artifactId);
+  if (!freshness.ok) {
+    throw new RegistryError(1, freshness.reason);
+  }
+
   const tx = db.transaction(() => {
     const approval = canApproveArtifact(db, opts.artifactId, opts.arbiter, {
       runId: opts.runId,
@@ -491,6 +505,29 @@ function validateRuntimeEvidence(
   if (!safeEqual(expected, row.authenticity)) {
     return { ok: false, reason: "Runtime evidence authenticity check failed." };
   }
+  return { ok: true };
+}
+
+export function checkEvidenceFreshness(
+  db: Database.Database,
+  artifactId: string,
+): { ok: true } | { ok: false; reason: string } {
+  const latestEvidence = getLatestExecutableEvidence(db, artifactId);
+  if (!latestEvidence) return { ok: true };
+
+  const latestRepairEvent = db.prepare(
+    `SELECT ts FROM events
+     WHERE artifact_id = ? AND type = 'auto-rework'
+     ORDER BY rowid DESC LIMIT 1`,
+  ).get(artifactId) as { ts: string } | undefined;
+
+  if (latestRepairEvent && latestEvidence.created_at <= latestRepairEvent.ts) {
+    return {
+      ok: false,
+      reason: "Stale evidence: latest runtime evidence predates a repair event; fresh evidence is required after repair",
+    };
+  }
+
   return { ok: true };
 }
 
