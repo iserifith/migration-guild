@@ -8,7 +8,7 @@ import type Database from "better-sqlite3";
 import type { PhaseKey } from "./config";
 import { resolveGuildConfig, resolveWorkspaceRoot } from "./config";
 import { resolveHarness } from "./harness";
-import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions, type WardenSnapshot } from "./warden";
+import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions, transientWardenExclusions, type WardenSnapshot } from "./warden";
 import { releaseClaimedArtifactsForOwner } from "../registry/commands/artifacts";
 import { releaseClaimsForRun } from "../registry/commands/claim";
 import { startRun, finishRun, setRunPid, type RunTokenUsage } from "../registry/commands/runs";
@@ -26,6 +26,7 @@ export interface SpawnAgentOpts {
   claimOwner?: string;
   releaseClaimsOnFailure?: boolean;
   preClaim?: PreClaimOpts;
+  runId?: string;
 }
 
 export interface PreClaimOpts {
@@ -285,7 +286,7 @@ export function summarizeRunFailures(results: AgentRunResult[]): string | null {
 export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   const { agent, model, prompt, db } = opts;
   const claimOwner = opts.claimOwner ?? `${agent}:${randomUUID()}`;
-  const runId = randomUUID().replace(/-/g, "").slice(0, 16);
+  const runId = opts.runId ?? randomUUID().replace(/-/g, "").slice(0, 16);
   const startMs = Date.now();
   const startedIso = new Date(startMs).toISOString();
   const projectRoot = resolveWorkspaceRoot();
@@ -293,6 +294,10 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   const agentCommand = resolveHarness(config, projectRoot).command;
   const beforeFiles = snapshotChangedFiles(projectRoot);
   const usageFile = path.join(os.tmpdir(), `guild-opencode-usage-${runId}.json`);
+  const wardenExcludedPaths = transientWardenExclusions(projectRoot, [
+    path.resolve(projectRoot, config.evidence.output_dir),
+    ...activeSqliteWardenExclusions(db),
+  ]);
 
   const logFile = opts.logDir
     ? path.join(opts.logDir, formatLogFileName(agent, startMs, runId, opts.phase))
@@ -391,7 +396,7 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
       } catch {
         wardenAllowedPaths = [];
       }
-      wardenSnapshot = snapshotWorkspaceForWardenWithExclusions(projectRoot, activeSqliteWardenExclusions(db));
+      wardenSnapshot = snapshotWorkspaceForWardenWithExclusions(projectRoot, wardenExcludedPaths);
     } catch {
       process.stderr.write(`[guildctl] pre-claim: failed to parse claim JSON\n`);
       finishRun(db, { runId: run.run_id, exitCode: 1, reason: "pre-claim: failed to parse claim JSON" });
@@ -482,7 +487,7 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
             workspaceRoot: projectRoot,
             snapshot: wardenSnapshot,
             allowedPaths: wardenAllowedPaths,
-            excludedPaths: activeSqliteWardenExclusions(db),
+            excludedPaths: wardenExcludedPaths,
             agent: "guildctl-warden",
           });
           if (!warden.clean) {
