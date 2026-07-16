@@ -33,5 +33,6 @@ test("migration guildctl CLI recognizes run bootstrap", () => {
   const result = runCli(scriptPath, cwd, "bootstrap");
 
   assert.notEqual(result.stderr.includes('Unknown phase: "bootstrap"'), true);
-  assert.notEqual(result.status, 0);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /bootstrapped|skipping/i);
 });
