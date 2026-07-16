@@ -51,6 +51,17 @@ function runCli(fixture: { cwd: string; scriptPath: string; dbPath: string }, ar
   });
 }
 
+function runRegistryCli(fixture: { cwd: string; dbPath: string }, args: string[]) {
+  return spawnSync(process.execPath, ["--import", "tsx", path.join(fixture.cwd, "registry", "cli.ts"), "--db", fixture.dbPath, ...args], {
+    cwd: fixture.cwd,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      DOTENV_CONFIG_SILENT: "true",
+    },
+  });
+}
+
 function withFixture(fn: (fixture: ReturnType<typeof createFixture>) => void): void {
   const fixture = createFixture();
   try {
@@ -67,6 +78,32 @@ test("help output includes evidence and arbitrate commands", () => {
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /evidence/);
     assert.match(result.stdout, /arbitrate/);
+  });
+});
+
+test("registry CLI forbids direct promotion to reviewed", () => {
+  withFixture((fixture) => {
+    const result = runRegistryCli(fixture, [
+      "set-artifact-status",
+      "--id",
+      ARTIFACT_ID,
+      "--status",
+      "reviewed",
+      "--agent",
+      "review-agent",
+    ]);
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout, /Direct promotion to reviewed is forbidden/);
+
+    const db = new Database(fixture.dbPath);
+    try {
+      assert.equal(getArtifactById(db, ARTIFACT_ID)?.status, "migrated");
+      const decisions = db.prepare("SELECT COUNT(*) AS count FROM arbitration_decisions WHERE artifact_id = ?").get(ARTIFACT_ID) as { count: number };
+      assert.equal(decisions.count, 0);
+    } finally {
+      db.close();
+    }
   });
 });
 

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
 import { runAutoQueue, type QueueArtifactExecutor } from "../guildctl/supervisor/queue";
@@ -32,6 +35,13 @@ function depend(db: Database.Database, artifactId: string, dependsOnId: string):
     INSERT INTO dependencies (artifact_id, depends_on_id, relation)
     VALUES (?, ?, 'part-of')
   `).run(artifactId, dependsOnId);
+}
+
+function sourceDep(db: Database.Database, dependentId: string, dependencyId: string): void {
+  db.prepare(`
+    INSERT INTO source_dependencies (dependent_id, dependency_id, signal, created_by)
+    VALUES (?, ?, 'import', 'auto')
+  `).run(dependentId, dependencyId);
 }
 
 function completingExecutor(db: Database.Database, calls: Array<{ id: string; resume: boolean }>): QueueArtifactExecutor {
@@ -249,5 +259,93 @@ test("auto-run command delegates queue items with bounded options and emits one 
     assert.equal(output.endsWith("\n"), true);
   } finally {
     db.close();
+  }
+});
+
+test("non-terminal source dependency blocks readiness and appears in dependencyBlocked", async () => {
+  const db = createDb();
+  try {
+    const root = seed(db, "SrcRoot", 1, "blocked");
+    const dependent = seed(db, "SrcDependent");
+    sourceDep(db, dependent, root);
+    const independent = seed(db, "Independent");
+    const calls: string[] = [];
+
+    const result = await runAutoQueue(db, {
+      executeArtifact: async ({ artifactId }) => {
+        calls.push(artifactId);
+        setArtifactStatus(db, artifactId, "reviewed");
+        return { status: "complete", runId: "run-1", attempts: 1 };
+      },
+    });
+
+    assert.deepEqual(calls, [independent]);
+    assert.equal(result.status, "partial");
+    assert.equal(result.completed, 1);
+    assert.deepEqual(result.dependencyBlocked, [dependent]);
+  } finally {
+    db.close();
+  }
+});
+
+test("terminal dependency with missing modern output is skipped and next candidate is selected", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "auto-queue-test-"));
+  try {
+    const db = createDb();
+    try {
+      const dep = seed(db, "HasOutput", 1, "reviewed");
+      const missing = seed(db, "MissingOutput", 1, "planned");
+      sourceDep(db, missing, dep);
+      const independent = seed(db, "Independent", 1, "planned");
+      const calls: string[] = [];
+
+      const result = await runAutoQueue(db, {
+        workspaceRoot: tmpDir,
+        executeArtifact: async ({ artifactId }) => {
+          calls.push(artifactId);
+          setArtifactStatus(db, artifactId, "reviewed");
+          return { status: "complete", runId: "run-1", attempts: 1 };
+        },
+      });
+
+      assert.deepEqual(calls, [independent]);
+      assert.equal(result.status, "partial");
+      assert.equal(result.completed, 1);
+      assert.deepEqual(result.dependencyBlocked, [missing]);
+    } finally {
+      db.close();
+    }
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("terminal dependency with present modern output allows candidate selection", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "auto-queue-test-"));
+  try {
+    const db = createDb();
+    try {
+      const dep = seed(db, "HasOutput", 1, "reviewed");
+      const ready = seed(db, "ReadyArtifact", 1, "planned");
+      sourceDep(db, ready, dep);
+      fs.mkdirSync(path.join(tmpDir, "modern"), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, "modern", "HasOutput.java"), "// migrated\n");
+      const calls: Array<{ id: string; resume: boolean }> = [];
+
+      const result = await runAutoQueue(db, {
+        workspaceRoot: tmpDir,
+        executeArtifact: completingExecutor(db, calls),
+      });
+
+      assert.equal(result.status, "complete");
+      assert.deepEqual(calls, [
+        { id: ready, resume: false },
+      ]);
+      assert.equal(result.completed, 1);
+    } finally {
+      db.close();
+    }
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });

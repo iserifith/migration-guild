@@ -209,6 +209,105 @@ test("spawnAgent treats lingering claimed artifacts after exit 0 as failure", as
   }
 });
 
+test("spawnAgent restores forbidden writes and rolls back claims when a pre-claimed agent exits 0", async () => {
+  const workDir = mkdtempSync(path.join(tmpdir(), "guildctl-runner-warden-"));
+  mkdirSync(path.join(workDir, ".guild"), { recursive: true });
+  const dbPath = path.join(workDir, ".guild", "registry.db");
+  const db = new Database(dbPath);
+  applySchema(db);
+  const stubPath = path.join(workDir, "fake-agent.cjs");
+  const originalAgent = process.env["AGENT_CMD"];
+  const originalWorkspace = process.env["GUILD_WORKSPACE"];
+  const originalRegistry = process.env["REGISTRY_DB"];
+  const repoMigrationRoot = "/home/frierensamacorp/projects/migration-guild-autonomous/migration";
+  const tsxLoader = path.join(repoMigrationRoot, "node_modules", "tsx", "dist", "loader.mjs");
+  const registryCli = path.join(repoMigrationRoot, "registry", "cli.ts");
+  const claimOwner = "code-writer-agent:claim-warden";
+  const artifactId = "legacy-source:com.acme:WardenRollback";
+
+  try {
+    mkdirSync(path.join(workDir, ".guild"), { recursive: true });
+    mkdirSync(path.join(workDir, "legacy"), { recursive: true });
+    mkdirSync(path.join(workDir, "migration", "registry", "dist"), { recursive: true });
+    writeFileSync(path.join(workDir, "migration", "registry", "dist", "cli.js"), `
+const { spawnSync } = require("node:child_process");
+const result = spawnSync(process.execPath, [
+  "--import", ${JSON.stringify(tsxLoader)},
+  ${JSON.stringify(registryCli)},
+  ...process.argv.slice(2)
+], { stdio: "inherit", env: process.env, cwd: process.cwd() });
+process.exit(result.status ?? 1);
+`, "utf8");
+    writeFileSync(path.join(workDir, "legacy", "WardenRollback.java"), "class WardenRollback {}\n");
+    registerArtifact(db, {
+      id: artifactId,
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/WardenRollback.java",
+    });
+    setArtifactWave(db, artifactId, 1);
+    setArtifactStatus(db, artifactId, "planned");
+
+    writeFileSync(stubPath, `
+const { execFileSync } = require("node:child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+fs.mkdirSync(path.join(process.cwd(), "modern"), { recursive: true });
+fs.writeFileSync(path.join(process.cwd(), "modern", "WardenRollback.java"), "class WardenRollback { void ok() {} }\\n");
+fs.writeFileSync(path.join(process.cwd(), "legacy", "Forbidden.java"), "tampered\\n");
+execFileSync(process.execPath, [
+  "--import", ${JSON.stringify(tsxLoader)},
+  ${JSON.stringify(registryCli)},
+  "set-artifact-status",
+  "--id", process.env.GUILDCTL_ARTIFACT_ID,
+  "--status", "migrated",
+  "--agent", "code-writer-agent",
+  "--claim-id", process.env.GUILDCTL_CLAIM_ID,
+  "--claim-token", process.env.GUILDCTL_CLAIM_TOKEN,
+], { cwd: process.cwd(), stdio: "inherit", env: process.env });
+`, "utf8");
+
+    process.env["AGENT_CMD"] = stubPath;
+    process.env["GUILD_WORKSPACE"] = workDir;
+    process.env["REGISTRY_DB"] = path.join(workDir, ".guild", "registry.db");
+
+    const result = await spawnAgent({
+      agent: "code-writer-agent",
+      model: "test-model",
+      prompt: "forbidden write collision regression",
+      db,
+      logDir: workDir,
+      claimOwner,
+      preClaim: { fromStatus: "planned" },
+    });
+
+    const artifact = db.prepare(
+      "SELECT status, claimed_by, claimed_from FROM artifacts WHERE id = ?",
+    ).get(artifactId) as { status: string; claimed_by: string | null; claimed_from: string | null };
+    const run = db.prepare("SELECT status, exit_code, termination_reason FROM runs WHERE run_id = ?").get(result.runId) as { status: string; exit_code: number; termination_reason: string | null };
+    const activeClaims = db.prepare("SELECT COUNT(*) AS n FROM artifact_claims WHERE state = 'active'").get() as { n: number };
+
+    assert.equal(result.exitCode, 1);
+    assert.equal(run.status, "failed");
+    assert.equal(run.exit_code, 1);
+    assert.equal(artifact.status, "migrated");
+    assert.equal(artifact.claimed_by, null);
+    assert.equal(artifact.claimed_from, null);
+    assert.equal(activeClaims.n, 0);
+    assert.equal(readFileSync(path.join(workDir, "modern", "WardenRollback.java"), "utf8"), "class WardenRollback { void ok() {} }\n");
+    assert.equal(existsSync(path.join(workDir, "legacy", "Forbidden.java")), false);
+  } finally {
+    if (originalAgent == null) delete process.env["AGENT_CMD"];
+    else process.env["AGENT_CMD"] = originalAgent;
+    if (originalWorkspace == null) delete process.env["GUILD_WORKSPACE"];
+    else process.env["GUILD_WORKSPACE"] = originalWorkspace;
+    if (originalRegistry == null) delete process.env["REGISTRY_DB"];
+    else process.env["REGISTRY_DB"] = originalRegistry;
+    db.close();
+    rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
 test("spawnAgent pre-claim permits default workspace-local registry DB sidecars", async () => {
   const workDir = mkdtempSync(path.join(tmpdir(), "guildctl-runner-local-db-"));
   const dbPath = path.join(workDir, ".guild", "registry.db");
