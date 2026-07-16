@@ -49,6 +49,21 @@ test("Java pack drives detection, inventory, audit, and scaffold without executa
   db.close();
 });
 
+test("bootstrap falls back from generic default modules and preserves SpringApplication imports", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "guild-bootstrap-default-"));
+  fs.cpSync(path.join(repoRoot, "stacks"), path.join(root, "stacks"), { recursive: true });
+  fs.cpSync(path.join(repoRoot, "package", "mock", "legacy-customer-utils"), path.join(root, "legacy"), { recursive: true });
+  scaffoldGuildConfig(root);
+
+  const result = bootstrapTargetModule(root, [{ path: "legacy/src/main/java/com/acme/legacy/customer/LegacyCustomerKeyService.java", module: "default", role: "service", framework: null }]);
+  assert.equal(result.basePackage, "com.example.migrated");
+  const appPath = path.join(root, "modern", "src", "main", "java", "com", "example", "migrated", "MigratedApplication.java");
+  const appFile = fs.readFileSync(appPath, "utf8");
+  assert.match(appFile, /import org\.springframework\.boot\.SpringApplication;/);
+  assert.match(appFile, /import org\.springframework\.boot\.autoconfigure\.SpringBootApplication;/);
+  assert.doesNotMatch(appFile, /SpringDefaultApplication|SpringBootDefaultApplication/);
+});
+
 test("stack interpolation rejects vocabulary outside the locked set", () => {
   assert.equal(interpolate("{symbol} L{line}", { symbol: "x", line: 4 }), "x L4");
   assert.throws(() => interpolate("{project}", {}), /Unsupported stack-pack placeholder/);

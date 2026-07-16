@@ -61,7 +61,9 @@ function commonPrefix(modules: string[][]): string[] {
 
 function sanitizePackage(input: string, fallback: string): string {
   const cleaned = input.split(".").map((part) => part.toLowerCase().replace(/[^a-z0-9_]/g, "")).filter(Boolean);
-  return cleaned.length > 0 ? cleaned.join(".") : fallback;
+  const candidate = cleaned.length > 0 ? cleaned.join(".") : fallback;
+  if (!candidate || candidate === "default") return fallback;
+  return candidate;
 }
 
 export function deriveBootstrapBasePackage(artifacts: BootstrapArtifactSignal[], fallback = activePack(resolveWorkspaceRoot()).manifest.scaffold.default_package): string {
@@ -142,7 +144,7 @@ export function bootstrapTargetModule(workspaceRoot: string, artifacts: Bootstra
     const resourcesTemplate = fs.readFileSync(path.join(pack.dir, scaffold.resources_template), "utf8");
     maybeWriteFile(path.join(modernRoot, scaffold.resources_dir, scaffold.resources_file), render(resourcesTemplate, [[scaffold.app_name_marker, appName]]), workspaceRoot, created, skipped);
     const applicationTemplate = fs.readFileSync(path.join(pack.dir, scaffold.application_template), "utf8");
-    const rendered = render(applicationTemplate, [[scaffold.package_marker, basePackage], [scaffold.app_class_marker, generatedClass]]);
+    const rendered = render(applicationTemplate, [[scaffold.package_marker, basePackage]]).replace(new RegExp(`\\b${scaffold.app_class_marker}\\b`, "g"), generatedClass);
     maybeWriteFile(path.join(mainRoot, `${generatedClass}${scaffold.source_extension}`), rendered, workspaceRoot, created, skipped);
   }
   return { projectType, template, moduleRoot: modernRoot, basePackage, appName, created, skipped };
