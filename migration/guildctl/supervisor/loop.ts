@@ -11,7 +11,7 @@ import type { AcceptanceEvidence, ClaimedArtifact } from "../../registry/types";
 import { isPathInside } from "../config";
 import { contentSha256, diffSignatures, signatureDigest, type DeltaKind, type SignatureDelta } from "../signature";
 import { runVerify, type VerifyResult } from "../verify";
-import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions } from "../warden";
+import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions, transientWardenExclusions } from "../warden";
 import { classifyFailure, FailureBudget } from "./failures";
 
 export interface AutoWorkerInput {
@@ -322,7 +322,7 @@ export async function runAuto(
 ): Promise<AutoResult> {
   const review = requireReview(opts.review);
   assertAutonomousRegistryPlacement(db, opts.workspaceRoot);
-  const wardenExcludedPaths = activeSqliteWardenExclusions(db);
+  const wardenExcludedPaths = transientWardenExclusions(opts.workspaceRoot, [path.resolve(opts.outputDir ?? `${opts.workspaceRoot}/.guild/evidence`), ...activeSqliteWardenExclusions(db)]);
   const runId = `auto-${randomUUID().replace(/-/g, "").slice(0, 12)}`;
   startRun(db, {
     runId,

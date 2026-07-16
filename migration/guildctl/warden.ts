@@ -62,11 +62,26 @@ function excludedPathSet(paths: string[] | undefined): Set<string> {
   return new Set((paths ?? []).map(normalizeAbsolute));
 }
 
+function isPathWithin(file: string, root: string): boolean {
+  const normalizedFile = normalizeAbsolute(file).replace(/\\/g, "/");
+  const normalizedRoot = normalizeAbsolute(root).replace(/\\/g, "/").replace(/\/+$/, "");
+  return normalizedFile === normalizedRoot || normalizedFile.startsWith(`${normalizedRoot}/`);
+}
+
+function isExcludedPath(file: string, excluded: Set<string>): boolean {
+  for (const excludedPath of excluded) {
+    if (isPathWithin(file, excludedPath)) return true;
+  }
+  return false;
+}
+
 function walk(root: string, excluded: Set<string>, dir = root): string[] {
   const out: string[] = [];
+  if (isExcludedPath(dir, excluded)) return out;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (SKIP_DIRS.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
+    if (isExcludedPath(full, excluded)) continue;
     if (entry.isDirectory()) out.push(...walk(root, excluded, full));
     else if (entry.isFile() && !excluded.has(normalizeAbsolute(full))) out.push(full);
   }
@@ -112,7 +127,7 @@ export function enforceWardenSnapshot(
   const excluded = excludedPathSet(opts.excludedPaths);
 
   for (const file of [...all].sort()) {
-    if (excluded.has(normalizeAbsolute(path.join(opts.workspaceRoot, file)))) continue;
+    if (isExcludedPath(path.join(opts.workspaceRoot, file), excluded)) continue;
     if (isAllowed(file, opts.allowedPaths)) continue;
     const before = opts.snapshot.files.get(file);
     const current = after.files.get(file);
@@ -139,4 +154,13 @@ export function enforceWardenSnapshot(
   }
 
   return { clean: violations.length === 0, violations };
+}
+
+export function transientWardenExclusions(workspaceRoot: string, extraPaths: string[] = []): string[] {
+  return [
+    path.join(workspaceRoot, ".guild", "evidence"),
+    path.join(workspaceRoot, "modern", ".gradle"),
+    path.join(workspaceRoot, "modern", "build"),
+    ...extraPaths,
+  ].map(normalizeAbsolute);
 }

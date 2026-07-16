@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
-import { enforceWardenSnapshot, snapshotWorkspaceForWarden, snapshotWorkspaceForWardenWithExclusions } from "../guildctl/warden";
+import { enforceWardenSnapshot, snapshotWorkspaceForWarden, snapshotWorkspaceForWardenWithExclusions, transientWardenExclusions } from "../guildctl/warden";
 import { registerArtifact } from "../registry/commands/artifacts";
 import { applySchema } from "../registry/db/schema";
 
@@ -59,6 +59,57 @@ test("filesystem warden restores unauthorized writes creations and deletions exa
       .get("legacy-source:com.acme:Warden") as { type: string; summary: string; event_data: string };
     assert.equal(event.type, "filesystem-violation");
     assert.match(event.summary, /3 unauthorized filesystem change/);
+  } finally {
+    db.close();
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("filesystem warden skips excluded directory subtrees for transient build and evidence outputs", () => {
+  const db = createDb();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-warden-transient-"));
+  try {
+    const dirs = transientWardenExclusions(workspace);
+    for (const dir of dirs) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.mkdirSync(path.join(workspace, "legacy"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "modern", "build", "classes"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "modern", ".gradle", "8.10.2", "fileHashes"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, ".guild", "evidence"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "modern", "build", "classes", "App.class"), "original class bytes\n");
+    fs.writeFileSync(path.join(workspace, "modern", ".gradle", "8.10.2", "fileHashes", "fileHashes.bin"), "original gradle cache\n");
+    fs.writeFileSync(path.join(workspace, ".guild", "evidence", "runtime.log"), "original evidence\n");
+    fs.writeFileSync(path.join(workspace, "legacy", "Keep.java"), "keep me\n");
+    registerArtifact(db, {
+      id: "legacy-source:com.acme:TransientWarden",
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/Keep.java",
+    });
+
+    const snapshot = snapshotWorkspaceForWardenWithExclusions(workspace, dirs);
+    assert.equal(snapshot.files.has("modern/build/classes/App.class"), false);
+    assert.equal(snapshot.files.has("modern/.gradle/8.10.2/fileHashes/fileHashes.bin"), false);
+    assert.equal(snapshot.files.has(".guild/evidence/runtime.log"), false);
+
+    fs.writeFileSync(path.join(workspace, "modern", "build", "classes", "App.class"), "tampered class bytes\n");
+    fs.writeFileSync(path.join(workspace, "modern", ".gradle", "8.10.2", "fileHashes", "fileHashes.bin"), "tampered gradle cache\n");
+    fs.writeFileSync(path.join(workspace, ".guild", "evidence", "runtime.log"), "tampered evidence\n");
+
+    const result = enforceWardenSnapshot(db, {
+      artifactId: "legacy-source:com.acme:TransientWarden",
+      workspaceRoot: workspace,
+      snapshot,
+      allowedPaths: ["legacy/Keep.java"],
+      excludedPaths: dirs,
+      agent: "guildctl-warden",
+    });
+
+    assert.equal(result.clean, true);
+    assert.equal(fs.readFileSync(path.join(workspace, "modern", "build", "classes", "App.class"), "utf8"), "tampered class bytes\n");
+    assert.equal(fs.readFileSync(path.join(workspace, "modern", ".gradle", "8.10.2", "fileHashes", "fileHashes.bin"), "utf8"), "tampered gradle cache\n");
+    assert.equal(fs.readFileSync(path.join(workspace, ".guild", "evidence", "runtime.log"), "utf8"), "tampered evidence\n");
   } finally {
     db.close();
     fs.rmSync(workspace, { recursive: true, force: true });
