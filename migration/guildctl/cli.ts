@@ -29,6 +29,7 @@ import { runStatus, printNextSteps } from "./commands/status";
 import { runWatch } from "./commands/watch";
 import { runRelease } from "./commands/release";
 import { runRemediate } from "./commands/remediate";
+import { runRepair } from "./commands/repair";
 import { runAuditCoverage, formatCoverageReport } from "./commands/audit";
 import { runEvidenceAdd, runEvidenceList } from "./commands/evidence";
 import { runVerifyCommand } from "./commands/verify";
@@ -329,6 +330,25 @@ program
     });
   });
 
+// ─── repair ───────────────────────────────────────────────────────────────────
+
+program
+  .command("repair")
+  .description("Recover from crash or interrupted migration: reap dead runs, release stale claims, prepare to continue")
+  .option("--dry-run", "Show what would be repaired without making any changes")
+  .option("-w, --wave <n>", "Only repair artifacts in this wave", parseInt)
+  .option("--no-release-stuck", "Do not force-release in-progress artifacts (only reconcile stale claims)")
+  .option("--older-than <mins>", "Only release stuck artifacts older than N minutes", parseInt)
+  .action((opts) => {
+    assertDbExists(dbPath());
+    runRepair(db(), {
+      dryRun: opts.dryRun === true,
+      wave: opts.wave,
+      releaseAllStuck: opts.releaseStuck !== false,
+      olderThanMins: opts.olderThan,
+    });
+  });
+
 // ─── audit ───────────────────────────────────────────────────────────────────
 
 const audit = program
@@ -521,7 +541,7 @@ benchmark
 
 program
   .command("run [phase]")
-  .description("Run a phase: init | inventory | plan | bootstrap | migrate | review | remediate. init performs evidence mapping; legacy phases use registry.")
+  .description("Run a phase: init | inventory | plan | bootstrap | migrate | review | remediate | repair. init performs evidence mapping; legacy phases use registry.")
   .option("-p, --parallel <n>", "Number of parallel sessions (migrate / review)", parseInt)
   .option("-w, --wave <n>", "Only migrate artifacts in this wave number (migrate only)", parseInt)
   .action(async (phase: string | undefined, opts) => {
@@ -559,11 +579,15 @@ program
         assertDbExists(dbPath());
         await runRemediate(db());
         break;
+      case "repair":
+        assertDbExists(dbPath());
+        runRepair(db());
+        break;
       case undefined:
         printNextSteps(db());
         break;
       default:
-        process.stderr.write(`\n  ✗ Unknown phase: "${phase}". Valid: init, inventory, plan, bootstrap, migrate, review, remediate\n\n`);
+        process.stderr.write(`\n  ✗ Unknown phase: "${phase}". Valid: init, inventory, plan, bootstrap, migrate, review, remediate, repair\n\n`);
         process.exit(1);
     }
   });
