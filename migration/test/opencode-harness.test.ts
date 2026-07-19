@@ -75,3 +75,24 @@ test("opencode harness honors an explicit CLI binary override", () => {
   });
   assert.equal(invocation.command, expected);
 });
+
+test("opencode harness embeds runner preclaims for tool environments that scrub variables", () => {
+  const invocation = harness.buildOpencodeInvocation(["--agent", "analyze-agent", "--prompt", "analyze"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      OPENAI_API_KEY: "test",
+      GUILDCTL_ARTIFACT_ID: "legacy-source:Example",
+      GUILDCTL_CLAIM_ID: "claim-123",
+      GUILDCTL_CLAIM_TOKEN: "token-456",
+      GUILDCTL_RUN_ID: "run-789",
+      GUILDCTL_AGENT_NAME: "analyze-agent:owner",
+    },
+  });
+  assert.match(invocation.fullPrompt, /Runner claim handoff \(authoritative\)/);
+  assert.match(invocation.fullPrompt, /Do not run the `claim` command/);
+  assert.match(invocation.fullPrompt, /"artifact_id": "legacy-source:Example"/);
+  assert.match(invocation.fullPrompt, /"claim_id": "claim-123"/);
+  assert.match(invocation.fullPrompt, /"claim_token": "token-456"/);
+  assert.match(invocation.fullPrompt, /"run_id": "run-789"/);
+});

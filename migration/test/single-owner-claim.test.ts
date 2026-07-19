@@ -228,6 +228,13 @@ test("TASK-05: serial run leaves zero active claims after worker completion", ()
 });
 test("TASK-05: deriveExpectedOutputPaths mirrors legacy/ to modern/", () => {
   assert.deepEqual(deriveExpectedOutputPaths({ path: "legacy/a/b/C.java" } as any), ["modern/a/b/C.java"]);
+  assert.deepEqual(
+    deriveExpectedOutputPaths({ path: "legacy/jforum2-source/src/net/jforum/ForumSessionListener.java" } as any),
+    [
+      "modern/src/main/java/net/jforum/ForumSessionListener.java",
+      "modern/src/test/java/net/jforum/ForumSessionListenerTest.java",
+    ],
+  );
   assert.deepEqual(deriveExpectedOutputPaths({ path: "src/main/C.java" } as any), []);
 });
 

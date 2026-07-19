@@ -80,6 +80,11 @@ function walk(root: string, excluded: Set<string>, dir = root): string[] {
     if (SKIP_DIRS.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
     if (isExcludedPath(full, excluded)) continue;
+    // Registry context/changelog files are authoritative runtime state written
+    // by registry CLI commands on behalf of workers. They are not worker source
+    // edits and must survive warden enforcement, including when the workspace
+    // reaches the package through a junction or nested source checkout.
+    if (entry.isDirectory() && entry.name === "artifacts" && path.basename(dir) === "migration") continue;
     if (entry.isDirectory()) out.push(...walk(root, excluded, full));
     else if (entry.isFile()) out.push(full);
   }

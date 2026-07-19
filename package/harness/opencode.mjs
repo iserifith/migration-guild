@@ -189,7 +189,8 @@ export function buildOpencodeInvocation(argv, options = {}) {
   const parsed = parseArgs(argv);
   const env = options.env ?? process.env;
   const persona = loadPersona(parsed.agent, options.cwd);
-  const fullPrompt = persona ? `${persona}\n\n---\n\n${parsed.prompt}` : parsed.prompt;
+  const claimHandoff = buildClaimHandoff(env);
+  const fullPrompt = [persona, claimHandoff, parsed.prompt].filter(Boolean).join("\n\n---\n\n");
   const runtimeConfig = writeProviderConfig(parsed.model, env, parsed.readOnly);
   const args = ["run", "--pure", "--auto", "--format", "json"];
   if (parsed.model) args.push("-m", `${PROVIDER_ID}/${parsed.model}`);
@@ -205,6 +206,27 @@ export function buildOpencodeInvocation(argv, options = {}) {
       OPENCODE_CONFIG_CONTENT: runtimeConfig.content,
     },
   };
+}
+
+export function buildClaimHandoff(env = process.env) {
+  const artifactId = env.GUILDCTL_ARTIFACT_ID;
+  const claimId = env.GUILDCTL_CLAIM_ID;
+  const claimToken = env.GUILDCTL_CLAIM_TOKEN;
+  if (!artifactId || !claimId || !claimToken) return "";
+  const payload = {
+    artifact_id: artifactId,
+    claim_id: claimId,
+    claim_token: claimToken,
+    run_id: env.GUILDCTL_RUN_ID ?? null,
+    owner: env.GUILDCTL_AGENT_NAME ?? null,
+  };
+  return [
+    "## Runner claim handoff (authoritative)",
+    "The runner has already claimed this artifact for this session. Do not run the `claim` command and do not require these values to exist inside Bash environment variables. Use the literal values below for every registry command, including heartbeat and status advancement.",
+    "```json",
+    JSON.stringify(payload, null, 2),
+    "```",
+  ].join("\n");
 }
 
 export function main(argv = process.argv.slice(2)) {
