@@ -44,6 +44,15 @@ function operatorStateJson(db: Database.Database, key: string): Record<string, u
   }
 }
 
+// SQLite datetime('now') values are UTC but omit a timezone suffix. JavaScript
+// otherwise interprets them as local time and inflates claim age by the host
+// timezone offset.
+function parseRegistryTimestamp(raw: string): number {
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw);
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  return Date.parse(hasTimezone ? normalized : `${normalized}Z`);
+}
+
 export function runPipelineStateChecks(ctx: PipelineCheckContext): CheckResult[] {
   const { db, workspaceRoot } = ctx;
   const checks: CheckResult[] = [];
@@ -192,7 +201,7 @@ export function runPipelineStateChecks(ctx: PipelineCheckContext): CheckResult[]
       const stale = rows.filter((r) => {
         const raw = r.heartbeat_at ?? r.claimed_at;
         if (!raw) return false;
-        const t = Date.parse(raw);
+        const t = parseRegistryTimestamp(raw);
         return Number.isFinite(t) && now - t > thresholdMs;
       });
       if (stale.length > 0) {
@@ -200,7 +209,7 @@ export function runPipelineStateChecks(ctx: PipelineCheckContext): CheckResult[]
           .slice(0, 5)
           .map((r) => {
             const raw = r.heartbeat_at ?? r.claimed_at!;
-            return `${r.claim_id}${r.owner_id ? ` (${r.owner_id})` : ""} +${Math.round((now - Date.parse(raw)) / 60000)}m`;
+            return `${r.claim_id}${r.owner_id ? ` (${r.owner_id})` : ""} +${Math.round((now - parseRegistryTimestamp(raw)) / 60000)}m`;
           })
           .join(", ");
         checks.push({ status: "warn", message: `${stale.length} dangling active claim(s) older than 1h: ${listed}` });

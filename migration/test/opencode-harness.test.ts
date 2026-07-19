@@ -48,15 +48,30 @@ test("opencode harness renders readable output from JSON events", () => {
   assert.match(harness.renderReadableEvent(JSON.stringify({ type: "tool_use", part: { type: "tool", tool: "bash", state: { status: "completed" } } })), /bash completed/);
 });
 
-test("opencode harness invokes opencode run with JSON format", () => {
+test("opencode harness invokes supported OpenCode flags with isolated full permissions", () => {
   const invocation = harness.buildOpencodeInvocation(["--model", "gpt-test", "--prompt", "hello"], { cwd: process.cwd(), env: { ...process.env, OPENAI_API_KEY: "test" } });
-  assert.deepEqual(invocation.args.slice(0, 4), ["run", "--dangerously-skip-permissions", "--format", "json"]);
+  assert.deepEqual(invocation.args.slice(0, 5), ["run", "--pure", "--auto", "--format", "json"]);
   assert.ok(invocation.args.includes("guild/gpt-test"));
+  const config = JSON.parse(invocation.env.OPENCODE_CONFIG_CONTENT);
+  assert.deepEqual(config.plugin, []);
+  assert.deepEqual(config.instructions, []);
+  assert.equal(config.permission, "allow");
+  assert.deepEqual(config.enabled_providers, ["guild"]);
 });
 
-test("opencode harness read-only review mode does not request permission bypass", () => {
+test("opencode harness read-only review mode denies edits in runtime config", () => {
   const invocation = harness.buildOpencodeInvocation(["--model", "gpt-test", "--read-only", "--prompt", "hello"], { cwd: process.cwd(), env: { ...process.env, OPENAI_API_KEY: "test" } });
-  assert.deepEqual(invocation.args.slice(0, 3), ["run", "--format", "json"]);
-  assert.equal(invocation.args.includes("--dangerously-skip-permissions"), false);
+  assert.deepEqual(invocation.args.slice(0, 5), ["run", "--pure", "--auto", "--format", "json"]);
+  const config = JSON.parse(invocation.env.OPENCODE_CONFIG_CONTENT);
+  assert.deepEqual(config.permission, { "*": "allow", edit: "deny" });
   assert.equal(invocation.parsed.readOnly, true);
+});
+
+test("opencode harness honors an explicit CLI binary override", () => {
+  const expected = process.platform === "win32" ? "C:\\tools\\opencode.exe" : "/tools/opencode";
+  const invocation = harness.buildOpencodeInvocation(["--prompt", "hello"], {
+    cwd: process.cwd(),
+    env: { ...process.env, OPENAI_API_KEY: "test", OPENCODE_CLI_PATH: expected },
+  });
+  assert.equal(invocation.command, expected);
 });
