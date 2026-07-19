@@ -99,6 +99,32 @@ function isAllowed(file: string, allowedPaths: string[]): boolean {
   });
 }
 
+function registeredExpectedOutputPaths(db: Database.Database | undefined): string[] {
+  if (!db) return [];
+  try {
+    const rows = db.prepare(`
+      SELECT expected_output_paths
+      FROM artifact_claims
+      WHERE expected_output_paths IS NOT NULL
+    `).all() as Array<{ expected_output_paths: string }>;
+    const paths = new Set<string>();
+    for (const row of rows) {
+      try {
+        const parsed = JSON.parse(row.expected_output_paths) as unknown;
+        if (Array.isArray(parsed)) {
+          for (const value of parsed) if (typeof value === "string" && value) paths.add(value);
+        }
+      } catch {
+        // Ignore malformed historical claim metadata; the current claim's
+        // validated allowed paths are still enforced by the caller.
+      }
+    }
+    return [...paths];
+  } catch {
+    return [];
+  }
+}
+
 export function snapshotWorkspaceForWarden(workspaceRoot: string): WardenSnapshot {
   return snapshotWorkspaceForWardenWithExclusions(workspaceRoot, []);
 }
@@ -128,10 +154,14 @@ export function enforceWardenSnapshot(
   const all = new Set([...opts.snapshot.files.keys(), ...after.files.keys()]);
   const violations: WardenViolation[] = [];
   const excluded = excludedPathSet(opts.excludedPaths);
+  // Parallel workers share one workspace. Every path sanctioned by any claim
+  // is legitimate migration output; otherwise one worker can restore/delete a
+  // sibling worker's completed file after taking its earlier snapshot.
+  const allowedPaths = [...opts.allowedPaths, ...registeredExpectedOutputPaths(db)];
 
   for (const file of [...all].sort()) {
     if (isExcludedPath(path.join(opts.workspaceRoot, file), excluded)) continue;
-    if (isAllowed(file, opts.allowedPaths)) continue;
+    if (isAllowed(file, allowedPaths)) continue;
     const before = opts.snapshot.files.get(file);
     const current = after.files.get(file);
     if (!before && current) {
