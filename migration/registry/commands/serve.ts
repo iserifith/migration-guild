@@ -158,6 +158,39 @@ export function startServer(db: Database.Database, port = 3322) {
       }));
     }
 
+    // ── /api/runs/<runId>/log — plain-text log file for one run ──────────
+    //
+    // The UI's fetchRunLog() calls this endpoint; the route matches
+    // /api/runs/<id>/log and streams the run's log_file as text/plain.
+    // Returns 404 when the run or the log file is missing.
+    const runLogMatch = p.match(/^\/api\/runs\/([^/]+)\/log$/);
+    if (req.method === "GET" && runLogMatch) {
+      const runId = decodeURIComponent(runLogMatch[1]);
+      const run = db.prepare("SELECT log_file FROM runs WHERE run_id = ?").get(runId) as
+        | { log_file: string | null }
+        | undefined;
+
+      if (!run) {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Run not found");
+        return;
+      }
+
+      const logPath = run.log_file;
+      if (!logPath || !fs.existsSync(logPath)) {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Log file not found");
+        return;
+      }
+
+      res.writeHead(200, {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Access-Control-Allow-Origin": "*",
+      });
+      fs.createReadStream(logPath).pipe(res);
+      return;
+    }
+
     if (p === "/api/runs") {
       const shouldPage =
         url.searchParams.has("page") ||
