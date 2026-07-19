@@ -199,6 +199,56 @@ test("filesystem warden preserves registry-owned migration artifact context", ()
   }
 });
 
+test("filesystem warden preserves output paths sanctioned by parallel claims", () => {
+  const db = createDb();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-warden-parallel-"));
+  try {
+    fs.mkdirSync(path.join(workspace, "modern"), { recursive: true });
+    registerArtifact(db, {
+      id: "legacy-source:com.acme:Current",
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/Current.java",
+    });
+    registerArtifact(db, {
+      id: "legacy-source:com.acme:Sibling",
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/Sibling.java",
+    });
+    db.prepare(`
+      INSERT INTO artifact_claims (
+        claim_id, artifact_id, owner_id, agent, from_status, claim_token,
+        state, attempt_no, expected_output_paths, claimed_at, lease_expires_at
+      ) VALUES (
+        'claim-sibling', 'legacy-source:com.acme:Sibling', 'sibling-owner',
+        'test-writer-agent', 'analyzed', 'token-sibling', 'completed', 1,
+        '["modern/SiblingTest.java"]', datetime('now'), datetime('now', '+30 minutes')
+      )
+    `).run();
+
+    const snapshot = snapshotWorkspaceForWarden(workspace);
+    fs.writeFileSync(path.join(workspace, "modern", "SiblingTest.java"), "sanctioned\n");
+    fs.writeFileSync(path.join(workspace, "modern", "Unauthorized.java"), "unauthorized\n");
+
+    const result = enforceWardenSnapshot(db, {
+      artifactId: "legacy-source:com.acme:Current",
+      workspaceRoot: workspace,
+      snapshot,
+      allowedPaths: [],
+      agent: "guildctl-warden",
+    });
+
+    assert.equal(result.clean, false);
+    assert.deepEqual(result.violations.map((v) => v.path), ["modern/Unauthorized.java"]);
+    assert.equal(fs.readFileSync(path.join(workspace, "modern", "SiblingTest.java"), "utf8"), "sanctioned\n");
+    assert.equal(fs.existsSync(path.join(workspace, "modern", "Unauthorized.java")), false);
+  } finally {
+    db.close();
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 test("runner expands a junction log path to its canonical target", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "guild-warden-junction-"));
   try {
