@@ -99,14 +99,15 @@ function isAllowed(file: string, allowedPaths: string[]): boolean {
   });
 }
 
-function registeredExpectedOutputPaths(db: Database.Database | undefined): string[] {
+function registeredExpectedOutputPaths(db: Database.Database | undefined, excludeArtifactId: string): string[] {
   if (!db) return [];
   try {
     const rows = db.prepare(`
       SELECT expected_output_paths
       FROM artifact_claims
       WHERE expected_output_paths IS NOT NULL
-    `).all() as Array<{ expected_output_paths: string }>;
+        AND artifact_id != ?
+    `).all(excludeArtifactId) as Array<{ expected_output_paths: string }>;
     const paths = new Set<string>();
     for (const row of rows) {
       try {
@@ -154,10 +155,13 @@ export function enforceWardenSnapshot(
   const all = new Set([...opts.snapshot.files.keys(), ...after.files.keys()]);
   const violations: WardenViolation[] = [];
   const excluded = excludedPathSet(opts.excludedPaths);
-  // Parallel workers share one workspace. Every path sanctioned by any claim
-  // is legitimate migration output; otherwise one worker can restore/delete a
-  // sibling worker's completed file after taking its earlier snapshot.
-  const allowedPaths = [...opts.allowedPaths, ...registeredExpectedOutputPaths(db)];
+  // Parallel workers share one workspace. Every path sanctioned by a sibling
+  // artifact's claim is legitimate migration output; otherwise one worker can
+  // restore/delete a sibling worker's completed file after taking its earlier
+  // snapshot. The current artifact's own outputs are governed solely by
+  // opts.allowedPaths so that review-phase enforcement (which passes an empty
+  // allowlist) still fails closed on post-verification mutations of them.
+  const allowedPaths = [...opts.allowedPaths, ...registeredExpectedOutputPaths(db, opts.artifactId)];
 
   for (const file of [...all].sort()) {
     if (isExcludedPath(path.join(opts.workspaceRoot, file), excluded)) continue;
