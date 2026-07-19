@@ -166,6 +166,39 @@ test("filesystem warden excludes a runner-owned log directory subtree", () => {
   }
 });
 
+test("filesystem warden preserves registry-owned migration artifact context", () => {
+  const db = createDb();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-warden-context-"));
+  try {
+    const contextDir = path.join(workspace, "nested-package", "migration", "artifacts", "artifact-one", "context");
+    fs.mkdirSync(contextDir, { recursive: true });
+    registerArtifact(db, {
+      id: "legacy-source:com.acme:ContextOwner",
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/ContextOwner.java",
+    });
+
+    const snapshot = snapshotWorkspaceForWarden(workspace);
+    const contextFile = path.join(contextDir, "analyze-agent.md");
+    fs.writeFileSync(contextFile, "## Summary\ncontext\n");
+
+    const result = enforceWardenSnapshot(db, {
+      artifactId: "legacy-source:com.acme:ContextOwner",
+      workspaceRoot: workspace,
+      snapshot,
+      allowedPaths: [],
+      agent: "guildctl-warden",
+    });
+
+    assert.equal(result.clean, true);
+    assert.equal(fs.readFileSync(contextFile, "utf8"), "## Summary\ncontext\n");
+  } finally {
+    db.close();
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 test("runner expands a junction log path to its canonical target", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "guild-warden-junction-"));
   try {

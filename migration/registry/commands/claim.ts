@@ -376,7 +376,15 @@ export function releaseClaimedArtifactsForOwner(
  * (TASK-04 consumes this to compute the per-pool allowed-path union).
  */
 export function deriveExpectedOutputPaths(artifact: Artifact): string[] {
-  const p = artifact.path ?? "";
+  const p = (artifact.path ?? "").replace(/\\/g, "/");
+  const javaSource = p.match(/(?:^|\/)legacy\/.*?\/src\/(.+)\.java$/i);
+  if (javaSource) {
+    const relativeClass = javaSource[1];
+    return [
+      `modern/src/main/java/${relativeClass}.java`,
+      `modern/src/test/java/${relativeClass}Test.java`,
+    ];
+  }
   const modernPath = p.replace(/(^|\/)legacy\//, "$1modern/");
   if (modernPath === p) return []; // no legacy/ prefix → nothing predictable
   return [modernPath];
