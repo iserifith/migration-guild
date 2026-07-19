@@ -62,13 +62,26 @@ function excludedPathSet(paths: string[] | undefined): Set<string> {
   return new Set((paths ?? []).map(normalizeAbsolute));
 }
 
+function isExcludedPath(file: string, excluded: Set<string>): boolean {
+  const normalized = normalizeAbsolute(file);
+  for (const excludedPath of excluded) {
+    const relative = path.relative(excludedPath, normalized);
+    if (relative === "") return true;
+    if (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function walk(root: string, excluded: Set<string>, dir = root): string[] {
   const out: string[] = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (SKIP_DIRS.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
+    if (isExcludedPath(full, excluded)) continue;
     if (entry.isDirectory()) out.push(...walk(root, excluded, full));
-    else if (entry.isFile() && !excluded.has(normalizeAbsolute(full))) out.push(full);
+    else if (entry.isFile()) out.push(full);
   }
   return out;
 }
@@ -112,7 +125,7 @@ export function enforceWardenSnapshot(
   const excluded = excludedPathSet(opts.excludedPaths);
 
   for (const file of [...all].sort()) {
-    if (excluded.has(normalizeAbsolute(path.join(opts.workspaceRoot, file)))) continue;
+    if (isExcludedPath(path.join(opts.workspaceRoot, file), excluded)) continue;
     if (isAllowed(file, opts.allowedPaths)) continue;
     const before = opts.snapshot.files.get(file);
     const current = after.files.get(file);

@@ -173,9 +173,12 @@ function verifyStackAdvisorInvariant(
   if (now > baseline) {
     return { passed: true, message: `wrote ${now - baseline} new stack_mapping(s)` };
   }
+  if (now > 0) {
+    return { passed: true, message: `reused ${now} existing stack_mapping(s)` };
+  }
   return {
     passed: false,
-    message: `stack-advisor agent exited 0 but wrote 0 new stack_mappings (was ${baseline}, now ${now}) on a non-empty inventory`,
+    message: "stack-advisor agent exited 0 but no stack_mappings exist for a non-empty inventory",
   };
 }
 
@@ -318,30 +321,39 @@ export async function runPlan(
   const stackAdvisorBaseline = countRows(db, "SELECT COUNT(*) c FROM stack_mappings");
   const inventoryNonEmpty = countRows(db, "SELECT COUNT(*) c FROM artifacts") > 0;
 
-  let stopPolling = poll(db, (events) => {
-    for (const e of events) printEvent(e);
-  });
+  let stopPolling: () => void = () => undefined;
+  if (stackAdvisorBaseline > 0) {
+    const verification = verifyStackAdvisorInvariant(db, stackAdvisorBaseline, inventoryNonEmpty);
+    if (deps.enforceInvariants) {
+      recordPhaseVerification(db, "stack-advisor", 0, verification.passed, verification.message);
+    }
+    console.log(`  ✓ ${verification.message}; skipping redundant advisor run\n`);
+  } else {
+    stopPolling = poll(db, (events) => {
+      for (const e of events) printEvent(e);
+    });
 
-  const stackAdvisorRun = await runPhaseWithInvariant({
-    db,
-    runAgent,
-    logDir,
-    agent: "stack-advisor",
-    model: planningModel,
-    phase: "planning",
-    basePrompt: "Analyze all registered artifacts and propose a legacy→target framework mapping table.\n\n" + readStackInstruction(pack, "mappings"),
-    enforce: deps.enforceInvariants ?? false,
-    retries: deps.retries ?? 0,
-    invariantLabel: "stack-advisor",
-    verify: () => verifyStackAdvisorInvariant(db, stackAdvisorBaseline, inventoryNonEmpty),
-  });
-  const result = stackAdvisorRun.result;
+    const stackAdvisorRun = await runPhaseWithInvariant({
+      db,
+      runAgent,
+      logDir,
+      agent: "stack-advisor",
+      model: planningModel,
+      phase: "planning",
+      basePrompt: "Analyze all registered artifacts and propose a legacy→target framework mapping table.\n\n" + readStackInstruction(pack, "mappings"),
+      enforce: deps.enforceInvariants ?? false,
+      retries: deps.retries ?? 0,
+      invariantLabel: "stack-advisor",
+      verify: () => verifyStackAdvisorInvariant(db, stackAdvisorBaseline, inventoryNonEmpty),
+    });
+    const result = stackAdvisorRun.result;
 
-  stopPolling();
+    stopPolling();
 
-  if (result.exitCode !== 0) {
-    process.stderr.write(`\n  ✗ Stack advisor exited with code ${result.exitCode}\n`);
-    process.exit(result.exitCode);
+    if (result.exitCode !== 0) {
+      process.stderr.write(`\n  ✗ Stack advisor exited with code ${result.exitCode}\n`);
+      process.exit(result.exitCode);
+    }
   }
 
   // ── Human confirmation gate ─────────────────────────────────────────────────

@@ -62,6 +62,28 @@ test("runRepair reports clean state when no crash state exists", () => {
   }
 });
 
+test("runRepair points pending artifacts back to inventory", () => {
+  const db = createDb();
+  try {
+    registerArtifact(db, {
+      id: "legacy-source:com.acme:Pending",
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/src/main/java/com/acme/Pending.java",
+    });
+
+    runRepair(db, { releaseAllStuck: false });
+
+    const row = db.prepare("SELECT value FROM operator_state WHERE key = 'next'").get() as { value: string };
+    const next = JSON.parse(row.value);
+    assert.match(next.summary, /1 artifact\(s\) still need migration/);
+    assert.match(next.reason, /inventory classification/);
+    assert.match(next.recommendedCommand, / inventory$/);
+  } finally {
+    db.close();
+  }
+});
+
 test("runRepair reaps dead runs and reconciles stale claims", () => {
   const db = createDb();
   try {

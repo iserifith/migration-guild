@@ -135,12 +135,17 @@ export function runRepair(db: Database.Database, opts: RepairOpts = {}): void {
   if (!dryRun) {
     const remaining = getRemainingCount(db, opts.wave);
     if (remaining > 0) {
-      const nextCmd = opts.wave != null
-        ? `node migration/guildctl/dist/cli.js migrate --wave ${opts.wave}`
-        : "node migration/guildctl/dist/cli.js migrate";
+      const pending = getPendingCount(db, opts.wave);
+      const nextCmd = pending > 0
+        ? "node migration/guildctl/dist/cli.js inventory"
+        : opts.wave != null
+          ? `node migration/guildctl/dist/cli.js migrate --wave ${opts.wave}`
+          : "node migration/guildctl/dist/cli.js migrate";
       setNext(db, {
         summary: `Repair complete — ${remaining} artifact(s) still need migration.`,
-        reason: "Crash state cleared. Resume migration from where it stopped.",
+        reason: pending > 0
+          ? `${pending} artifact(s) still require inventory classification before planning.`
+          : "Crash state cleared. Resume migration from where it stopped.",
         recommendedCommand: nextCmd,
       });
     } else {
@@ -172,7 +177,17 @@ function getRemainingCount(db: Database.Database, wave: number | undefined): num
   const row = db.prepare(`
     SELECT COUNT(*) AS n FROM artifacts
     WHERE tier = 'first-class'
-      AND status IN ('planned','analyzed','tests-written','in-progress')
+      AND status IN ('pending','planned','analyzed','tests-written','in-progress')
+      ${waveClause}
+  `).get({ wave: wave ?? null }) as { n: number };
+  return row.n;
+}
+
+function getPendingCount(db: Database.Database, wave: number | undefined): number {
+  const waveClause = wave != null ? "AND wave = @wave" : "";
+  const row = db.prepare(`
+    SELECT COUNT(*) AS n FROM artifacts
+    WHERE tier = 'first-class' AND status = 'pending'
       ${waveClause}
   `).get({ wave: wave ?? null }) as { n: number };
   return row.n;
@@ -191,9 +206,14 @@ function printNextStepsAfterRepair(db: Database.Database, wave: number | undefin
   }
 
   if (remaining > 0) {
-    const waveFlag = wave != null ? ` --wave ${wave}` : "";
+    const pending = getPendingCount(db, wave);
     console.log(`  Continue migration:\n`);
-    console.log(`       ${cmd} migrate${waveFlag}\n`);
+    if (pending > 0) {
+      console.log(`       ${cmd} inventory\n`);
+    } else {
+      const waveFlag = wave != null ? ` --wave ${wave}` : "";
+      console.log(`       ${cmd} migrate${waveFlag}\n`);
+    }
     return;
   }
 

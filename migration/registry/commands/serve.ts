@@ -221,7 +221,7 @@ export function startServer(db: Database.Database, port = 3322) {
     if (p === "/" || p === "/index.html") {
       const index = path.join(UI_DIR, "index.html");
       if (!serveStatic(res, index)) {
-        res.writeHead(404); res.end("UI not built. Run: npm run build:ui");
+        res.writeHead(404); res.end("UI not built. Run from the workspace root: npm --prefix migration/ui run build");
       }
       return;
     }
