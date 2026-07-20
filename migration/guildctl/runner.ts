@@ -28,6 +28,20 @@ export interface SpawnAgentOpts {
   preClaim?: PreClaimOpts;
 }
 
+export function expandWardenExclusions(paths: string[]): string[] {
+  const expanded = new Set<string>();
+  for (const candidate of paths) {
+    expanded.add(path.resolve(candidate));
+    try {
+      expanded.add(fs.realpathSync.native(candidate));
+    } catch {
+      // The path may be a SQLite sidecar that does not exist yet. Its resolved
+      // spelling still needs to remain excluded when it is created later.
+    }
+  }
+  return [...expanded];
+}
+
 export interface PreClaimOpts {
   fromStatus: string;
   tier?: string;
@@ -348,6 +362,7 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   let preClaimToken: string | undefined;
   let wardenSnapshot: WardenSnapshot | undefined;
   let wardenAllowedPaths: string[] = [];
+  let wardenExcludedPaths: string[] = [];
 
   if (opts.preClaim) {
     const claimArgs = [
@@ -391,7 +406,11 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
       } catch {
         wardenAllowedPaths = [];
       }
-      wardenSnapshot = snapshotWorkspaceForWardenWithExclusions(projectRoot, activeSqliteWardenExclusions(db));
+      wardenExcludedPaths = expandWardenExclusions([
+        ...activeSqliteWardenExclusions(db),
+        ...(opts.logDir ? [opts.logDir] : []),
+      ]);
+      wardenSnapshot = snapshotWorkspaceForWardenWithExclusions(projectRoot, wardenExcludedPaths);
     } catch {
       process.stderr.write(`[guildctl] pre-claim: failed to parse claim JSON\n`);
       finishRun(db, { runId: run.run_id, exitCode: 1, reason: "pre-claim: failed to parse claim JSON" });
@@ -482,7 +501,7 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
             workspaceRoot: projectRoot,
             snapshot: wardenSnapshot,
             allowedPaths: wardenAllowedPaths,
-            excludedPaths: activeSqliteWardenExclusions(db),
+            excludedPaths: wardenExcludedPaths,
             agent: "guildctl-warden",
           });
           if (!warden.clean) {
