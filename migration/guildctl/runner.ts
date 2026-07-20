@@ -64,9 +64,29 @@ export interface AgentRunResult {
  *   cmd.exe where shell metacharacters would break or inject.
  * - Anything else (a bare command or a .cmd/.bat) needs a shell on Windows.
  */
+function resolveWindowsBash(): string {
+  const configured = process.env["GUILD_BASH"]?.trim();
+  if (configured) return configured;
+
+  const candidates = [
+    path.join(process.env["ProgramFiles"] ?? "C:\\Program Files", "Git", "bin", "bash.exe"),
+    path.join(process.env["LocalAppData"] ?? "", "Programs", "Git", "bin", "bash.exe"),
+  ];
+  const installed = candidates.find((candidate) => fs.existsSync(candidate));
+  if (installed) return installed;
+
+  // Keep this as a command lookup fallback for non-standard Git/MSYS installs.
+  return "bash";
+}
+
 function resolveAgentSpawn(agentCmd: string, agentArgs: string[]): { command: string; args: string[]; shell: boolean } {
   if (/\.(mjs|cjs|js)$/i.test(agentCmd)) {
     return { command: process.execPath, args: [agentCmd, ...agentArgs], shell: false };
+  }
+  if (process.platform === "win32" && /\.sh$/i.test(agentCmd)) {
+    // cmd.exe launches .sh files through their Windows file association, which
+    // may open an editor instead of executing the script. Invoke Bash directly.
+    return { command: resolveWindowsBash(), args: [agentCmd, ...agentArgs], shell: false };
   }
   return { command: agentCmd, args: agentArgs, shell: process.platform === "win32" };
 }

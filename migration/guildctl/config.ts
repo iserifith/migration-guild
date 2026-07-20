@@ -38,22 +38,22 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   workspace: { name: "migration-guild-workspace", root: "." },
   database: { path: ".guild/registry.db" },
   model: {
-    model: "pvt/hy3-tencent",
+    model: "pvt/kimi-k2.7-code",
     base_url: "https://example-private.invalid/v1",
     api_key_env: "EXAMPLE_PRIVATE_API_KEY",
     context_length: 131072,
   },
   provider: {
     routes: {
-      default: ["pvt/hy3-tencent", "pvt/deepseek-v4-pro", "pvt/grok-4.5"],
-      census: ["pvt/deepseek-v4-flash", "pvt/minimax-m3"],
-      review: ["pvt/gpt-5.5-review", "pvt/glm-5.2"],
+      default: ["pvt/kimi-k2.7-code", "pvt/deepseek-v4-pro"],
+      census: ["pvt/minimax", "pvt/deepseek-v4-flash"],
+      review: ["pvt/glm-5.2", "pvt/deepseek-v4-pro"],
     },
   },
   agents: {
-    default: { model: "deepseek-v4-pro", temperature: 0.2 },
-    cheap: { model: "deepseek-v4-flash", temperature: 0.2 },
-    reviewer: { model: "glm-5.1", temperature: 0.1 },
+    default: { model: "pvt/kimi-k2.7-code", temperature: 0.2 },
+    cheap: { model: "pvt/minimax", temperature: 0.2 },
+    reviewer: { model: "pvt/glm-5.2", temperature: 0.1 },
   },
   tools: { terminal: true, git: true, filesystem: true, web: false },
   prompts: { directory: ".guild/prompts", active_pack: "default" },
@@ -63,7 +63,7 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   inventory: { classificationBatchSize: 100, maxBatchRetries: 2 },
   agent_limits: { inactivity_timeout_seconds: 120, ceiling_seconds: 1800 },
   profiles: {
-    default: { base_url: "https://example-private.invalid/v1", model: "pvt/hy3-tencent", api_key_env: "EXAMPLE_PRIVATE_API_KEY" },
+    default: { base_url: "https://example-private.invalid/v1", model: "pvt/kimi-k2.7-code", api_key_env: "EXAMPLE_PRIVATE_API_KEY" },
     dashscope: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "deepseek-v4-pro", api_key_env: "DASHSCOPE_API_KEY" },
     cheap: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "deepseek-v4-flash", api_key_env: "DASHSCOPE_API_KEY" },
     reviewer: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "glm-5.1", api_key_env: "DASHSCOPE_API_KEY" },

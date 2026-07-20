@@ -11,17 +11,16 @@ test("default config carries safe Rootsys routing without a persisted key", () =
   assert.equal(DEFAULT_GUILD_CONFIG.model.api_key_env, "EXAMPLE_PRIVATE_API_KEY");
   assert.equal(JSON.stringify(DEFAULT_GUILD_CONFIG).includes("sk-"), false);
   assert.deepEqual(resolveProviderRoute(DEFAULT_GUILD_CONFIG, "default"), [
-    "pvt/hy3-tencent",
+    "pvt/kimi-k2.7-code",
     "pvt/deepseek-v4-pro",
-    "pvt/grok-4.5",
   ]);
   assert.deepEqual(resolveProviderRoute(DEFAULT_GUILD_CONFIG, "census"), [
+    "pvt/minimax",
     "pvt/deepseek-v4-flash",
-    "pvt/minimax-m3",
   ]);
   assert.deepEqual(resolveProviderRoute(DEFAULT_GUILD_CONFIG, "review"), [
-    "pvt/gpt-5.5-review",
     "pvt/glm-5.2",
+    "pvt/deepseek-v4-pro",
   ]);
 });
 
