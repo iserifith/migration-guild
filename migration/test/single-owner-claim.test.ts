@@ -235,6 +235,14 @@ test("TASK-05: deriveExpectedOutputPaths mirrors legacy/ to modern/", () => {
       "modern/src/test/java/net/jforum/ForumSessionListenerTest.java",
     ],
   );
+  assert.deepEqual(
+    deriveExpectedOutputPaths({ path: "legacy/jforum2-source/tests/core/net/jforum/http/FakeHttpResponse.java" } as any),
+    [
+      "modern/src/main/java/net/jforum/http/FakeHttpResponse.java",
+      "modern/src/test/java/net/jforum/http/FakeHttpResponse.java",
+      "modern/src/test/java/net/jforum/http/FakeHttpResponseTest.java",
+    ],
+  );
   assert.deepEqual(deriveExpectedOutputPaths({ path: "src/main/C.java" } as any), []);
 });
 

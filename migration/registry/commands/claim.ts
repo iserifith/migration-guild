@@ -377,6 +377,15 @@ export function releaseClaimedArtifactsForOwner(
  */
 export function deriveExpectedOutputPaths(artifact: Artifact): string[] {
   const p = (artifact.path ?? "").replace(/\\/g, "/");
+  const javaTest = p.match(/(?:^|\/)legacy\/.*?\/tests\/(?:core\/)?(.+)\.java$/i);
+  if (javaTest) {
+    const relativeClass = javaTest[1];
+    return [
+      `modern/src/main/java/${relativeClass}.java`,
+      `modern/src/test/java/${relativeClass}.java`,
+      `modern/src/test/java/${relativeClass}Test.java`,
+    ];
+  }
   const javaSource = p.match(/(?:^|\/)legacy\/.*?\/src\/(.+)\.java$/i);
   if (javaSource) {
     const relativeClass = javaSource[1];
