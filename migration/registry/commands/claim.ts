@@ -650,8 +650,15 @@ export function claimNextTask(
     }
 
     const candidate = db.prepare(`
-      SELECT a.*
+      SELECT a.*,
+        COALESCE(sd.in_degree, 0) AS in_degree
       FROM artifacts a
+      LEFT JOIN (
+        SELECT dependency_id, COUNT(*) AS in_degree
+        FROM source_dependencies
+        WHERE created_by IN ('auto', 'manual')
+        GROUP BY dependency_id
+      ) sd ON sd.dependency_id = a.id
       WHERE a.status = @fromStatus
         ${waveClause}
         ${tierClause}
@@ -663,7 +670,7 @@ export function claimNextTask(
             ${dependencyTierClause}
             AND dep.status NOT IN ('migrated', 'reviewed', 'completed', 'skipped')
         )
-      ORDER BY a.wave ASC, a.created_at ASC
+      ORDER BY a.wave ASC, in_degree DESC, a.created_at ASC
       LIMIT 1
     `).get(params) as Artifact | undefined;
 
