@@ -82,6 +82,10 @@ The runner reads this and records it against the run.
    winget install goose
    ```
 
+   If you instead download the desktop-app release (`Goose-win32-x64.zip`), the top-level
+   `Goose.exe` is an Electron GUI shell, not the CLI — the actual CLI binary is bundled at
+   `dist-windows\resources\bin\goose.exe`. Point `GOOSE_CLI_PATH` at that nested path.
+
    Verify:
    ```bash
    goose --version
@@ -105,9 +109,16 @@ The runner reads this and records it against the run.
    }
    ```
 
-   Windows (PowerShell) — `%USERPROFILE%\.config\goose\custom_providers\guild.json`:
+   Windows (PowerShell) — `%APPDATA%\Block\goose\config\custom_providers\guild.json`:
+
+   Verified against goose 1.43.0 (Windows desktop-app release, which bundles the CLI at
+   `resources\bin\goose.exe`): `goose info` reports its config dir as
+   `%APPDATA%\Block\goose\config`, **not** `~/.config/goose` — that path is Linux/macOS only,
+   despite matching filenames. Run `goose info` on your install to confirm before assuming
+   the path below.
+
    ```powershell
-   New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.config\goose\custom_providers"
+   New-Item -ItemType Directory -Force -Path "$env:APPDATA\Block\goose\config\custom_providers"
    @'
    {
      "name": "custom_guild",
@@ -121,7 +132,7 @@ The runner reads this and records it against the run.
      ],
      "supports_streaming": true
    }
-   '@ | Set-Content "$env:USERPROFILE\.config\goose\custom_providers\guild.json"
+   '@ | Set-Content "$env:APPDATA\Block\goose\config\custom_providers\guild.json"
    ```
 
    The `api_key_env` field names the environment variable that holds your API key. Goose reads it at runtime — the key itself is never in the JSON.
@@ -239,7 +250,9 @@ Authentication error: Authentication failed for .../chat/completions. Status: 40
 ```
 
 The API key env var named in your provider JSON is missing or inactive. Check:
-1. The `api_key_env` field in `~/.config/goose/custom_providers/guild.json` matches a real env var.
+1. The `api_key_env` field in your provider JSON (`~/.config/goose/custom_providers/guild.json` on
+   Linux/macOS, `%APPDATA%\Block\goose\config\custom_providers\guild.json` on Windows — run `goose info`
+   to confirm the actual config dir on your install) matches a real env var.
 2. That env var is set and contains a valid key.
 
 ### Goose spawns but no output
