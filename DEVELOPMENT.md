@@ -240,10 +240,23 @@ git status --short -- DEVELOPMENT.md CHANGELOGS.MD
 
 ### Agent binary selection
 
-Use `AGENT_CMD` if you need to point at a non-default agent CLI binary.
+Migration Guild supports multiple agent harnesses (adapters). Each adapter wraps a specific agent CLI and conforms to the same contract: `--agent`, `--model`, `--yolo`/`--read-only`, `-p <prompt>`. See **[package/harness/HARNESS.md](package/harness/HARNESS.md)** for the full guide, setup instructions, and troubleshooting.
 
-Example:
+Available harnesses:
 
+| Harness | RSS/agent | Best for |
+|---|---|---|
+| `goose` | ~113MB | Remediation, review, audit — memory-constrained VPS |
+| `opencode` (default) | ~478MB | Codegen, test-writer — rich tooling, granular permissions |
+| `codex` | varies | OpenAI-native environments |
+| custom (`AGENT_CMD`) | varies | Any CLI that accepts the harness contract |
+
+Set in `.guild/config.yaml`:
+```yaml
+harness: goose   # or opencode, codex
+```
+
+Or override per-run with `AGENT_CMD`:
 ```bash
 AGENT_CMD=/path/to/agent agent --agent documentation-agent --yolo -p "<prompt>"
 ```
