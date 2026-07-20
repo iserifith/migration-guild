@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { appendEvent } from "../registry/commands/events";
+import { deriveExpectedOutputPaths } from "../registry/commands/claim";
+import type { Artifact } from "../registry/types";
 
 export interface WardenFileSnapshot {
   path: string;
@@ -104,14 +106,31 @@ function isAllowed(file: string, allowedPaths: string[]): boolean {
 function registeredExpectedOutputPaths(db: Database.Database | undefined, excludeArtifactId: string): string[] {
   if (!db) return [];
   try {
-    const rows = db.prepare(`
+    const paths = new Set<string>();
+
+    // Derive expected output paths from ALL registered artifacts, not just
+    // those with active claims. This prevents the warden from reverting
+    // legitimate shared dependency stubs (e.g. SystemGlobals.java, DAO
+    // interfaces) that same-wave workers create as side effects before the
+    // owning artifact has been claimed. The real migration overwrites the
+    // stub; the stub surviving until then avoids wasted re-derivation.
+    const artifactRows = db.prepare(`
+      SELECT id, path FROM artifacts WHERE id != ?
+    `).all(excludeArtifactId) as Array<{ id: string; path: string }>;
+    for (const row of artifactRows) {
+      const derived = deriveExpectedOutputPaths({ path: row.path } as Artifact);
+      for (const p of derived) paths.add(p);
+    }
+
+    // Also include paths explicitly recorded in claims (covers edge cases
+    // where claim expected_output_paths differ from derived).
+    const claimRows = db.prepare(`
       SELECT expected_output_paths
       FROM artifact_claims
       WHERE expected_output_paths IS NOT NULL
         AND artifact_id != ?
     `).all(excludeArtifactId) as Array<{ expected_output_paths: string }>;
-    const paths = new Set<string>();
-    for (const row of rows) {
+    for (const row of claimRows) {
       try {
         const parsed = JSON.parse(row.expected_output_paths) as unknown;
         if (Array.isArray(parsed)) {
@@ -122,6 +141,7 @@ function registeredExpectedOutputPaths(db: Database.Database | undefined, exclud
         // validated allowed paths are still enforced by the caller.
       }
     }
+
     return [...paths];
   } catch {
     return [];
