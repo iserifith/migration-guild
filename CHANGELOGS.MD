@@ -6,6 +6,12 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### July 20, 2026
+
+- Added `goose` harness adapter (`package/harness/goose.mjs`) — wraps the [goose](https://github.com/aaif-goose/goose) CLI (Rust binary, ~113MB RSS vs opencode's ~478MB) for memory-constrained environments. Supports `--yolo` (GOOSE_MODE=auto) and `--read-only` (GOOSE_MODE=chat), stream-json parsing with text buffering, token usage capture, and claim handoff. Registered in `harness.ts` resolver.
+- Added `package/harness/HARNESS.md` — full harness adapter guide covering the adapter contract, env vars, token usage file format, per-harness setup (goose/opencode/codex/custom), selection criteria, and Windows PowerShell instructions.
+- Changed `DEVELOPMENT.md` agent binary selection section to document all harnesses with a comparison table and link to HARNESS.md.
+
 ### July 15, 2026
 
 - Changed inventory ID derivation to preserve existing non-colliding IDs while assigning deterministic path-qualified IDs to same-module basename collisions, including safe repair of partially populated registries.
