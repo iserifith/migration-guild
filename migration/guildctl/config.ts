@@ -38,22 +38,22 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   workspace: { name: "migration-guild-workspace", root: "." },
   database: { path: ".guild/registry.db" },
   model: {
-    model: "fiq/hy3-tencent",
+    model: "fiq/kimi-k2.7-code",
     base_url: "https://rootsys.cloud/v1",
     api_key_env: "ROOTSYS_API_KEY",
     context_length: 131072,
   },
   provider: {
     routes: {
-      default: ["fiq/hy3-tencent", "fiq/deepseek-v4-pro", "fiq/grok-4.5"],
-      census: ["fiq/deepseek-v4-flash", "fiq/minimax-m3"],
-      review: ["fiq/gpt-5.5-review", "fiq/glm-5.2"],
+      default: ["fiq/kimi-k2.7-code", "fiq/deepseek-v4-pro"],
+      census: ["fiq/minimax", "fiq/deepseek-v4-flash"],
+      review: ["fiq/glm-5.2", "fiq/deepseek-v4-pro"],
     },
   },
   agents: {
-    default: { model: "deepseek-v4-pro", temperature: 0.2 },
-    cheap: { model: "deepseek-v4-flash", temperature: 0.2 },
-    reviewer: { model: "glm-5.1", temperature: 0.1 },
+    default: { model: "fiq/kimi-k2.7-code", temperature: 0.2 },
+    cheap: { model: "fiq/minimax", temperature: 0.2 },
+    reviewer: { model: "fiq/glm-5.2", temperature: 0.1 },
   },
   tools: { terminal: true, git: true, filesystem: true, web: false },
   prompts: { directory: ".guild/prompts", active_pack: "default" },
@@ -63,7 +63,7 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   inventory: { classificationBatchSize: 100, maxBatchRetries: 2 },
   agent_limits: { inactivity_timeout_seconds: 120, ceiling_seconds: 1800 },
   profiles: {
-    default: { base_url: "https://rootsys.cloud/v1", model: "fiq/hy3-tencent", api_key_env: "ROOTSYS_API_KEY" },
+    default: { base_url: "https://rootsys.cloud/v1", model: "fiq/kimi-k2.7-code", api_key_env: "ROOTSYS_API_KEY" },
     dashscope: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "deepseek-v4-pro", api_key_env: "DASHSCOPE_API_KEY" },
     cheap: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "deepseek-v4-flash", api_key_env: "DASHSCOPE_API_KEY" },
     reviewer: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "glm-5.1", api_key_env: "DASHSCOPE_API_KEY" },

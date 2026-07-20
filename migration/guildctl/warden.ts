@@ -33,7 +33,9 @@ export interface WardenResult {
   violations: WardenViolation[];
 }
 
-const SKIP_DIRS = new Set([".git", "node_modules"]);
+// Tool-owned build caches are transient and can be created by a valid compile
+// or test command. They must not be treated as agent source edits.
+const SKIP_DIRS = new Set([".git", "node_modules", ".gradle", "build"]);
 
 function sha256(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
