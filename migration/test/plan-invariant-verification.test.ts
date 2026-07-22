@@ -252,6 +252,45 @@ test("stack-advisor writes a mapping -> passes; planner then verified", async ()
   }
 });
 
+test("existing stack mappings are reused without rerunning stack-advisor", async () => {
+  const db = createDb();
+  const root = fixtureRoot();
+  const ids = registerArtifacts(db, 10);
+  createMapping(db, {
+    legacy_framework: "javax.servlet",
+    target_framework: "jakarta.servlet",
+    strategy: "rewrite",
+    notes: "already reviewed",
+  });
+  const agents: string[] = [];
+  try {
+    await runPlan(db, {
+      workspaceRoot: root,
+      enforceInvariants: true,
+      retries: 1,
+      refreshCompatibilityAudits: () => auditSummary,
+      startPolling: () => () => undefined,
+      getLogDir: () => "/tmp",
+      spawnAgent: async ({ agent }) => {
+        agents.push(agent);
+        if (agent === "planner-agent") {
+          ids.forEach((id, i) => setArtifactWave(db, id, (i % 3) + 1));
+        }
+        return success(agent);
+      },
+    });
+    assert.deepEqual(agents, ["planner-agent"]);
+    const verification = JSON.parse(
+      (db.prepare("SELECT value FROM operator_state WHERE key = 'plan_verification_stack-advisor'").get() as { value: string }).value,
+    ) as { invariantPassed: boolean; message: string };
+    assert.equal(verification.invariantPassed, true);
+    assert.match(verification.message, /reused 1 existing stack_mapping/);
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("with --retries 1, the second planner attempt receives the invariant-failure context", async () => {
   const db = createDb();
   const root = fixtureRoot();

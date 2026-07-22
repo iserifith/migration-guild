@@ -4,7 +4,7 @@
 //   2. Prepend the body of .github/agents/<agent>.agent.md to the prompt.
 //   3. Configure an OpenAI-compatible provider from AGENT_PROVIDER_BASE_URL and
 //      the key named by AGENT_PROVIDER_API_KEY_ENV (chat/completions wire API).
-//   4. Run non-interactively with tools auto-approved, preserve readable output,
+//   4. Run non-interactively with explicit tool permissions, preserve readable output,
 //      capture token usage from opencode JSON events, and return the child's exit code.
 //
 // Unlike codex (which now only speaks the OpenAI "responses" API), opencode
@@ -42,16 +42,22 @@ export function loadPersona(agentName, cwd = process.cwd()) {
   return text.trim();
 }
 
-// Write a temporary opencode config exposing the configured provider as an
-// OpenAI-compatible endpoint. OPENCODE_CONFIG is additive, so this layers a
-// "guild" provider on top of any existing user config.
-export function writeProviderConfig(model, env = process.env) {
+// Write a temporary OpenCode config exposing only the configured provider.
+// The same object is also supplied as OPENCODE_CONFIG_CONTENT so its empty
+// plugin/instruction lists and permissions win over global and project config.
+export function writeProviderConfig(model, env = process.env, readOnly = false) {
   const baseURL = env.AGENT_PROVIDER_BASE_URL || "https://api.openai.com/v1";
   const apiKeyEnv = env.AGENT_PROVIDER_API_KEY_ENV || "OPENAI_API_KEY";
   const models = {};
   if (model) models[model] = { name: model };
   const config = {
     $schema: "https://opencode.ai/config.json",
+    plugin: [],
+    instructions: [],
+    enabled_providers: [PROVIDER_ID],
+    permission: readOnly ? { "*": "allow", edit: "deny" } : "allow",
+    share: "disabled",
+    autoupdate: false,
     provider: {
       [PROVIDER_ID]: {
         npm: "@ai-sdk/openai-compatible",
@@ -64,7 +70,7 @@ export function writeProviderConfig(model, env = process.env) {
   const dir = mkdtempSync(path.join(os.tmpdir(), "guild-opencode-"));
   const file = path.join(dir, "opencode.json");
   writeFileSync(file, JSON.stringify(config, null, 2));
-  return file;
+  return { file, content: JSON.stringify(config) };
 }
 
 function safeInt(value) {
@@ -116,6 +122,26 @@ export function serializeTokenTotals(totals) {
   return { input: totals.input, output: totals.output, reasoning: totals.reasoning, cacheRead: totals.cacheRead, cacheWrite: totals.cacheWrite, fresh: totals.fresh, total: totals.total, events: totals.events, sessions: [...totals.sessions].sort() };
 }
 
+export function resolveOpenCodeCommand(env = process.env) {
+  if (env.OPENCODE_CLI_PATH) return env.OPENCODE_CLI_PATH;
+  if (process.platform === "win32" && env.LOCALAPPDATA) {
+    const voltaBinary = path.join(
+      env.LOCALAPPDATA,
+      "Volta",
+      "tools",
+      "image",
+      "packages",
+      "opencode-ai",
+      "node_modules",
+      "opencode-ai",
+      "bin",
+      "opencode.exe",
+    );
+    if (existsSync(voltaBinary)) return voltaBinary;
+  }
+  return process.platform === "win32" ? "opencode.exe" : "opencode";
+}
+
 export function renderReadableEvent(line) {
   let event;
   try { event = JSON.parse(line); } catch { return `${line}\n`; }
@@ -163,20 +189,44 @@ export function buildOpencodeInvocation(argv, options = {}) {
   const parsed = parseArgs(argv);
   const env = options.env ?? process.env;
   const persona = loadPersona(parsed.agent, options.cwd);
-  const fullPrompt = persona ? `${persona}\n\n---\n\n${parsed.prompt}` : parsed.prompt;
-  const configPath = writeProviderConfig(parsed.model, env);
-  const args = parsed.readOnly
-    ? ["run", "--format", "json"]
-    : ["run", "--dangerously-skip-permissions", "--format", "json"];
+  const claimHandoff = buildClaimHandoff(env);
+  const fullPrompt = [persona, claimHandoff, parsed.prompt].filter(Boolean).join("\n\n---\n\n");
+  const runtimeConfig = writeProviderConfig(parsed.model, env, parsed.readOnly);
+  const args = ["run", "--pure", "--auto", "--format", "json"];
   if (parsed.model) args.push("-m", `${PROVIDER_ID}/${parsed.model}`);
   args.push(fullPrompt);
   return {
-    command: env.OPENCODE_CLI_PATH || "opencode",
+    command: resolveOpenCodeCommand(env),
     args,
     parsed,
     fullPrompt,
-    env: { ...env, OPENCODE_CONFIG: configPath },
+    env: {
+      ...env,
+      OPENCODE_CONFIG: runtimeConfig.file,
+      OPENCODE_CONFIG_CONTENT: runtimeConfig.content,
+    },
   };
+}
+
+export function buildClaimHandoff(env = process.env) {
+  const artifactId = env.GUILDCTL_ARTIFACT_ID;
+  const claimId = env.GUILDCTL_CLAIM_ID;
+  const claimToken = env.GUILDCTL_CLAIM_TOKEN;
+  if (!artifactId || !claimId || !claimToken) return "";
+  const payload = {
+    artifact_id: artifactId,
+    claim_id: claimId,
+    claim_token: claimToken,
+    run_id: env.GUILDCTL_RUN_ID ?? null,
+    owner: env.GUILDCTL_AGENT_NAME ?? null,
+  };
+  return [
+    "## Runner claim handoff (authoritative)",
+    "The runner has already claimed this artifact for this session. Do not run the `claim` command and do not require these values to exist inside Bash environment variables. Use the literal values below for every registry command, including heartbeat and status advancement.",
+    "```json",
+    JSON.stringify(payload, null, 2),
+    "```",
+  ].join("\n");
 }
 
 export function main(argv = process.argv.slice(2)) {
