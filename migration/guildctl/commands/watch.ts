@@ -62,9 +62,9 @@ function renderEvents(events: RecentEvent[]): void {
     const time = e.ts.split(" ")[1] ?? e.ts;
     const file = path.basename(e.path);
     const mod = e.module ? `${DIM}[${e.module}]${R} ` : "";
-    const [from, , to] = e.summary.split(" ");
-    const coloredSummary = to
-      ? `${DIM}${from}${R} → ${STATUS_COLOR[to] ?? ""}${to}${R}`
+    const m = e.summary.match(/^(\S+) (?:→|->) (\S+)$/);
+    const coloredSummary = m
+      ? `${DIM}${m[1]}${R} → ${STATUS_COLOR[m[2]] ?? ""}${m[2]}${R}`
       : e.summary;
     process.stdout.write(
       `  ${DIM}${time}${R}  ${CYAN}${e.agent.padEnd(18)}${R}  ${mod}${file}  ${coloredSummary}\n`

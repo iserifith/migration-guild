@@ -518,7 +518,9 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
           if (!warden.clean) {
             finalExitCode = 1;
             const msg = `[guildctl] filesystem warden restored ${warden.violations.length} unauthorized change(s); marking run failed`;
-            process.stderr.write(msg + "\n");
+            process.stderr.write(
+              (process.stderr.isTTY ? "\x1b[1;31m" : "") + msg + (process.stderr.isTTY ? "\x1b[0m" : "") + "\n",
+            );
             writeLogLine(logStream, msg);
           }
         }
@@ -696,13 +698,25 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
     // Heartbeat: periodic liveness line so operators can tell a working agent
     // from a hung one. Goes quiet once the run settles.
     let heartbeatHandle: NodeJS.Timeout | undefined;
+    let lastHeartbeatEmitMs = 0;
     if (heartbeatMs > 0) {
       heartbeatHandle = setInterval(() => {
         if (settled) return;
-        const elapsed = Math.round((Date.now() - startMs) / 1000);
-        const sinceActivity = Math.round((Date.now() - lastActivityMs) / 1000);
+        const now = Date.now();
+        const sinceActivityMs = now - lastActivityMs;
+        const stallMs = inactivityMs > 0 ? inactivityMs / 2 : 60000;
+        if (
+          now - lastHeartbeatEmitMs < 30000 &&
+          (sinceActivityMs < stallMs || now - lastHeartbeatEmitMs < 5000)
+        ) {
+          return;
+        }
+        lastHeartbeatEmitMs = now;
+        const elapsed = Math.round((now - startMs) / 1000);
+        const sinceActivity = Math.round(sinceActivityMs / 1000);
+        const shortRunId = String(run.run_id).slice(0, 8);
         process.stderr.write(
-          `  [heartbeat] ${agent} elapsed=${elapsed}s since-activity=${sinceActivity}s activity-ticks=${activityTicks}\n`,
+          `  [heartbeat] ${agent}#${shortRunId} elapsed=${elapsed}s since-activity=${sinceActivity}s activity-ticks=${activityTicks}\n`,
         );
       }, heartbeatMs);
       heartbeatHandle.unref?.();

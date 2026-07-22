@@ -36,9 +36,9 @@ export function printEvent(event: RegistryEvent): void {
   const file = event.path ? path.basename(event.path) : event.artifact_id;
   const mod = event.module ? `${DIM}[${event.module}]${R} ` : "";
   const summary = event.summary;
-  const [from, , to] = summary.split(" ");
-  const coloredSummary = to
-    ? `${DIM}${from}${R} → ${STATUS_COLOR[to] ?? ""}${to}${R}`
+  const m = summary.match(/^(\S+) (?:→|->) (\S+)$/);
+  const coloredSummary = m
+    ? `${DIM}${m[1]}${R} → ${STATUS_COLOR[m[2]] ?? ""}${m[2]}${R}`
     : summary;
 
   process.stdout.write(
