@@ -64,20 +64,22 @@ function excludedPathSet(paths: string[] | undefined): Set<string> {
   return new Set((paths ?? []).map(normalizeAbsolute));
 }
 
+function isPathWithin(file: string, root: string): boolean {
+  const normalizedFile = normalizeAbsolute(file).replace(/\\/g, "/");
+  const normalizedRoot = normalizeAbsolute(root).replace(/\\/g, "/").replace(/\/+$/, "");
+  return normalizedFile === normalizedRoot || normalizedFile.startsWith(`${normalizedRoot}/`);
+}
+
 function isExcludedPath(file: string, excluded: Set<string>): boolean {
-  const normalized = normalizeAbsolute(file);
   for (const excludedPath of excluded) {
-    const relative = path.relative(excludedPath, normalized);
-    if (relative === "") return true;
-    if (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) {
-      return true;
-    }
+    if (isPathWithin(file, excludedPath)) return true;
   }
   return false;
 }
 
 function walk(root: string, excluded: Set<string>, dir = root): string[] {
   const out: string[] = [];
+  if (isExcludedPath(dir, excluded)) return out;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (SKIP_DIRS.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
@@ -211,4 +213,13 @@ export function enforceWardenSnapshot(
   }
 
   return { clean: violations.length === 0, violations };
+}
+
+export function transientWardenExclusions(workspaceRoot: string, extraPaths: string[] = []): string[] {
+  return [
+    path.join(workspaceRoot, ".guild", "evidence"),
+    path.join(workspaceRoot, "modern", ".gradle"),
+    path.join(workspaceRoot, "modern", "build"),
+    ...extraPaths,
+  ].map(normalizeAbsolute);
 }

@@ -370,33 +370,87 @@ export function releaseClaimedArtifactsForOwner(
 // var and refuses to grab any other artifact.
 
 /**
+ * Validate a companion output path: must be a normalized relative path, must
+ * not escape the working tree (no leading `/`, no `..` segments), and must
+ * live under `modern/`.  Fail-closed on any violation.
+ */
+function validateCompanionPath(rawPath: string): string {
+  const trimmed = rawPath.trim();
+  if (!trimmed) {
+    throw new RegistryError(1, "Companion output path is required");
+  }
+  if (/^\//.test(trimmed)) {
+    throw new RegistryError(
+      3,
+      `Companion output path must be relative (got absolute): "${trimmed}"`,
+    );
+  }
+  const normalized = trimmed.split("/").filter(Boolean).join("/");
+  if (normalized !== trimmed) {
+    throw new RegistryError(
+      3,
+      `Companion output path is not normalized: "${trimmed}" (expected "${normalized}")`,
+    );
+  }
+  if (normalized.includes("..")) {
+    throw new RegistryError(
+      3,
+      `Companion output path must not contain ".." segments: "${trimmed}"`,
+    );
+  }
+  if (!normalized.startsWith("modern/")) {
+    throw new RegistryError(
+      3,
+      `Companion output path must be under modern/ (got "${trimmed}")`,
+    );
+  }
+  return normalized;
+}
+
+/**
  * Derive the allowed output path(s) for a claimed artifact. The legacy file
  * lives under `legacy/`; its migrated twin is expected under the `modern/`
- * mirror at the same relative position. Returned as a JSON array of strings
+ * mirror at the same relative position.  When `db` is supplied, operator-
+ * approved companion outputs are fetched from the registry and unioned in
+ * (each validated fail-closed).  Returned as a JSON array of strings
  * (TASK-04 consumes this to compute the per-pool allowed-path union).
  */
-export function deriveExpectedOutputPaths(artifact: Artifact): string[] {
+export function deriveExpectedOutputPaths(artifact: Artifact, db?: Database.Database): string[] {
   const p = (artifact.path ?? "").replace(/\\/g, "/");
+  let paths: string[];
   const javaTest = p.match(/(?:^|\/)legacy\/.*?\/tests\/(?:core\/)?(.+)\.java$/i);
+  const javaSource = javaTest ? null : p.match(/(?:^|\/)legacy\/.*?\/src\/(.+)\.java$/i);
   if (javaTest) {
     const relativeClass = javaTest[1];
-    return [
+    paths = [
       `modern/src/main/java/${relativeClass}.java`,
       `modern/src/test/java/${relativeClass}.java`,
       `modern/src/test/java/${relativeClass}Test.java`,
     ];
-  }
-  const javaSource = p.match(/(?:^|\/)legacy\/.*?\/src\/(.+)\.java$/i);
-  if (javaSource) {
+  } else if (javaSource) {
     const relativeClass = javaSource[1];
-    return [
+    paths = [
       `modern/src/main/java/${relativeClass}.java`,
       `modern/src/test/java/${relativeClass}Test.java`,
     ];
+  } else {
+    const modernPath = p.replace(/(^|\/)legacy\//, "$1modern/");
+    paths = modernPath !== p ? [modernPath] : [];
   }
-  const modernPath = p.replace(/(^|\/)legacy\//, "$1modern/");
-  if (modernPath === p) return []; // no legacy/ prefix → nothing predictable
-  return [modernPath];
+
+  if (db) {
+    const rows = db.prepare(
+      "SELECT output_path FROM approved_companion_outputs WHERE artifact_id = ?",
+    ).all(artifact.id) as Array<{ output_path: string }>;
+    for (const row of rows) {
+      const validated = validateCompanionPath(row.output_path);
+      if (!paths.includes(validated)) {
+        paths.push(validated);
+      }
+    }
+  }
+
+  return paths;
 }
 
 /**
@@ -529,7 +583,7 @@ export function claimArtifactById(
       from_status: fromStatus,
       claim_token: claimToken,
       attempt_no: attemptRow.attempt_no + 1,
-      expected_output_paths: JSON.stringify(deriveExpectedOutputPaths(artifact)),
+      expected_output_paths: JSON.stringify(deriveExpectedOutputPaths(artifact, db)),
       lease_minutes: leaseMinutes,
     });
 
@@ -771,7 +825,7 @@ export function claimNextTask(
       from_status: fromStatus,
       claim_token: claimToken,
       attempt_no: attemptRow.attempt_no + 1,
-      expected_output_paths: JSON.stringify(deriveExpectedOutputPaths(candidate)),
+      expected_output_paths: JSON.stringify(deriveExpectedOutputPaths(candidate, db)),
       lease_minutes: leaseMinutes,
     });
 

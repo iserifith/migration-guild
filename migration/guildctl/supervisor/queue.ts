@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import type Database from "better-sqlite3";
 import { reconcileStaleClaims } from "../../registry/commands/claim";
 import { reapDeadRuns } from "../../registry/commands/runs";
@@ -17,6 +19,7 @@ export interface AutoQueueOptions {
   wave?: number;
   limit?: number;
   resume?: boolean;
+  workspaceRoot?: string;
 }
 
 export interface AutoQueueRemaining {
@@ -53,6 +56,46 @@ function scopeClause(alias: string, wave: number | undefined): string {
   return wave == null ? "" : `AND ${alias}.wave = ?`;
 }
 
+function deriveModernPath(legacyPath: string): string | null {
+  const modernPath = legacyPath.replace(/(^|\/)legacy\//, "$1modern/");
+  return modernPath === legacyPath ? null : modernPath;
+}
+
+function terminalDepsMissingOutput(
+  db: Database.Database,
+  artifactId: string,
+  workspaceRoot: string,
+): boolean {
+  const terminal = DEPENDENCY_TERMINAL_STATUSES.map(() => "?").join(", ");
+  const rows = db.prepare(`
+    SELECT dep.path
+    FROM dependencies d
+    JOIN artifacts dep ON dep.id = d.depends_on_id
+    WHERE d.artifact_id = ?
+      AND dep.tier = 'first-class'
+      AND dep.status IN (${terminal})
+    UNION
+    SELECT dep.path
+    FROM source_dependencies sd
+    JOIN artifacts dep ON dep.id = sd.dependency_id
+    WHERE sd.dependent_id = ?
+      AND dep.tier = 'first-class'
+      AND dep.status IN (${terminal})
+  `).all(
+    artifactId,
+    ...DEPENDENCY_TERMINAL_STATUSES,
+    artifactId,
+    ...DEPENDENCY_TERMINAL_STATUSES,
+  ) as Array<{ path: string }>;
+
+  for (const row of rows) {
+    const modernPath = deriveModernPath(row.path);
+    if (modernPath == null) continue;
+    if (!fs.existsSync(path.join(workspaceRoot, modernPath))) return true;
+  }
+  return false;
+}
+
 function selectCandidate(
   db: Database.Database,
   opts: AutoQueueOptions,
@@ -71,6 +114,7 @@ function selectCandidate(
     ...(opts.wave == null ? [] : [opts.wave]),
     ...processedIds,
     ...DEPENDENCY_TERMINAL_STATUSES,
+    ...DEPENDENCY_TERMINAL_STATUSES,
   ];
 
   return db.prepare(`
@@ -85,6 +129,14 @@ function selectCandidate(
         FROM dependencies d
         JOIN artifacts dep ON dep.id = d.depends_on_id
         WHERE d.artifact_id = a.id
+          AND dep.tier = 'first-class'
+          AND dep.status NOT IN (${terminal})
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM source_dependencies sd
+        JOIN artifacts dep ON dep.id = sd.dependency_id
+        WHERE sd.dependent_id = a.id
           AND dep.tier = 'first-class'
           AND dep.status NOT IN (${terminal})
       )
@@ -131,6 +183,8 @@ function dependencyBlockedIds(db: Database.Database, wave?: number): string[] {
   const params = [
     ...(wave == null ? [] : [wave]),
     ...DEPENDENCY_TERMINAL_STATUSES,
+    ...(wave == null ? [] : [wave]),
+    ...DEPENDENCY_TERMINAL_STATUSES,
   ];
   const rows = db.prepare(`
     SELECT a.id
@@ -146,13 +200,30 @@ function dependencyBlockedIds(db: Database.Database, wave?: number): string[] {
           AND dep.tier = 'first-class'
           AND dep.status NOT IN (${terminal})
       )
-    ORDER BY COALESCE(a.wave, 2147483647), a.created_at, a.id
+    UNION
+    SELECT a.id
+    FROM artifacts a
+    WHERE a.tier = 'first-class'
+      AND a.status = 'planned'
+      ${waveClause}
+      AND EXISTS (
+        SELECT 1
+        FROM source_dependencies sd
+        JOIN artifacts dep ON dep.id = sd.dependency_id
+        WHERE sd.dependent_id = a.id
+          AND dep.tier = 'first-class'
+          AND dep.status NOT IN (${terminal})
+      )
+    ORDER BY id
   `).all(...params) as Array<{ id: string }>;
   return rows.map((row) => row.id);
 }
 
-function terminalStatus(remaining: AutoQueueRemaining): AutoQueueResult["status"] {
-  if (remaining.blocked > 0 || remaining.needsRework > 0) return "partial";
+function terminalStatus(
+  remaining: AutoQueueRemaining,
+  hasMissingDependencyOutput: boolean,
+): AutoQueueResult["status"] {
+  if (remaining.blocked > 0 || remaining.needsRework > 0 || hasMissingDependencyOutput) return "partial";
   if (remaining.planned > 0 || remaining.migrated > 0 || remaining.inProgress > 0) return "stalled";
   return "complete";
 }
@@ -168,12 +239,18 @@ export async function runAutoQueue(
   reapDeadRuns(db);
   const recoveredArtifacts = reconcileStaleClaims(db, "guildctl-auto-run").map((artifact) => artifact.id);
   const processedIds = new Set<string>();
+  const outputBlockedIds = new Set<string>();
   const processed: AutoQueueResult["processed"] = [];
   let completed = 0;
 
   while (opts.limit == null || processed.length < opts.limit) {
     const candidate = selectCandidate(db, opts, processedIds);
     if (!candidate) break;
+    if (opts.workspaceRoot && terminalDepsMissingOutput(db, candidate.id, opts.workspaceRoot)) {
+      processedIds.add(candidate.id);
+      outputBlockedIds.add(candidate.id);
+      continue;
+    }
     processedIds.add(candidate.id);
     const resume = candidate.status === "migrated";
     try {
@@ -194,7 +271,7 @@ export async function runAutoQueue(
           blocked: remaining.blocked + remaining.needsRework,
           processed,
           recoveredArtifacts,
-          dependencyBlocked: dependencyBlockedIds(db, opts.wave),
+          dependencyBlocked: [...new Set([...dependencyBlockedIds(db, opts.wave), ...outputBlockedIds])].sort(),
           remaining,
         };
       }
@@ -206,7 +283,7 @@ export async function runAutoQueue(
         blocked: remaining.blocked + remaining.needsRework,
         processed,
         recoveredArtifacts,
-        dependencyBlocked: dependencyBlockedIds(db, opts.wave),
+        dependencyBlocked: [...new Set([...dependencyBlockedIds(db, opts.wave), ...outputBlockedIds])].sort(),
         remaining,
         error: error instanceof Error ? error.message : String(error),
       };
@@ -214,11 +291,14 @@ export async function runAutoQueue(
   }
 
   const remaining = remainingCounts(db, opts.wave);
-  const dependencyBlocked = dependencyBlockedIds(db, opts.wave);
+  const dependencyBlocked = [...new Set([
+    ...dependencyBlockedIds(db, opts.wave),
+    ...outputBlockedIds,
+  ])].sort();
   const limited = opts.limit != null && processed.length >= opts.limit &&
     (remaining.planned > 0 || (opts.resume !== false && remaining.migrated > 0));
   return {
-    status: limited ? "limited" : terminalStatus(remaining),
+    status: limited ? "limited" : terminalStatus(remaining, outputBlockedIds.size > 0),
     completed,
     blocked: remaining.blocked + remaining.needsRework,
     processed,
