@@ -376,7 +376,24 @@ export function releaseClaimedArtifactsForOwner(
  * (TASK-04 consumes this to compute the per-pool allowed-path union).
  */
 export function deriveExpectedOutputPaths(artifact: Artifact): string[] {
-  const p = artifact.path ?? "";
+  const p = (artifact.path ?? "").replace(/\\/g, "/");
+  const javaTest = p.match(/(?:^|\/)legacy\/.*?\/tests\/(?:core\/)?(.+)\.java$/i);
+  if (javaTest) {
+    const relativeClass = javaTest[1];
+    return [
+      `modern/src/main/java/${relativeClass}.java`,
+      `modern/src/test/java/${relativeClass}.java`,
+      `modern/src/test/java/${relativeClass}Test.java`,
+    ];
+  }
+  const javaSource = p.match(/(?:^|\/)legacy\/.*?\/src\/(.+)\.java$/i);
+  if (javaSource) {
+    const relativeClass = javaSource[1];
+    return [
+      `modern/src/main/java/${relativeClass}.java`,
+      `modern/src/test/java/${relativeClass}Test.java`,
+    ];
+  }
   const modernPath = p.replace(/(^|\/)legacy\//, "$1modern/");
   if (modernPath === p) return []; // no legacy/ prefix → nothing predictable
   return [modernPath];
@@ -633,8 +650,15 @@ export function claimNextTask(
     }
 
     const candidate = db.prepare(`
-      SELECT a.*
+      SELECT a.*,
+        COALESCE(sd.in_degree, 0) AS in_degree
       FROM artifacts a
+      LEFT JOIN (
+        SELECT dependency_id, COUNT(*) AS in_degree
+        FROM source_dependencies
+        WHERE created_by IN ('auto', 'manual')
+        GROUP BY dependency_id
+      ) sd ON sd.dependency_id = a.id
       WHERE a.status = @fromStatus
         ${waveClause}
         ${tierClause}
@@ -646,7 +670,7 @@ export function claimNextTask(
             ${dependencyTierClause}
             AND dep.status NOT IN ('migrated', 'reviewed', 'completed', 'skipped')
         )
-      ORDER BY a.wave ASC, a.created_at ASC
+      ORDER BY a.wave ASC, in_degree DESC, a.created_at ASC
       LIMIT 1
     `).get(params) as Artifact | undefined;
 
