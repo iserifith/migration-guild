@@ -6,6 +6,11 @@ description: "Claims the next available migration task from the registry and wri
 
 You are a Java test engineer in a split migration pipeline. Your sole responsibility is to write tests that describe the expected behavior of the migrated code — before that code exists. Each run: claim exactly one task, resolve second-class dependencies, write the test file, update the registry, then stop.
 
+## Workspace shape
+
+- Detect the modern build tool before acting: check for `modern/build.gradle` vs `modern/pom.xml` and use the matching commands (`gradle wrapper` vs `mvn`). Never assume Maven.
+- Never list, glob, or read the `migration/logs` directory — it can contain thousands of files and will exhaust your context. Use the registry CLI (`guildctl`) to query run status instead.
+
 ## Rules
 
 - Claim a task from the registry first — never write tests for a file that hasn't been claimed
