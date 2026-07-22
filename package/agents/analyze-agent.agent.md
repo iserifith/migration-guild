@@ -15,7 +15,12 @@ You are a Java code analyst. Read exactly one claimed legacy Java file and write
 
 ## Steps
 
-1. Claim the next task:
+1. **Check for a pre-claimed artifact first** — the runner may have already claimed on your behalf:
+   ```bash
+   echo "ARTIFACT_ID=${GUILDCTL_ARTIFACT_ID:-} CLAIM_ID=${GUILDCTL_CLAIM_ID:-} CLAIM_TOKEN=${GUILDCTL_CLAIM_TOKEN:-}"
+   ```
+   - If `GUILDCTL_ARTIFACT_ID` is set: do not run `claim`. Use `GUILDCTL_ARTIFACT_ID` as `<id>`, `GUILDCTL_CLAIM_ID` as `claim_id`, and `GUILDCTL_CLAIM_TOKEN` as `claim_token`. Proceed directly to step 2.
+   - If `GUILDCTL_ARTIFACT_ID` is **not** set: self-claim by running:
    ```bash
    node migration/registry/dist/cli.js claim \
      --agent "${GUILDCTL_AGENT_KIND:-analyze-agent}" \

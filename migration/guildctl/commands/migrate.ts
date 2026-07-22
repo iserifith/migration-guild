@@ -3,7 +3,8 @@ import { spawnAgent } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printWavePlan } from "../dashboard";
 import { getLogDir } from "../util";
-import { getConfigPath, loadConfig, resolvePhaseModel } from "../config";
+import fs from "node:fs";
+import { getConfigPath, loadConfig, resolveProviderRoute } from "../config";
 import {
   getClaimabilityStats,
   getStatusCounts,
@@ -20,9 +21,12 @@ import { needsBootstrap, runBootstrap } from "./bootstrap";
 import { loadActiveStack, readStackInstruction } from "../stack";
 import { evaluateMigrationReadiness, formatMigrationBlockMessage, requireNonEmptyRegistry } from "../readiness";
 
-const ANALYZE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["GUILDCTL_ANALYZE_TIMEOUT_MINS"] ?? "10", 10));
-const TEST_WRITE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["GUILDCTL_TEST_TIMEOUT_MINS"] ?? "15", 10));
-const CODE_WRITE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["GUILDCTL_CODE_TIMEOUT_MINS"] ?? "20", 10));
+function phaseTimeoutMs(envName: string, configuredCeilingSeconds: number): number {
+  const configuredMinutes = Math.max(5, Math.ceil(configuredCeilingSeconds / 60));
+  const override = Number.parseInt(process.env[envName] ?? "", 10);
+  const minutes = Number.isFinite(override) && override > 0 ? Math.max(5, override) : configuredMinutes;
+  return minutes * 60_000;
+}
 
 function statusCountsChanged(before: Record<string, number>, after: Record<string, number>): boolean {
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
@@ -56,6 +60,30 @@ interface MigrateDeps {
   getLogDir?: typeof getLogDir;
   needsBootstrap?: typeof needsBootstrap;
   runBootstrap?: typeof runBootstrap;
+}
+
+function isProviderFailure(logFile: string): boolean {
+  try {
+    const log = fs.readFileSync(logFile, "utf8");
+    return /\b(?:401|403|404|429|5\d\d)\b|rate limit|quota|exhausted|api key|credential|provider error|model .+ not found/i.test(log);
+  } catch {
+    return false;
+  }
+}
+
+async function runWithProviderFallback(
+  models: string[],
+  runAgent: typeof spawnAgent,
+  options: Parameters<typeof spawnAgent>[0],
+) {
+  let lastResult: Awaited<ReturnType<typeof spawnAgent>> | undefined;
+  for (const model of models) {
+    const result = await runAgent({ ...options, model });
+    if (result.exitCode === 0 || !isProviderFailure(result.logFile ?? "")) return result;
+    lastResult = result;
+    console.warn(`  ↷ ${options.agent} provider failure on ${model}; retrying with the next configured model.`);
+  }
+  return lastResult ?? runAgent({ ...options, model: models[0] ?? options.model });
 }
 
 export function getMigrationFollowUp(
@@ -134,10 +162,16 @@ export async function runMigrate(
   const codeParallel = Math.max(1, opts.codeParallel ?? opts.parallel ?? 1);
   const waveLabel = opts.wave != null ? ` (wave ${opts.wave})` : "";
   const cfg = loadConfig();
+  const analyzeTimeoutMs = phaseTimeoutMs("GUILDCTL_ANALYZE_TIMEOUT_MINS", cfg.agent_limits.ceiling_seconds);
+  const testTimeoutMs = phaseTimeoutMs("GUILDCTL_TEST_TIMEOUT_MINS", cfg.agent_limits.ceiling_seconds);
+  const codeTimeoutMs = phaseTimeoutMs("GUILDCTL_CODE_TIMEOUT_MINS", cfg.agent_limits.ceiling_seconds);
   const pack = loadActiveStack(cfg, cfg.guildRoot);
-  const analyzeModel = resolvePhaseModel("analysis", cfg);
-  const testModel = resolvePhaseModel("test-writing", cfg);
-  const codeModel = resolvePhaseModel("code-writing", cfg);
+  const analyzeModels = resolveProviderRoute(cfg, "census");
+  const testModels = resolveProviderRoute(cfg, "default");
+  const codeModels = resolveProviderRoute(cfg, "default");
+  const analyzeModel = analyzeModels[0] ?? cfg.model.model;
+  const testModel = testModels[0] ?? cfg.model.model;
+  const codeModel = codeModels[0] ?? cfg.model.model;
   const runAgent = deps.spawnAgent ?? spawnAgent;
   const poll = deps.startPolling ?? startPolling;
   const logDir = (deps.getLogDir ?? getLogDir)();
@@ -190,14 +224,14 @@ export async function runMigrate(
       const analyzeResults = analyzeQueueBefore.total === 0
         ? []
         : await Promise.all(Array.from({ length: analyzeParallel }, () =>
-            runAgent({
+            runWithProviderFallback(analyzeModels, runAgent, {
               agent: "analyze-agent",
               model: analyzeModel,
               prompt: analyzePrompt,
               db,
               logDir,
               phase: "analysis",
-              timeoutMs: ANALYZE_TIMEOUT_MINUTES * 60_000,
+              timeoutMs: analyzeTimeoutMs,
               releaseClaimsOnFailure: true,
               preClaim: { fromStatus: "planned", tier: "first-class", wave: opts.wave },
             })
@@ -222,14 +256,14 @@ export async function runMigrate(
       const testResults = testQueueBefore.total === 0
         ? []
         : await Promise.all(Array.from({ length: testParallel }, () =>
-            runAgent({
+            runWithProviderFallback(testModels, runAgent, {
               agent: "test-writer-agent",
               model: testModel,
               prompt: testPrompt,
               db,
               logDir,
               phase: "test-writing",
-              timeoutMs: TEST_WRITE_TIMEOUT_MINUTES * 60_000,
+              timeoutMs: testTimeoutMs,
               releaseClaimsOnFailure: true,
               preClaim: { fromStatus: "analyzed", tier: "first-class", wave: opts.wave },
             })
@@ -254,14 +288,14 @@ export async function runMigrate(
       const codeResults = codeQueueBefore.total === 0
         ? []
         : await Promise.all(Array.from({ length: codeParallel }, () =>
-            runAgent({
+            runWithProviderFallback(codeModels, runAgent, {
               agent: "code-writer-agent",
               model: codeModel,
               prompt: codePrompt,
               db,
               logDir,
               phase: "code-writing",
-              timeoutMs: CODE_WRITE_TIMEOUT_MINUTES * 60_000,
+              timeoutMs: codeTimeoutMs,
               releaseClaimsOnFailure: true,
               preClaim: { fromStatus: "tests-written", tier: "first-class", wave: opts.wave },
             })

@@ -25,20 +25,36 @@ export function resolveHarness(config: GuildConfig, root: string, env: NodeJS.Pr
   if (name === "opencode") {
     return { name, command: bundledFile(root, path.join("harness", "opencode.mjs")), targetCommand: "opencode", source: "config" };
   }
+  if (name === "goose") {
+    return { name, command: bundledFile(root, path.join("harness", "goose.mjs")), targetCommand: "goose", source: "config" };
+  }
   if (name === "codex") {
     return { name, command: bundledFile(root, path.join("harness", "codex.mjs")), targetCommand: "codex", source: "config" };
   }
   if (name === "copilot") {
     return { name, command: bundledFile(root, "agent-shim.mjs"), targetCommand: "copilot", source: "config" };
   }
-  throw new Error(`Unknown harness "${name}". Supported bundled harnesses: opencode, codex, copilot. Use AGENT_CMD for a custom harness.`);
+  throw new Error(`Unknown harness "${name}". Supported bundled harnesses: goose, opencode, codex, copilot. Use AGENT_CMD for a custom harness.`);
 }
 
-export function checkHarness(resolution: HarnessResolution): { ok: boolean; message: string } {
+// Bundled adapters that support an explicit binary-path override, keyed by
+// the env var each adapter itself reads (mirrors resolveGooseCommand/codex).
+const CLI_PATH_OVERRIDE_ENV: Record<string, string> = {
+  goose: "GOOSE_CLI_PATH",
+  codex: "CODEX_CLI_PATH",
+};
+
+export function checkHarness(
+  resolution: HarnessResolution,
+  env: NodeJS.ProcessEnv = process.env,
+): { ok: boolean; message: string } {
   if (resolution.source === "config" && !fs.existsSync(resolution.command)) {
     return { ok: false, message: `active harness: ${resolution.name} (missing adapter: ${resolution.command})` };
   }
-  const command = resolution.name === "custom" ? resolution.command : resolution.targetCommand;
+  const overrideEnvVar = CLI_PATH_OVERRIDE_ENV[resolution.name];
+  const command = resolution.name === "custom"
+    ? resolution.command
+    : (overrideEnvVar && env[overrideEnvVar]) || resolution.targetCommand;
   const nodeShim = /\.(mjs|cjs|js)$/i.test(command);
   const result = spawnSync(nodeShim ? process.execPath : command, nodeShim ? [command, "--version"] : ["--version"], {
     encoding: "utf8",

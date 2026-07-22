@@ -359,8 +359,9 @@ export async function runInventory(db: Database.Database, workspaceRoot = resolv
           model,
           prompt:
             "Classify ONLY the orchestrator-registered first-class artifacts listed below. Do not register new artifacts. " +
-            "Write a structured JSON batch with id, module, role, framework, confidence, evidence, ambiguous/signals when needed, then apply it using " +
-            "`node migration/registry/dist/cli.js batch-classify --file <json>`. Do not use arbitrary tags; lifecycle tags are not classification evidence. " +
+            "You MAY write a temporary classification file (this is required, not a source edit). " +
+            "Write the JSON batch to `.guild/scratch/classify-batch.json` (create `.guild/scratch/` if needed) with id, module, role, framework, confidence, evidence, ambiguous/signals when needed, then apply it using " +
+            "`node migration/registry/dist/cli.js batch-classify --file .guild/scratch/classify-batch.json`. Do not use arbitrary tags; lifecycle tags are not classification evidence. " +
             "evidence MUST be a JSON array of strings, e.g. [\"negative-evidence: no configured framework signal matched\", \"django: Django Model import\"]. " +
             "When the batch is applied, record explicit phase completion evidence with `node migration/registry/dist/cli.js mark-inventory-complete`.\n\n" +
             `Batch artifact IDs (${batch.length}):\n${batch.join("\n")}\n\n` +
