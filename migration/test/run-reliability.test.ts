@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 import Database from "better-sqlite3";
 import { isGitWorktree, snapshotChangedFiles, spawnAgent } from "../guildctl/runner";
@@ -219,8 +220,10 @@ test("spawnAgent restores forbidden writes and rolls back claims when a pre-clai
   const originalAgent = process.env["AGENT_CMD"];
   const originalWorkspace = process.env["GUILD_WORKSPACE"];
   const originalRegistry = process.env["REGISTRY_DB"];
-  const repoMigrationRoot = "/home/frierensamacorp/projects/migration-guild-autonomous/migration";
-  const tsxLoader = path.join(repoMigrationRoot, "node_modules", "tsx", "dist", "loader.mjs");
+  // Tests run with cwd = the migration package root (see package.json "test").
+  const repoMigrationRoot = process.cwd();
+  // node --import needs a file:// URL for absolute paths on Windows.
+  const tsxLoader = pathToFileURL(path.join(repoMigrationRoot, "node_modules", "tsx", "dist", "loader.mjs")).href;
   const registryCli = path.join(repoMigrationRoot, "registry", "cli.ts");
   const claimOwner = "code-writer-agent:claim-warden";
   const artifactId = "legacy-source:com.acme:WardenRollback";
@@ -313,7 +316,8 @@ test("spawnAgent pre-claim permits default workspace-local registry DB sidecars"
   const dbPath = path.join(workDir, ".guild", "registry.db");
   const stubPath = path.join(workDir, "fake-agent.cjs");
   const repoMigrationRoot = path.resolve(__dirname, "..");
-  const tsxLoader = path.join(repoMigrationRoot, "node_modules", "tsx", "dist", "loader.mjs");
+  // node --import needs a file:// URL for absolute paths on Windows.
+  const tsxLoader = pathToFileURL(path.join(repoMigrationRoot, "node_modules", "tsx", "dist", "loader.mjs")).href;
   const registryCli = path.join(repoMigrationRoot, "registry", "cli.ts");
   const originalAgent = process.env["AGENT_CMD"];
   const originalWorkspace = process.env["GUILD_WORKSPACE"];
