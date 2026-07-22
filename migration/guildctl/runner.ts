@@ -308,15 +308,25 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   const agentCommand = resolveHarness(config, projectRoot).command;
   const beforeFiles = snapshotChangedFiles(projectRoot);
   const usageFile = path.join(os.tmpdir(), `guild-opencode-usage-${runId}.json`);
-  const wardenExcludedPaths = expandWardenExclusions(transientWardenExclusions(projectRoot, [
-    path.resolve(projectRoot, config.evidence.output_dir),
-    ...activeSqliteWardenExclusions(db),
-    ...(opts.logDir ? [opts.logDir] : []),
-  ]));
-
   const logFile = opts.logDir
     ? path.join(opts.logDir, formatLogFileName(agent, startMs, runId, opts.phase))
     : undefined;
+
+  // Run logs must survive warden enforcement, but if logDir is the workspace
+  // root (or an ancestor of it) excluding the whole directory would blind the
+  // warden entirely — fall back to excluding just this run's log file.
+  const resolvedLogDir = opts.logDir ? path.resolve(opts.logDir) : undefined;
+  const rootFromLogDir = resolvedLogDir ? path.relative(resolvedLogDir, projectRoot) : undefined;
+  const logDirCoversWorkspace = rootFromLogDir !== undefined
+    && (rootFromLogDir === "" || (!rootFromLogDir.startsWith("..") && !path.isAbsolute(rootFromLogDir)));
+  const logExclusions = resolvedLogDir
+    ? (logDirCoversWorkspace ? (logFile ? [logFile] : []) : [resolvedLogDir])
+    : [];
+  const wardenExcludedPaths = expandWardenExclusions(transientWardenExclusions(projectRoot, [
+    path.resolve(projectRoot, config.evidence.output_dir),
+    ...activeSqliteWardenExclusions(db),
+    ...logExclusions,
+  ]));
 
   if (logFile) {
     fs.mkdirSync(path.dirname(logFile), { recursive: true });
