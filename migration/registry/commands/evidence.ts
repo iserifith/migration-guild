@@ -1,10 +1,12 @@
 import type Database from "better-sqlite3";
 import { createHash, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
+import path from "node:path";
 import { signRuntimeEvidence } from "../../guildctl/verify";
 import { RegistryError, validateId } from "../types";
 import type {
   AcceptanceEvidence,
+  ApprovedCompanionOutput,
   ArbitrationDecision,
   ArbitrationDecisionValue,
   Artifact,
@@ -28,6 +30,8 @@ export interface AddAcceptanceEvidenceOptions {
   logSha256?: string | null;
   durationMs?: number | null;
   authenticity?: string | null;
+  contentSha256?: string | null;
+  signatureJson?: string | null;
 }
 
 export interface RecordArbitrationDecisionOptions {
@@ -107,7 +111,9 @@ function insertAcceptanceEvidence(
        output_excerpt,
        log_sha256,
        duration_ms,
-       authenticity
+       authenticity,
+       content_sha256,
+       signature_json
      ) VALUES (
        @artifact_id,
        @run_id,
@@ -121,7 +127,9 @@ function insertAcceptanceEvidence(
        @output_excerpt,
        @log_sha256,
        @duration_ms,
-       @authenticity
+       @authenticity,
+       @content_sha256,
+       @signature_json
      )`,
   ).run({
     artifact_id: opts.artifactId,
@@ -137,6 +145,8 @@ function insertAcceptanceEvidence(
     log_sha256: opts.logSha256 ?? null,
     duration_ms: opts.durationMs ?? null,
     authenticity: opts.authenticity ?? null,
+    content_sha256: opts.contentSha256 ?? null,
+    signature_json: opts.signatureJson ?? null,
   });
 
   return db.prepare("SELECT * FROM acceptance_evidence WHERE rowid = ?").get(result.lastInsertRowid) as AcceptanceEvidence;
@@ -390,6 +400,15 @@ export function canApproveArtifact(
     };
   }
 
+  const freshness = checkEvidenceFreshness(db, artifactId);
+  if (!freshness.ok) {
+    return {
+      ok: false,
+      evidenceIds: [latestEvidence.evidence_id],
+      reason: freshness.reason,
+    };
+  }
+
   return {
     ok: true,
     evidenceIds: [latestEvidence.evidence_id],
@@ -401,6 +420,11 @@ export function approveArtifactWithEvidence(
   db: Database.Database,
   opts: ApproveArtifactWithEvidenceOptions,
 ): ArbitrationDecision {
+  const freshness = checkEvidenceFreshness(db, opts.artifactId);
+  if (!freshness.ok) {
+    throw new RegistryError(1, freshness.reason);
+  }
+
   const tx = db.transaction(() => {
     const approval = canApproveArtifact(db, opts.artifactId, opts.arbiter, {
       runId: opts.runId,
@@ -484,6 +508,46 @@ function validateRuntimeEvidence(
   return { ok: true };
 }
 
+export function checkEvidenceFreshness(
+  db: Database.Database,
+  artifactId: string,
+): { ok: true } | { ok: false; reason: string } {
+  const latestEvidence = getLatestExecutableEvidence(db, artifactId);
+  if (!latestEvidence) return { ok: true };
+
+  const latestStatic = db.prepare(
+    `SELECT * FROM acceptance_evidence
+     WHERE artifact_id = ? AND evidence_type = 'static-check' AND pass = 1
+     ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+  ).get(artifactId) as AcceptanceEvidence | undefined;
+  if (latestStatic) {
+    if (!latestStatic.content_sha256 || !latestStatic.output_path || !fs.existsSync(latestStatic.output_path)) {
+      return { ok: false, reason: "Stale evidence: static-check output or content hash is missing" };
+    }
+    if (latestStatic.run_id !== latestEvidence.run_id) {
+      return { ok: false, reason: "Static-check and runtime evidence must belong to the same run" };
+    }
+    if (!safeEqual(sha256File(latestStatic.output_path), latestStatic.content_sha256)) {
+      return { ok: false, reason: "Stale evidence: output content changed after the static-check gate" };
+    }
+  }
+
+  const latestRepairEvent = db.prepare(
+    `SELECT ts FROM events
+     WHERE artifact_id = ? AND type = 'auto-rework'
+     ORDER BY rowid DESC LIMIT 1`,
+  ).get(artifactId) as { ts: string } | undefined;
+
+  if (latestRepairEvent && latestEvidence.created_at < latestRepairEvent.ts) {
+    return {
+      ok: false,
+      reason: "Stale evidence: latest runtime evidence predates a repair event; fresh evidence is required after repair",
+    };
+  }
+
+  return { ok: true };
+}
+
 export function rejectArtifactWithEvidence(
   db: Database.Database,
   opts: RejectArtifactWithEvidenceOptions,
@@ -517,4 +581,113 @@ export function rejectArtifactWithEvidence(
   });
 
   return tx();
+}
+
+// ─── Approved Companion Outputs ──────────────────────────────────────────────
+
+export interface AddCompanionOutputOptions {
+  artifactId: string;
+  outputPath: string;
+  approvedBy: string;
+}
+
+/**
+ * Validate a companion output path: must be a normalized relative path, must
+ * not escape the working tree (no leading `/`, no `..` segments), and must
+ * live under `modern/`.  Fail-closed on any violation.
+ */
+export function validateCompanionOutputPath(rawPath: string): string {
+  const trimmed = rawPath.trim();
+  if (!trimmed) {
+    throw new RegistryError(1, "Companion output path is required");
+  }
+  if (path.isAbsolute(trimmed)) {
+    throw new RegistryError(
+      3,
+      `Companion output path must be relative (got absolute): "${trimmed}"`,
+    );
+  }
+  if (trimmed !== rawPath || trimmed.includes("\\")) {
+    throw new RegistryError(
+      3,
+      `Companion output path is not a canonical POSIX path: "${rawPath}"`,
+    );
+  }
+  const segments = trimmed.split("/");
+  const normalized = path.posix.normalize(trimmed);
+  if (normalized !== trimmed || segments.some((segment) => segment === "" || segment === ".")) {
+    throw new RegistryError(
+      3,
+      `Companion output path is not normalized: "${trimmed}" (expected "${normalized}")`,
+    );
+  }
+  if (segments.includes("..")) {
+    throw new RegistryError(
+      3,
+      `Companion output path must not contain ".." segments: "${trimmed}"`,
+    );
+  }
+  if (!normalized.startsWith("modern/")) {
+    throw new RegistryError(
+      3,
+      `Companion output path must be under modern/ (got "${trimmed}")`,
+    );
+  }
+  return normalized;
+}
+
+export function addApprovedCompanionOutput(
+  db: Database.Database,
+  opts: AddCompanionOutputOptions,
+): ApprovedCompanionOutput {
+  assertArtifactExists(db, opts.artifactId);
+  const outputPath = validateCompanionOutputPath(opts.outputPath);
+  if (!opts.approvedBy.trim()) {
+    throw new RegistryError(1, "Companion output approver is required");
+  }
+
+  const result = db.prepare(
+    `INSERT INTO approved_companion_outputs (
+       artifact_id,
+       output_path,
+       approved_by
+     ) VALUES (
+       @artifact_id,
+       @output_path,
+       @approved_by
+     )
+     ON CONFLICT(artifact_id, output_path) DO UPDATE SET
+       approved_by = excluded.approved_by,
+       approved_at = datetime('now')`,
+  ).run({
+    artifact_id: opts.artifactId,
+    output_path: outputPath,
+    approved_by: opts.approvedBy,
+  });
+
+  return db.prepare(
+    "SELECT * FROM approved_companion_outputs WHERE artifact_id = ? AND output_path = ?",
+  ).get(opts.artifactId, outputPath) as ApprovedCompanionOutput;
+}
+
+export function listApprovedCompanionOutputs(
+  db: Database.Database,
+  artifactId: string,
+): ApprovedCompanionOutput[] {
+  assertArtifactExists(db, artifactId);
+  return db.prepare(
+    `SELECT * FROM approved_companion_outputs
+     WHERE artifact_id = ?
+     ORDER BY rowid DESC`,
+  ).all(artifactId) as ApprovedCompanionOutput[];
+}
+
+export function getApprovedCompanionOutput(
+  db: Database.Database,
+  artifactId: string,
+  outputPath: string,
+): ApprovedCompanionOutput | null {
+  return db.prepare(
+    "SELECT * FROM approved_companion_outputs WHERE artifact_id = ? AND output_path = ?",
+  ).get(artifactId, outputPath) as ApprovedCompanionOutput | undefined ?? null;
 }

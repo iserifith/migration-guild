@@ -48,6 +48,11 @@ import {
   reopenFinding,
 } from "./commands/modernization";
 
+import {
+  addApprovedCompanionOutput,
+  listApprovedCompanionOutputs,
+} from "./commands/evidence";
+
 import { getContextPath, writeContext } from "./commands/context";
 import { appendChangelog, getChangelogPath } from "./commands/changelog";
 import { addCompleted, getOperatorState, setFocus, setNext } from "./commands/operator";
@@ -172,6 +177,12 @@ program
   .option("--claim-token <claimToken>", "Active claim token authorizing the status change")
   .action((opts) =>
     run(() => {
+      if (opts.status === "reviewed") {
+        throw new RegistryError(
+          1,
+          "Direct promotion to reviewed is forbidden; use evidence-backed arbitration through guildctl auto or guildctl arbitrate",
+        );
+      }
       setArtifactStatus(db(), opts.id, opts.status as Status, {
         agent: opts.agent,
         model: opts.model,
@@ -594,6 +605,34 @@ program
   .description("Release claims whose leases expired or whose owning runs stopped")
   .option("--agent <agent>", "Agent recorded on reconciliation events", "guildctl")
   .action((opts) => run(() => reconcileStaleClaims(db(), opts.agent)));
+
+program
+  .command("approve-companion")
+  .description(
+    "Approve a companion output path for an artifact. The approved path is " +
+    "added to the claim's expected output allow-list. The path must be a " +
+    "normalized relative path under modern/ with no traversal.",
+  )
+  .requiredOption("--id <artifactId>", "Artifact ID to approve a companion output for")
+  .requiredOption("--path <path>", "Relative path under modern/ (e.g. modern/src/FooTest.java)")
+  .requiredOption("--approved-by <operator>", "Operator or agent recording the approval")
+  .action((opts) =>
+    run(() => {
+      addApprovedCompanionOutput(db(), {
+        artifactId: opts.id,
+        outputPath: opts.path,
+        approvedBy: opts.approvedBy,
+      });
+    }),
+  );
+
+program
+  .command("list-companion-outputs")
+  .description("List approved companion output paths for an artifact")
+  .requiredOption("--id <artifactId>", "Artifact ID")
+  .action((opts) =>
+    run(() => listApprovedCompanionOutputs(db(), opts.artifactId)),
+  );
 
 // ─── Wave Planning ───────────────────────────────────────────────────────────
 

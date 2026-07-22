@@ -2,6 +2,7 @@ import path from "node:path";
 import type Database from "better-sqlite3";
 import { runAutoCommand } from "./auto";
 import { runAutoQueue, type AutoQueueResult, type QueueArtifactExecutor } from "../supervisor/queue";
+import { resolveWorkspaceRoot } from "../config";
 
 export interface AutoRunCliOptions {
   command?: string[];
@@ -12,6 +13,7 @@ export interface AutoRunCliOptions {
   json?: boolean;
   registryDbPath?: string;
   setExitCode?: boolean;
+  workspaceRoot?: string;
 }
 
 export interface AutoRunCommandDependencies {
@@ -55,6 +57,7 @@ export async function runAutoRunCommand(
     wave: opts.wave,
     limit: opts.limit,
     resume: opts.resume,
+    workspaceRoot: opts.workspaceRoot ?? resolveWorkspaceRoot(),
   });
 
   if (opts.setExitCode !== false) {

@@ -186,6 +186,8 @@ export interface AcceptanceEvidence {
   log_sha256: string | null;
   duration_ms: number | null;
   authenticity: string | null;
+  content_sha256: string | null;
+  signature_json: string | null;
   created_at: string;
 }
 
@@ -393,10 +395,17 @@ export interface StackMapping {
   target_framework: string;
   strategy: MappingStrategy | null;
   notes: string | null;
-  confirmed: number; // 0 | 1 (SQLite boolean)
+  confirmed: number;
   confirmed_by: string | null;
   confirmed_at: string | null;
   created_at: string;
+}
+
+export interface ApprovedCompanionOutput {
+  artifact_id: string;
+  output_path: string;
+  approved_by: string;
+  approved_at: string;
 }
 
 /** `legacy:pcsl:BadRequestExceptionHandler` → `legacy--pcsl--badrequestexceptionhandler` */

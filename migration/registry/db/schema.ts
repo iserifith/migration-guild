@@ -53,6 +53,8 @@ export function applySchema(db: Database.Database): void {
   ensureColumn(db, "acceptance_evidence", "log_sha256", "TEXT");
   ensureColumn(db, "acceptance_evidence", "duration_ms", "INTEGER");
   ensureColumn(db, "acceptance_evidence", "authenticity", "TEXT");
+  ensureColumn(db, "acceptance_evidence", "content_sha256", "TEXT");
+  ensureColumn(db, "acceptance_evidence", "signature_json", "TEXT");
 }
 
 function ensureColumn(
