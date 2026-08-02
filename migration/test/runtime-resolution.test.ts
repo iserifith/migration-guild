@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
 import { DEFAULT_GUILD_CONFIG, type GuildConfig } from "../guildctl/config";
-import { resolveAgentLaunch, resolveHarness } from "../guildctl/harness";
+import { resolveAgentLaunch, resolveHarness, toResolvedRuntimeReport } from "../guildctl/harness";
 import { spawnAgent } from "../guildctl/runner";
 import { applySchema } from "../registry/db/schema";
 import { makeTempDir } from "./truthful-run-state-fixtures";
@@ -70,6 +70,25 @@ test("credentialEnv carries the variable name only — the value never enters th
       divergences: resolved.divergences,
     });
     assert.equal(dumped.includes(CREDENTIAL_VALUE), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("toResolvedRuntimeReport excludes the private launch environment and credential values", () => {
+  const root = makeTempDir("guild-runtime-report-");
+  try {
+    const resolved = resolveAgentLaunch({
+      config: config(),
+      root,
+      env: { EXAMPLE_PRIVATE_API_KEY: CREDENTIAL_VALUE, OTHER_SECRET: "another-secret" },
+    });
+
+    const report = toResolvedRuntimeReport(resolved);
+    assert.equal("agentEnv" in report, false);
+    assert.equal(JSON.stringify(report).includes(CREDENTIAL_VALUE), false);
+    assert.equal(JSON.stringify(report).includes("another-secret"), false);
+    assert.equal(resolved.agentEnv.EXAMPLE_PRIVATE_API_KEY, CREDENTIAL_VALUE);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

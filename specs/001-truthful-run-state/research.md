@@ -137,37 +137,25 @@ failure:
 1. **resolution** — resolve harness, provider base URL, model, and credential variable through a
    single shared resolver, `resolveAgentLaunch()`, extracted from the runner and called by both
    `spawnAgent` and preflight. Fails when any resolved value is missing or the harness is unknown.
-2. **live provider request** — one minimal OpenAI-compatible `chat/completions` request using the
-   *resolved* base URL, model, and credential (exactly the values the runner injects as
-   `AGENT_PROVIDER_BASE_URL` / `AGENT_PROVIDER_API_KEY_ENV`), asserting a non-empty completion in the
-   response body. HTTP status maps to stage: `401`/`403` → authorization; `404` or a
-   model-not-found body → model availability; `429`/quota bodies → authorization with the
-   provider-reported reason; network error or budget elapse → response.
-3. **harness round-trip** — invoke the resolved adapter with a trivial prompt and assert a non-empty
-   model reply on stdout, bounded by the remaining budget.
+2. **live resolved launch request** — issue one minimal end-to-end model request through the resolved
+   launch path, asserting a non-empty completion. Provider status and body map to `authorization`,
+   `model-availability`, or `response`: `401`/`403` → authorization; `404` or a model-not-found body
+   → model availability; `429`/quota bodies → authorization with the provider-reported reason; network
+   error, malformed body, empty completion, or budget elapse → response.
 
-**Rationale**: FR-011 requires preflight to validate "the same runtime path a phase run will take".
-Extracting one shared resolver makes that structural rather than asserted — preflight cannot drift
-from the runner because there is only one resolution function. FR-012 requires an end-to-end request
-that is asserted on, and explicitly rules out "an adapter program starts" as a pass, which is what
-`checkHarness` does today with `--version`.
-
-Stages 2 and 3 are both needed and neither is redundant:
-
-- Stage 2 exists for **attribution**. FR-016 requires naming the failing stage and quoting the
-  provider's reason; an adapter subprocess returns an opaque exit code, so the HTTP-level probe is
-  the only place that distinction is legible.
-- Stage 3 exists for **fidelity**. The adapters translate the provider config (see
-  `package/harness/codex.mjs`, which rewrites it into `model_providers.*` TOML, and
-  `package/harness/opencode.mjs`, which writes a temporary provider config). A translation bug, or a
-  missing `codex`/`opencode` binary, is invisible to stage 2 and fatal to a run.
+The live stage may invoke the resolved adapter or its provider request path, but it must be one request
+under one shared budget. Adapter startup alone is never a pass, and preflight must not issue a second
+completion solely to test adapter fidelity.
+The single live stage preserves both concerns without issuing two completions: it reports provider
+authorization/model-availability/response attribution when the request exposes it, while requiring a
+non-empty model response through the resolved launch path. Adapter startup alone remains insufficient,
+and a missing adapter is a resolution or response failure rather than a separate successful stage.
 
 **Alternatives considered**:
 
-- *Adapter round-trip only* — rejected: satisfies FR-012 but not FR-016; the operator learns the run
-  is broken without learning which stage broke, which is the exact failure the spec's User Story 2
-  describes.
-- *HTTP probe only* — rejected: would report green for a workspace whose harness binary is absent.
+- *Adapter startup only* — rejected: it can pass while the adapter cannot obtain a model response.
+- *A separate HTTP probe plus adapter round-trip* — rejected: it spends two completions and can still
+ let the two paths drift; one resolved end-to-end request is the truthful assertion.
 - *Keep `--version`* — rejected: this is the status quo the feature exists to remove.
 
 **Current behaviour**: `guildctl doctor` (`migration/guildctl/cli.ts:143-193`) performs exactly the
@@ -178,7 +166,7 @@ three misleading checks the spec names — a non-empty model string, `checkHarne
 
 ## R6. Offline preflight
 
-**Decision**: `--offline` (and `GUILD_PREFLIGHT_OFFLINE=1`) skips stages 2 and 3. Those stages report
+**Decision**: `--offline` (and `GUILD_PREFLIGHT_OFFLINE=1`) skips the live stage. It reports
 status `unvalidated`, never `pass`, and the overall verdict is `unvalidated` — a third verdict
 distinct from `pass` and `fail`, with a non-zero-free exit code of its own (`0`, since offline is a
 deliberate operator choice, but a verdict string that no green-check script can mistake for `pass`).
@@ -426,8 +414,8 @@ with no added expressiveness.
 
 - **Provider**: the preflight probe takes an injectable `fetch` (defaulting to global `fetch`), so
   authorization, unknown-model, quota, timeout, and success paths are all table-driven with no
-  network. Stage 3 runs against a fake adapter script, following the pattern already established by
-  `codex-harness.test.ts` and `opencode-harness.test.ts`.
+  network. The live resolved-launch request uses the existing fake adapter/provider fixtures, following
+  the pattern already established by `codex-harness.test.ts` and `opencode-harness.test.ts`.
 - **Process tree**: a fixture script that spawns a long-lived grandchild and ignores `SIGTERM`
   exercises graceful → forced → confirmed escalation and the survivor path, extending
   `run-reliability.test.ts`.
@@ -451,7 +439,7 @@ also requires tests to precede production code, which the plan carries into task
 | R2 | What the per-unit check is | Stack pack `verify:` block; no check ⇒ `no-stack-check` |
 | R3 | How scope is bounded | Claim output paths + one-hop declared dependencies, from registry rows |
 | R4 | Verification budget default | `verification.budget_seconds`, default 120 |
-| R5 | What preflight exercises | Shared launch resolver + live provider request + harness round-trip |
+| R5 | What preflight exercises | Shared launch resolver + one live resolved-launch request |
 | R6 | Offline preflight verdict | Third verdict `unvalidated`; never `pass` |
 | R7 | Env precedence mechanism | Explicit snapshot-then-apply loader; `GUILD_ENV_PRECEDENCE=ambient` opt-in |
 | R8 | Process-tree termination | Process-group signalling (POSIX) / `taskkill /T` (Windows), then confirm |

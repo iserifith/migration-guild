@@ -41,22 +41,29 @@ export interface ConfigDivergence {
   resolvedValue: string;
 }
 
-/**
- * What a run will actually use, as opposed to what project configuration
- * declares (FR-011).
- *
- * The credential *value* never enters this object — only the variable name — so
- * it cannot leak into a log line or a JSON dump (FR-019).
- */
-export interface ResolvedRuntimeConfig {
+/** The secret-free projection safe for reports, logs, and JSON output. */
+export interface ResolvedRuntimeReport {
   harness: HarnessResolution;
   providerBaseUrl: string;
   model: string;
   /** Variable NAME only. */
   credentialEnv: string;
-  /** Exactly the environment the agent process receives. */
-  agentEnv: Record<string, string>;
   divergences: ConfigDivergence[];
+}
+
+/**
+ * What a run will actually use, as opposed to what project configuration
+ * declares (FR-011). `agentEnv` is private process-launch input and may contain
+ * credentials; reporting code must call `toResolvedRuntimeReport()` instead.
+ */
+export interface ResolvedRuntimeConfig extends ResolvedRuntimeReport {
+  /** Exactly the environment the agent process receives; never report or serialize it. */
+  agentEnv: Record<string, string>;
+}
+
+export function toResolvedRuntimeReport(resolution: ResolvedRuntimeConfig): ResolvedRuntimeReport {
+  const { agentEnv: _privateLaunchEnv, ...report } = resolution;
+  return report;
 }
 
 export interface ResolveAgentLaunchOptions {

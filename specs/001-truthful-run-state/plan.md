@@ -87,7 +87,7 @@ doctor checks are already sized for.
 
 **Scale/Scope**: 44 functional requirements across six areas; ~3,000-artifact registries; 6 user
 stories prioritized P1–P6 and independently testable. Touched surfaces: 4 guildctl modules
-(`runner`, `harness`, `config`, `cli`) plus 2 new ones (`preflight`, `env`), 3 registry command
+(`runner`, `harness`, `config`, `cli`) plus 3 new ones (`preflight`, `env`, `runtime-report`), 3 registry command
 modules, 1 schema file, 2 stack packs in both `stacks/` and `package/stacks/`, 4 packaged agent
 definitions, and 4 documentation files.
 
@@ -176,21 +176,24 @@ migration/                          # runtime: registry + orchestrator (repo-onl
 │       └── runs.ts                 # + attempt-outcome fields on finishRun
 └── guildctl/
     ├── env.ts                      # NEW — precedence loader + divergence report      (FR-020-023)
-    ├── preflight.ts                # NEW — 3-stage probe, injectable fetch            (FR-011-019)
+    ├── preflight.ts                # NEW — 2-stage probe, injectable fetch            (FR-011-019)
+    ├── runtime-report.ts           # NEW — shared runtime-line/divergence renderer consuming harness projection (FR-013/019/024/025)
     ├── limits.ts                   # NEW — limit descriptor resolver                  (FR-027-029)
     ├── harness.ts                  # + resolveAgentLaunch() shared by runner+preflight (FR-011)
     ├── runner.ts                   # process-group spawn/kill, honest summary, outcome (FR-030-039)
     ├── verify.ts                   # + bounded per-artifact verification              (FR-003-005)
     ├── warden.ts                   # + named out-of-scope-path condition              (FR-010)
-    ├── config.ts                   # + verification.budget_seconds, termination grace
+    ├── config.ts                   # + verification/preflight budgets, termination grace
     ├── cli.ts                      # + preflight, limits; doctor delegates to preflight
     ├── commands/
-        ├── status.ts               # + verified/unverified/failed split, no-progress counts (FR-008)
-        ├── migrate.ts              # phase dispatch; limit descriptors                 (FR-027/029)
-        ├── auto.ts                 # autonomous dispatch, preflight, and agent spawn  (FR-011/024/030-039)
-        └── review.ts               # verification state visible to review              (FR-009)
+    │   ├── status.ts               # + verified/unverified/failed split, no-progress counts (FR-008)
+    │   ├── migrate.ts              # phase dispatch; limit descriptors                 (FR-027/029)
+    │   ├── auto.ts                 # per-artifact autonomous dispatch and agent spawn   (FR-011/030-039)
+    │   ├── auto-run.ts             # queue-level preflight/runtime gate                (FR-011/018/024/025)
+    │   └── review.ts               # verification state visible to review              (FR-009)
     └── supervisor/
-        └── loop.ts                 # autonomous claim close, verification, outcomes    (FR-001/030-039)
+        ├── loop.ts                 # autonomous claim close, verification, outcomes    (FR-001/030-039)
+        └── queue.ts                # queue dispatch and once-per-queue gates          (FR-017/024/025)
 
 migration/test/                     # node:test regression suites (tests written first)
 ├── verification-state.test.ts      # NEW  (US1)
@@ -223,8 +226,8 @@ changes land in `migration/` (registry schema and commands, guildctl modules); e
 agent-visible lands in `package/`; stack-specific checks land in the stack packs in both
 `stacks/` and `package/stacks/`, which must be byte-identical after the baseline reconciliation and
 must stay so. This split is mandated by the
-constitution's Repository Source-of-Truth Boundaries section, not chosen here. Three new guildctl
-modules (`env.ts`, `preflight.ts`, `limits.ts`) and one new registry command module
+constitution's Repository Source-of-Truth Boundaries section, not chosen here. Four new guildctl
+modules (`env.ts`, `preflight.ts`, `runtime-report.ts`, `limits.ts`) and one new registry command module
 (`verification.ts`) are added rather than growing `cli.ts` and `runner.ts`, because each is a
 resolver that must be independently unit-testable — that testability is what makes the "reporting
 cannot drift from behaviour" property checkable rather than aspirational.
