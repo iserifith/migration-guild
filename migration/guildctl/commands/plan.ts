@@ -13,6 +13,8 @@ import { refreshCompatibilityAudits } from "../audit";
 import { loadActiveStack, readStackInstruction } from "../stack";
 import { evaluatePlanningReadiness, formatPlanningBlockMessage, requireNonEmptyRegistry } from "../readiness";
 import { formatInventoryValidationReport, loadClassificationSpec, validateInventoryQuality } from "../classification";
+import { resolveAndReportRuntime } from "../runtime-report";
+import type { ResolvedRuntimeConfig } from "../harness";
 
 async function confirmMappings(
   db: Database.Database,
@@ -199,6 +201,8 @@ async function runPhaseWithInvariant(opts: {
   retries: number;
   verify: () => { passed: boolean; message: string };
   invariantLabel: string;
+  /** The phase-entry resolution; retries reuse it rather than resolving again. */
+  resolution?: ResolvedRuntimeConfig;
 }): Promise<PhaseRunResult> {
   let prompt = opts.basePrompt;
   let retriesLeft = opts.retries;
@@ -209,6 +213,7 @@ async function runPhaseWithInvariant(opts: {
     db: opts.db,
     logDir: opts.logDir,
     phase: opts.phase,
+    resolution: opts.resolution,
   });
   if (!opts.enforce) return { result, verified: null };
 
@@ -245,6 +250,7 @@ You MUST make progress in the registry (call the actual write commands), not mer
       db: opts.db,
       logDir: opts.logDir,
       phase: opts.phase,
+      resolution: opts.resolution,
     });
     v = opts.verify();
     recordPhaseVerification(opts.db, opts.invariantLabel, result.exitCode, v.passed, v.message);
@@ -267,6 +273,9 @@ export async function runPlan(
   const logDir = (deps.getLogDir ?? getLogDir)();
 
   printPhaseHeader("Phase 2 · Planning readiness");
+  // FR-024: one resolution for the phase, reported before any agent starts and
+  // reused by both the stack-advisor and planner runs.
+  const runtime = resolveAndReportRuntime({ config: cfg, root: projectRoot, model: planningModel });
   const auditSummary = refreshAudits(db, projectRoot);
   const initialReadiness = evaluatePlanningReadiness(db);
   const jvmBlock = formatPlanningBlockMessage({
@@ -345,6 +354,7 @@ export async function runPlan(
       retries: deps.retries ?? 0,
       invariantLabel: "stack-advisor",
       verify: () => verifyStackAdvisorInvariant(db, stackAdvisorBaseline, inventoryNonEmpty),
+      resolution: runtime,
     });
     const result = stackAdvisorRun.result;
 
@@ -424,6 +434,7 @@ export async function runPlan(
     retries: deps.retries ?? 0,
     invariantLabel: "planner",
     verify: () => verifyPlannerInvariant(db),
+    resolution: runtime,
   });
   const plannerResult = plannerRun.result;
 

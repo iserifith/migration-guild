@@ -61,6 +61,16 @@ node migration/registry/dist/cli.js list-artifacts
 
 ---
 
+### Environment precedence (behaviour change)
+
+The workspace `.env` is loaded automatically and wins over inherited environment values by default.
+Use `guildctl --ambient-env <command>` or `GUILD_ENV_PRECEDENCE=ambient guildctl <command>` only
+when ambient precedence is intentional. Divergences are reported at run start and credential values
+are redacted. In particular, a workspace `.env` value for `AGENT_CMD` now wins over an exported
+ambient `AGENT_CMD`; this can change which harness is launched.
+
+---
+
 ## Run the pipeline
 
 ```bash

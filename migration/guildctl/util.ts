@@ -21,6 +21,21 @@ export function getLogDir(): string {
   return dir;
 }
 
+/**
+ * The single definition of "this variable carries a secret", by name.
+ *
+ * One predicate governs evidence-log scrubbing, preflight reporting, and the
+ * environment divergence report alike (FR-023), so a variable cannot be a
+ * secret on one output path and printable on another. It lives here rather
+ * than in `verify.ts` — which re-exports it — because the environment loader
+ * runs before the registry modules are imported, and importing `verify.ts`
+ * that early would pull module-scope environment readers in ahead of the
+ * values this load is about to apply.
+ */
+export function isSensitiveEnvName(name: string): boolean {
+  return /(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH|BEARER)/i.test(name);
+}
+
 // ─── Process-group termination primitives (FR-035–FR-038) ────────────────────
 //
 // Terminating an attempt must terminate everything that attempt started, not

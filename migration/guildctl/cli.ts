@@ -2,19 +2,24 @@
 import * as path from "path";
 import * as fs from "fs";
 import { execFileSync } from "child_process";
-// Auto-load .env from the workspace root, regardless of CWD, so users don't
-// need to `set -a && source .env && set +a`. Try several candidates: the
-// current directory (where the user runs), plus the CLI install location for
-// both source (migration/guildctl/cli.ts) and built (…/guildctl/dist) layouts.
-// dotenv does not override already-set vars, so earlier candidates win.
-import { config as dotenvConfig } from "dotenv";
-for (const candidate of [
-  path.resolve(process.cwd(), ".env"),
-  path.resolve(__dirname, "..", "..", "..", ".env"),
-  path.resolve(__dirname, "..", "..", ".env"),
-]) {
-  if (fs.existsSync(candidate)) dotenvConfig({ path: candidate, quiet: true });
-}
+// Load .env from the workspace root, regardless of CWD, so users don't need to
+// `set -a && source .env && set +a`. The workspace `<cwd>/.env` describes this
+// checkout's runtime and wins over an inherited value (FR-020); the two
+// CLI-install-relative candidates remain compatibility inputs that only fill
+// variables nobody else defined. Candidate order is unchanged.
+//
+// This must stay at module scope, above the first command import, because
+// several modules read the environment while being imported — a value applied
+// after that point would be applied too late to be observed.
+//
+// `--ambient-env` is scanned straight out of raw argv here because no parser
+// exists yet; Commander performs the authoritative parse below, and a `.env`
+// file can never set the mode that decides its own precedence.
+import { hasAmbientEnvFlag, loadGuildEnvironment } from "./env";
+loadGuildEnvironment({
+  cwd: process.cwd(),
+  ambientFlag: hasAmbientEnvFlag(process.argv),
+});
 
 import { Command } from "commander";
 import { getDb } from "../registry/db/connection";
@@ -26,7 +31,6 @@ import { runBootstrap } from "./commands/bootstrap";
 import { runMigrate } from "./commands/migrate";
 import { runReview } from "./commands/review";
 import { runStatus, printNextSteps } from "./commands/status";
-import { runWatch } from "./commands/watch";
 import { runRelease } from "./commands/release";
 import { runRemediate } from "./commands/remediate";
 import { runRepair } from "./commands/repair";
@@ -75,6 +79,10 @@ program
 program.option("--db <path>", "Path to registry.db (overrides REGISTRY_DB env)");
 program.option("--profile <name>", "Guild configuration profile to use", "default");
 program.option("--workspace <path>", "Workspace root for migration phases (overrides cwd/.guild detection)");
+// Declared so `--help` documents it and Commander accepts it; the loader above
+// already acted on it, because precedence has to be decided before any module
+// reads the environment.
+program.option("--ambient-env", "Let inherited environment values win over the workspace .env (default: .env wins)");
 
 // Bridge --workspace to GUILD_WORKSPACE before any command action runs, so the
 // resolver (resolveWorkspaceRoot) and every cwd-defaulting helper agree on the
@@ -323,8 +331,11 @@ program
   .command("watch")
   .description("Live dashboard: redraw every 2s showing status, waves, active sessions, recent events")
   .option("-i, --interval <ms>", "Refresh interval in milliseconds", parseInt)
-  .action((opts) => {
+  .action(async (opts) => {
     assertDbExists(dbPath());
+    // watch reads GUILDCTL_STALL_MINS at module scope; load it only after the
+    // bootstrap environment loader has run.
+    const { runWatch } = await import("./commands/watch");
     runWatch(db(), opts.interval);
   });
 

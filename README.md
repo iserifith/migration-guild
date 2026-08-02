@@ -82,6 +82,21 @@ graph TB
 
 `guildctl auto-run` is fail-closed and silence-first: it emits one final summary, continues independent work after an artifact blocks, and stops on systemic executor errors without dispatching another artifact. Only `reviewed`, `completed`, or `skipped` dependencies unlock downstream work; a merely `migrated` artifact must still pass independent review. Migrated crash states resume automatically before fresh planned work. Use `--wave` and `--limit` for bounded canaries; `--no-resume` exists only for diagnostic runs that intentionally leave migrated state untouched.
 
+## Environment precedence (behaviour change)
+
+The workspace `.env` is loaded automatically and wins over inherited environment values by default.
+If you intentionally want the ambient shell to win for one invocation, use:
+
+```bash
+guildctl --ambient-env preflight
+# or:
+GUILD_ENV_PRECEDENCE=ambient guildctl preflight
+```
+
+The CLI reports provider/model configuration divergences and environment divergences at run start;
+credential values are redacted. A workspace `.env` value for `AGENT_CMD` now wins over an exported
+ambient `AGENT_CMD`, so review that file when changing harness selection.
+
 ## Roadmap
 
 - **Runtime evidence tier (environment-in-the-loop).** Today the evidence gates are fed by static and registry evidence. Next: an environment agent that builds and executes migrated modules in an isolated sandbox, files build/test/runtime logs as first-class evidence, and routes failures by class (config → env self-repair, semantic → codegen, behavioral → test agent). This follows the direction argued in [*Environment-in-the-Loop: Rethinking Code Migration with LLM-based Agents*](https://arxiv.org/abs/2602.09944) — Migration Guild already provides the coordination substrate (registry, claims, arbiter) that paradigm needs.

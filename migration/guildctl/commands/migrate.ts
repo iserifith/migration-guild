@@ -3,7 +3,8 @@ import { spawnAgent } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printWavePlan } from "../dashboard";
 import { getLogDir } from "../util";
-import { getConfigPath, loadConfig, resolvePhaseModel } from "../config";
+import { getConfigPath, loadConfig, resolvePhaseModel, resolveWorkspaceRoot } from "../config";
+import { resolveAndReportRuntime } from "../runtime-report";
 import {
   getClaimabilityStats,
   getStatusCounts,
@@ -159,6 +160,10 @@ export async function runMigrate(
     phase: "code-writing",
     model: codeModel,
     configPath,  });
+  // FR-024: one launch resolution for the phase, reported once and reused by
+  // all three pools. The pools differ only in the model each passes to the
+  // agent CLI; the harness, provider, and launch environment are the phase's.
+  const runtime = resolveAndReportRuntime({ config: cfg, root: resolveWorkspaceRoot(), model: codeModel });
   printWavePlan(db);
   console.log();
 
@@ -200,6 +205,7 @@ export async function runMigrate(
               timeoutMs: ANALYZE_TIMEOUT_MINUTES * 60_000,
               releaseClaimsOnFailure: true,
               preClaim: { fromStatus: "planned", tier: "first-class", wave: opts.wave },
+              resolution: runtime,
             })
           ));
       hadFailures ||= analyzeResults.some((result) => result.exitCode !== 0);
@@ -232,6 +238,7 @@ export async function runMigrate(
               timeoutMs: TEST_WRITE_TIMEOUT_MINUTES * 60_000,
               releaseClaimsOnFailure: true,
               preClaim: { fromStatus: "analyzed", tier: "first-class", wave: opts.wave },
+              resolution: runtime,
             })
           ));
       hadFailures ||= testResults.some((result) => result.exitCode !== 0);
@@ -264,6 +271,7 @@ export async function runMigrate(
               timeoutMs: CODE_WRITE_TIMEOUT_MINUTES * 60_000,
               releaseClaimsOnFailure: true,
               preClaim: { fromStatus: "tests-written", tier: "first-class", wave: opts.wave },
+              resolution: runtime,
             })
           ));
       hadFailures ||= codeResults.some((result) => result.exitCode !== 0);

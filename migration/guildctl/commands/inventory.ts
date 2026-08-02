@@ -8,6 +8,7 @@ import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printStatusSummary } from "../dashboard";
 import { getLogDir } from "../util";
 import { resolveGuildConfig, resolvePhaseModel, resolveWorkspaceRoot } from "../config";
+import { resolveAndReportRuntime } from "../runtime-report";
 import { registerArtifact } from "../../registry/commands/artifacts";
 import {
   extractSourceDependencies,
@@ -311,6 +312,9 @@ export async function runInventory(db: Database.Database, workspaceRoot = resolv
   const pack = loadActiveStack(cfg, projectRoot);
   const spec = loadClassificationSpec(pack);
   const model = resolvePhaseModel("inventory", cfg);
+  // FR-024: one resolution for the phase, reported before the first
+  // classification batch and reused by every batch and retry.
+  const runtime = resolveAndReportRuntime({ config: cfg, root: projectRoot, model });
 // TASK-02: classify in batches so a single slow/timeout repo no longer loses
   // ALL work. Each batch is its own agent call with its own timeout; completed
   // batches persist independently. Re-running inventory resumes from the first
@@ -371,6 +375,7 @@ export async function runInventory(db: Database.Database, workspaceRoot = resolv
           logDir: (deps.getLogDir ?? getLogDir)(),
           phase: "inventory",
           timeoutMs: inventoryTimeoutMs(),
+          resolution: runtime,
         });
         if (result.exitCode === 0) break;
         process.stderr.write(`  ✗ ${batchLabel} attempt ${attempt} exited with code ${result.exitCode}\n`);

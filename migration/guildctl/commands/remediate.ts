@@ -4,8 +4,9 @@ import { spawnAgent, summarizeRunFailures } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent } from "../dashboard";
 import { getLogDir } from "../util";
-import { loadConfig, resolvePhaseModel } from "../config";
+import { loadConfig, resolvePhaseModel, resolveWorkspaceRoot } from "../config";
 import { getStatusCounts } from "../monitoring";
+import { resolveAndReportRuntime } from "../runtime-report";
 
 const REMEDIATION_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["GUILDCTL_REMEDIATION_TIMEOUT_MINS"] ?? "15", 10));
 
@@ -90,6 +91,9 @@ export async function runRemediate(
 
   printPhaseHeader("Phase X · Remediation");
   console.log(`  Agent: remediation-agent   Model: ${model}   Timeout: ${timeoutMins}m\n`);
+  // FR-024: resolve once at phase entry, report that resolution, and launch
+  // with the same object.
+  const runtime = resolveAndReportRuntime({ config: cfg, root: resolveWorkspaceRoot(), model });
   if (opts.id) {
     console.log(`  Scope: artifact ${opts.id}\n`);
   }
@@ -109,6 +113,7 @@ export async function runRemediate(
       phase: "review",
       timeoutMs: timeoutMins * 60_000,
       releaseClaimsOnFailure: true,
+      resolution: runtime,
     });
 
     const after = getStatusCounts(db);

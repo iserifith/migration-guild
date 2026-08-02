@@ -16,7 +16,12 @@ import type {
 } from "../registry/types";
 import { isPathInside, resolveVerificationBudgetMs, type GuildConfig } from "./config";
 import { expandVerifyArgs, expandVerifyWorkingDir, loadActiveStack, resolvePerArtifactVerify, type PerArtifactVerify } from "./stack";
-import { terminateProcessGroup } from "./util";
+import { isSensitiveEnvName, terminateProcessGroup } from "./util";
+
+// FR-023: one definition of "secret" governs evidence logs, preflight output,
+// and the environment divergence report. Re-exported here because this module
+// is where callers have always found it.
+export { isSensitiveEnvName };
 
 const execAsync = promisify(exec);
 
@@ -69,10 +74,6 @@ export function signRuntimeEvidence(
   operatorToken: string,
 ): string {
   return `hmac-sha256:${createHmac("sha256", operatorToken).update(runtimeEvidenceCanonical(input), "utf8").digest("hex")}`;
-}
-
-function isSensitiveEnvName(name: string): boolean {
-  return /(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH|BEARER)/i.test(name);
 }
 
 export function scrubVerificationEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {

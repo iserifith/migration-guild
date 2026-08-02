@@ -3,9 +3,10 @@ import { spawnAgent, summarizeRunFailures } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printStatusSummary } from "../dashboard";
 import { getLogDir } from "../util";
-import { loadConfig, resolvePhaseModel } from "../config";
+import { loadConfig, resolvePhaseModel, resolveWorkspaceRoot } from "../config";
 import { reapDeadRuns } from "../../registry/commands/runs";
 import { requireNonEmptyRegistry } from "../readiness";
+import { resolveAndReportRuntime } from "../runtime-report";
 
 const REVIEW_TIMEOUT_MINUTES = Math.max(1, parseInt(process.env["GUILDCTL_REVIEW_TIMEOUT_MINS"] ?? "10", 10));
 
@@ -101,13 +102,16 @@ export async function runReview(
   requireNonEmptyRegistry(db, "review");
   const parallel = Math.max(1, opts.parallel ?? 1);
   const logDir = (deps.getLogDir ?? getLogDir)();
-  const model = resolvePhaseModel("review", loadConfig());
+  const cfg = loadConfig();
+  const model = resolvePhaseModel("review", cfg);
   const runAgent = deps.spawnAgent ?? spawnAgent;
   const poll = deps.startPolling ?? startPolling;
   const sleep = deps.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
 
   printPhaseHeader("Phase 4 · Review");
   console.log(`  Agent: review-agent   Model: ${model}   Parallel: ${parallel}\n`);
+  // FR-024: one resolution, reported here and reused by every review session.
+  const runtime = resolveAndReportRuntime({ config: cfg, root: resolveWorkspaceRoot(), model });
 
   const stopPolling = poll(db, (events) => {
     for (const e of events) printEvent(e);
@@ -143,6 +147,7 @@ export async function runReview(
             logDir,
             phase: "review",
             timeoutMs: REVIEW_TIMEOUT_MINUTES * 60_000,
+            resolution: runtime,
           })
         );
         const results = await Promise.all(procs);

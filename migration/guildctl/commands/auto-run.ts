@@ -4,6 +4,7 @@ import { runAutoCommand } from "./auto";
 import { runAutoQueue, type AutoQueueResult, type QueueArtifactExecutor } from "../supervisor/queue";
 import { resolveGuildConfig, resolveWorkspaceRoot } from "../config";
 import { renderPreflightReport, runPreflight, type PreflightResult } from "../preflight";
+import { emitRuntimeReport } from "../runtime-report";
 
 export interface AutoRunCliOptions {
   command?: string[];
@@ -77,6 +78,12 @@ export async function runAutoRunCommand(
     write(renderPreflightReport(preflight));
     throw new PreflightGateError(preflight);
   }
+
+  // FR-024: exactly one run-start line per autonomous queue, rendered from the
+  // resolution the gate just validated — not one per artifact. The per-artifact
+  // path (`commands/auto.ts`), the supervisor queue, and `spawnAgent` say
+  // nothing, so a queue of 200 artifacts still reports its runtime once.
+  if (preflight.resolved) emitRuntimeReport(preflight.resolved, { write });
 
   const executeArtifact = dependencies.executeArtifact ?? (async ({ artifactId, resume }) =>
     runAutoCommand(db, {

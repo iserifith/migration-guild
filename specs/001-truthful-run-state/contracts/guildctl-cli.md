@@ -10,6 +10,13 @@ operator explicitly invoked.
 
 ---
 
+**Global options**: `--profile <name>` selects the project profile. `--ambient-env` opts into ambient
+environment precedence for the invocation; `GUILD_ENV_PRECEDENCE=ambient` provides the equivalent
+bootstrap setting. Both are read before module-level environment loading, and a `.env` file cannot
+set either mode switch.
+
+---
+
 ## A. `guildctl preflight` — NEW (FR-011–FR-019)
 
 ```text
@@ -236,10 +243,16 @@ reported as a cleanup failure with the survivor identified, and the claim is sti
 Exactly one unconditional runtime line is emitted at the start of every run:
 
 - For manual phase commands (`inventory`, `plan`, `migrate`, `review`, `remediate`, and
-  `benchmark`), the phase command emits it once at phase entry, before any agent spawn. This keeps
-  the emission at the phase-run seam even when tests inject a replacement `spawnAgent`.
-- For autonomous queues, `commands/auto-run.ts` emits it once before queue dispatch. The per-artifact
-  `commands/auto.ts`, `supervisor/queue.ts`, and shared `spawnAgent` helper emit nothing.
+  the emitting `benchmark run` / `benchmark baseline-worker` / `benchmark guild-review-worker` /
+  `benchmark guild-rework-worker` actions), the phase command resolves the launch once at phase
+  entry, renders that resolution, and passes the same `ResolvedRuntimeConfig` object into
+  `spawnAgent` through `SpawnAgentOpts`. `spawnAgent` consumes the supplied resolution and MUST
+  NOT call `resolveAgentLaunch()` again when one is supplied. Retries may select a later route
+  model; the entry line reports the first resolved model and the per-attempt model is outside
+  FR-024 for this slice.
+- For autonomous queues, `commands/auto-run.ts` emits it once before queue dispatch from the same
+  preflight/launch resolution used by the queue. The per-artifact `commands/auto.ts`,
+  `supervisor/queue.ts`, and shared `spawnAgent` helper emit nothing.
 
 ```text
 [guildctl] runtime: harness=opencode provider=https://rootsys.cloud/v1 model=fiq/hy3-tencent
@@ -249,14 +262,14 @@ When a resolved value diverges from the project configuration declaration, the s
 
 ```text
 [guildctl] runtime: harness=opencode provider=https://rootsys.cloud/v1 model=fiq/grok-4.5
-           divergence: model.model declared fiq/hy3-tencent, resolved fiq/grok-4.5 (source: ambient environment)
+           config divergence: model.model declared fiq/hy3-tencent, resolved fiq/grok-4.5 (source: ambient)
 ```
 
-If multiple environment variables diverge, the runtime line is followed by a bounded divergence block
-with one entry per variable. The block is conditional; it is omitted when there is no divergence.
-
-Credential values never appear on this line. When a project `.env` is absent entirely, the line is
-still printed (spec edge case).
+If environment variables diverge between the workspace `.env` and the ambient snapshot, the shared
+renderer receives the T037 loader's `EnvDivergence[]` as a separate input and follows the environment
+contract's bounded block format. It never treats `ConfigDivergence[]` as that environment block.
+Credential values never appear on this line or block. When a project `.env` is absent entirely, the
+line is still printed (spec edge case).
 
 ---
 
