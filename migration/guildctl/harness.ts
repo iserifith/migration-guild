@@ -1,7 +1,7 @@
 import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
-import type { GuildConfig } from "./config";
+import { resolveProviderRoute, type GuildConfig } from "./config";
 
 export interface HarnessResolution {
   name: string;
@@ -66,12 +66,29 @@ export function toResolvedRuntimeReport(resolution: ResolvedRuntimeConfig): Reso
   return report;
 }
 
+/**
+ * The model an attempt on `route` uses. Selection delegates to
+ * `resolveProviderRoute()` so the routes an operator configures are the only
+ * place a model list lives; `attempt` walks that route and clamps at its last
+ * entry, so a long retry chain keeps using the final fallback instead of
+ * falling off the end.
+ */
+export function selectRouteModel(config: GuildConfig, route: string, attempt = 0): string {
+  const models = resolveProviderRoute(config, route);
+  if (models.length === 0) return config.model.model;
+  return models[Math.min(Math.max(attempt, 0), models.length - 1)];
+}
+
 export interface ResolveAgentLaunchOptions {
   config: GuildConfig;
   root: string;
   env?: NodeJS.ProcessEnv;
-  /** The model this run will use; defaults to the project-configured model. */
+  /** The model this run will use; wins over route selection when given. */
   model?: string;
+  /** Provider route this launch belongs to — `default` for producing work, `review` for arbitration. */
+  route?: string;
+  /** Zero-based attempt index within `route`; clamps at the route's last model. */
+  attempt?: number;
   /** Per-run variables the caller layers on top (run id, claim token, …). */
   extraEnv?: Record<string, string>;
 }
@@ -91,7 +108,7 @@ export function resolveAgentLaunch(opts: ResolveAgentLaunchOptions): ResolvedRun
   const declaredModel = config.model.model;
   const declaredBaseUrl = config.model.base_url ?? "";
 
-  const model = opts.model ?? declaredModel;
+  const model = opts.model ?? (opts.route ? selectRouteModel(config, opts.route, opts.attempt) : declaredModel);
   const providerBaseUrl = env.AGENT_PROVIDER_BASE_URL || declaredBaseUrl;
   const credentialEnv = config.model.api_key_env ?? "";
 

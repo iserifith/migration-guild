@@ -175,8 +175,8 @@ After this feature, context retrieval always returns something usable when a rec
 
 #### B. Preflight that validates the resolved path *(source: issue #52)*
 
-- **FR-011**: Preflight MUST validate the same runtime path a phase run will take — the same harness resolution and the same environment the agent will receive — rather than inspecting declared configuration values.
-- **FR-012**: Preflight MUST exercise one minimal end-to-end model request through that resolved path and assert on the response. Proving that an adapter program starts MUST NOT count as a passing model or harness check.
+- **FR-011**: Preflight MUST validate the resolved provider base URL, model, credential variable, and launch environment a phase run will use, through the same `resolveAgentLaunch()` function as the runner; when the selected harness requires an adapter, adapter reachability MUST also be checked during resolution.
+- **FR-012**: Preflight MUST issue one minimal model request directly through the resolved provider base URL/model using the resolved launch environment and assert on a non-empty response. Proving that an adapter program starts MUST NOT count as a passing model or harness check; adapter fidelity beyond reachability is intentionally outside this hermetic provider-mapping probe.
 - **FR-013**: Preflight MUST report the resolved harness, provider, and model that a run would use.
 - **FR-014**: When any resolved value differs from the corresponding value declared in project configuration, preflight MUST report the divergence — naming the setting, the declared value, and the resolved value — including when the live check succeeds.
 - **FR-015**: Preflight MUST return a failing verdict, not a passing or warning verdict, whenever the resolved path cannot obtain a model response — including unreachable endpoint, rejected or inactive credential, exhausted quota, and unknown model.

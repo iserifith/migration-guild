@@ -2,8 +2,8 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
-import { preflightProviderCredential, resolveGuildConfig, resolveProviderRoute, resolveWorkspaceRoot } from "../config";
-import { resolveHarness, type HarnessResolution } from "../harness";
+import { resolveGuildConfig, resolveProviderRoute, resolveWorkspaceRoot } from "../config";
+import { resolveAgentLaunch, type HarnessResolution } from "../harness";
 import { runAuto, type AutoResult, type AutoReviewDecision, type AutoReviewInput, type AutoWorkerInput } from "../supervisor/loop";
 
 export interface AutoCliOptions {
@@ -180,29 +180,40 @@ export function parseReviewMarker(output: string): Pick<AutoReviewDecision, "app
 
 export function harnessReviewer(
   workspaceRoot: string,
-  harness: HarnessResolution,
   cfg: ReturnType<typeof resolveGuildConfig>,
   producerModelRef: () => string | undefined,
 ): (input: AutoReviewInput) => Promise<AutoReviewDecision> {
   return async (input) => {
     const producerModel = input.producerModel ?? producerModelRef();
-    const reviewModels = resolveProviderRoute(cfg, "review").filter((model) => model && model !== producerModel);
-    if (reviewModels.length === 0) {
-      throw new Error("review route has no model distinct from the producing attempt");
-    }
     const prompt = reviewPrompt({ ...input, producerModel });
+    // Claim, operator, and verifier credentials are scrubbed *before* the
+    // resolver builds the launch environment, so the reviewer can never inherit
+    // authority over the artifact it is reviewing.
+    const reviewEnv = scrubbedReviewEnv(process.env);
+    const routeLength = resolveProviderRoute(cfg, "review").length;
+    const attempted = new Set<string>();
     let lastError = "";
-    for (const model of reviewModels) {
+    for (let attempt = 0; attempt < routeLength; attempt++) {
+      // FR-011: the reviewer launches through the same resolver as the runner
+      // and the scripted worker, on the review route.
+      const launch = resolveAgentLaunch({
+        config: cfg,
+        root: workspaceRoot,
+        env: reviewEnv,
+        route: "review",
+        attempt,
+      });
+      const model = launch.model;
+      if (!model || model === producerModel || attempted.has(model)) continue;
+      attempted.add(model);
       const env = {
-        ...scrubbedReviewEnv(process.env),
-        ...(cfg.model.base_url ? { AGENT_PROVIDER_BASE_URL: cfg.model.base_url } : {}),
-        ...(cfg.model.api_key_env ? { AGENT_PROVIDER_API_KEY_ENV: cfg.model.api_key_env } : {}),
+        ...launch.agentEnv,
         GUILDCTL_AUTO_PHASE: "review",
         GUILDCTL_RUN_ID: input.runId,
         GUILDCTL_ARTIFACT_ID: input.artifactId,
         GUILDCTL_AGENT_MODEL: model,
       };
-      const invocation = await spawnHarnessInvocation(workspaceRoot, harness, "review-agent", model, prompt, env);
+      const invocation = await spawnHarnessInvocation(workspaceRoot, launch.harness, "review-agent", model, prompt, env);
       if (!invocation.ok) {
         lastError = invocation.error ?? "reviewer invocation failed";
         continue;
@@ -215,14 +226,15 @@ export function harnessReviewer(
         continue;
       }
     }
+    if (attempted.size === 0) {
+      throw new Error("review route has no model distinct from the producing attempt");
+    }
     throw new Error(`independent review failed closed: ${lastError || "review chain exhausted"}`);
   };
 }
 
 function scriptedWorker(
   workspaceRoot: string,
-  harness: HarnessResolution,
-  models: string[],
   cfg: ReturnType<typeof resolveGuildConfig>,
   setProducerModel: (model: string) => void,
   registryDbPath: string,
@@ -231,7 +243,17 @@ function scriptedWorker(
   const exactRegistryDbPath = path.resolve(registryDbPath);
   const registryCli = registryCliCommand(exactRegistryDbPath);
   return ({ phase, claim, runId, reviewReason }) => new Promise((resolve, reject) => {
-    const model = models[Math.min(invocation, models.length - 1)] ?? "default";
+    // FR-011: the producing worker resolves its harness, model, provider, and
+    // environment through the shared resolver on the default route; this
+    // attempt's index walks that route.
+    const launch = resolveAgentLaunch({
+      config: cfg,
+      root: workspaceRoot,
+      route: "default",
+      attempt: invocation,
+    });
+    const harness: HarnessResolution = launch.harness;
+    const model = launch.model;
     setProducerModel(model);
     invocation += 1;
     const isNodeScript = /\.(mjs|cjs|js)$/i.test(harness.command);
@@ -256,7 +278,7 @@ function scriptedWorker(
     const child = spawn(isNodeScript ? process.execPath : harness.command, isNodeScript ? [harness.command, ...args] : args, {
       cwd: workspaceRoot,
       env: {
-        ...process.env,
+        ...launch.agentEnv,
         GUILDCTL_AUTO_PHASE: phase,
         GUILDCTL_RUN_ID: runId,
         GUILDCTL_ARTIFACT_ID: claim.id,
@@ -273,8 +295,6 @@ function scriptedWorker(
         GUILDCTL_AGENT_MODEL: model,
         PYTHONDONTWRITEBYTECODE: process.env.PYTHONDONTWRITEBYTECODE ?? "1",
         PYTEST_ADDOPTS: process.env.PYTEST_ADDOPTS ?? "-p no:cacheprovider",
-        ...(cfg.model.base_url ? { AGENT_PROVIDER_BASE_URL: cfg.model.base_url } : {}),
-        ...(cfg.model.api_key_env ? { AGENT_PROVIDER_API_KEY_ENV: cfg.model.api_key_env } : {}),
       },
       stdio: "inherit",
       shell: !isNodeScript && process.platform === "win32",
@@ -290,12 +310,10 @@ function scriptedWorker(
 export async function runAutoCommand(db: Database.Database, opts: AutoCliOptions): Promise<AutoResult> {
   const workspaceRoot = resolveWorkspaceRoot();
   const cfg = resolveGuildConfig({ cwd: workspaceRoot });
-  const harness = resolveHarness(cfg, workspaceRoot);
-  const models = resolveProviderRoute(cfg, "default");
   let lastProducerModel: string | undefined;
-  if (harness.source !== "environment") {
-    preflightProviderCredential(cfg);
-  }
+  // No credential gate here: the autonomous queue holds one shared preflight
+  // verdict (T035), so a second credential-only path would both re-check less
+  // than preflight does and let a per-artifact answer drift from the queue's.
   if (!opts.registryDbPath || !path.isAbsolute(opts.registryDbPath)) {
     throw new Error("guildctl auto requires the resolved absolute registry DB path for exact worker handoff");
   }
@@ -306,8 +324,8 @@ export async function runAutoCommand(db: Database.Database, opts: AutoCliOptions
     maxAttempts: opts.maxAttempts,
     resume: opts.resume,
     producerModel: lastProducerModel,
-    worker: scriptedWorker(workspaceRoot, harness, models, cfg, (model) => { lastProducerModel = model; }, opts.registryDbPath),
-    review: harnessReviewer(workspaceRoot, harness, cfg, () => lastProducerModel),
+    worker: scriptedWorker(workspaceRoot, cfg, (model) => { lastProducerModel = model; }, opts.registryDbPath),
+    review: harnessReviewer(workspaceRoot, cfg, () => lastProducerModel),
   });
   if (result.status === "blocked" && opts.setExitCode !== false) process.exitCode = 1;
   if (opts.quiet) return result;

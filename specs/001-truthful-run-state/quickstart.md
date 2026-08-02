@@ -76,7 +76,7 @@ Run the preflight contract against injected success, authorization failure, unkn
 Verify that:
 
 - preflight and the runner use the same resolved harness/provider/model path;
-- a successful adapter start without a model response is not a pass;
+- a resolvable adapter whose direct provider request returns an empty completion is not a pass;
 - failures identify the resolution, authorization, model-availability, or response stage;
 - live checks are bounded to 30 seconds by default;
 - offline output is `unvalidated`, never plain `pass`;

@@ -3,8 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
-import { DEFAULT_GUILD_CONFIG, type GuildConfig } from "../guildctl/config";
-import { resolveAgentLaunch, resolveHarness, toResolvedRuntimeReport } from "../guildctl/harness";
+import { DEFAULT_GUILD_CONFIG, type GuildConfig, type ResolvedGuildConfig } from "../guildctl/config";
+import { resolveAgentLaunch, resolveHarness, selectRouteModel, toResolvedRuntimeReport } from "../guildctl/harness";
+import { harnessReviewer, REVIEW_MARKER } from "../guildctl/commands/auto";
 import { spawnAgent } from "../guildctl/runner";
 import { applySchema } from "../registry/db/schema";
 import { makeTempDir } from "./truthful-run-state-fixtures";
@@ -15,6 +16,11 @@ import { makeTempDir } from "./truthful-run-state-fixtures";
  * The point is not that `resolveAgentLaunch()` returns correct values — it is
  * that the runner reads *this* function, so preflight (US2) and the run-start
  * line (US3) cannot describe a runtime a run does not use.
+ *
+ * T031a extends that commitment to the two autonomous launch sites in
+ * `commands/auto.ts` — the scripted worker (the `default` route) and the
+ * independent reviewer (the `review` route) — so no third resolution path
+ * exists for an autonomous run to drift through.
  */
 
 const CREDENTIAL_VALUE = "sk-live-do-not-leak-0123456789";
@@ -159,6 +165,117 @@ test("agentEnv is the environment the agent process receives, including caller-s
     assert.equal(resolved.agentEnv["PATH"], "/usr/bin");
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the autonomous worker route selects its model through resolveProviderRoute, clamping at the last attempt", () => {
+  const root = makeTempDir("guild-runtime-worker-route-");
+  const routed = config({
+    provider: { routes: { default: ["worker-a", "worker-b"], review: ["review-a"] } },
+  });
+  try {
+    // Attempt 0 and 1 walk the route; every later attempt clamps at the last
+    // model rather than falling off the end of the route.
+    assert.equal(selectRouteModel(routed, "default", 0), "worker-a");
+    assert.equal(selectRouteModel(routed, "default", 1), "worker-b");
+    assert.equal(selectRouteModel(routed, "default", 7), "worker-b");
+
+    const first = resolveAgentLaunch({ config: routed, root, env: { EXAMPLE_PRIVATE_API_KEY: CREDENTIAL_VALUE }, route: "default" });
+    const retry = resolveAgentLaunch({ config: routed, root, env: { EXAMPLE_PRIVATE_API_KEY: CREDENTIAL_VALUE }, route: "default", attempt: 1 });
+
+    assert.equal(first.model, "worker-a");
+    assert.equal(retry.model, "worker-b");
+    // A route-selected model that differs from the declared one is still a
+    // divergence — the report must not go quiet because a route picked it.
+    assert.ok(retry.divergences.some((d) => d.setting === "model.model" && d.resolvedValue === "worker-b"));
+
+    // An explicit model still wins over route selection (the reviewer needs it).
+    const pinned = resolveAgentLaunch({ config: routed, root, env: {}, route: "default", attempt: 1, model: "pinned-model" });
+    assert.equal(pinned.model, "pinned-model");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the autonomous review route resolves through the same resolver as the worker route", () => {
+  const root = makeTempDir("guild-runtime-review-route-");
+  const routed = config({
+    provider: { routes: { default: ["worker-a"], review: ["review-a", "review-b"] } },
+  });
+  try {
+    assert.equal(selectRouteModel(routed, "review", 0), "review-a");
+    assert.equal(selectRouteModel(routed, "review", 1), "review-b");
+
+    const worker = resolveAgentLaunch({ config: routed, root, env: { EXAMPLE_PRIVATE_API_KEY: CREDENTIAL_VALUE }, route: "default" });
+    const reviewer = resolveAgentLaunch({ config: routed, root, env: { EXAMPLE_PRIVATE_API_KEY: CREDENTIAL_VALUE }, route: "review" });
+
+    assert.equal(worker.model, "worker-a");
+    assert.equal(reviewer.model, "review-a");
+    // Same harness, same provider, same credential variable — only the model
+    // differs, because only the route differs.
+    assert.deepEqual(reviewer.harness, worker.harness);
+    assert.equal(reviewer.providerBaseUrl, worker.providerBaseUrl);
+    assert.equal(reviewer.credentialEnv, worker.credentialEnv);
+
+    // An unknown route falls back to the default route rather than inventing a
+    // model, so a typo cannot silently launch an unconfigured runtime.
+    assert.equal(selectRouteModel(routed, "no-such-route", 0), "worker-a");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the autonomous reviewer launches through resolveAgentLaunch, so its env matches the resolved one", async () => {
+  const workspace = makeTempDir("guild-runtime-reviewer-");
+  const script = path.join(workspace, "reviewer.cjs");
+  const originalAgentCmd = process.env["AGENT_CMD"];
+  const originalBaseUrl = process.env["AGENT_PROVIDER_BASE_URL"];
+  const originalKey = process.env["EXAMPLE_PRIVATE_API_KEY"];
+
+  try {
+    // The reviewer's environment must come from the shared resolver, which
+    // honours an ambient AGENT_PROVIDER_BASE_URL override. A hand-built env
+    // read straight from project config would send the declared URL instead.
+    fs.writeFileSync(script, `
+if (process.env.AGENT_PROVIDER_BASE_URL !== "https://ambient.example/v1") process.exit(41);
+if (process.env.AGENT_PROVIDER_API_KEY_ENV !== "EXAMPLE_PRIVATE_API_KEY") process.exit(42);
+if (process.env.GUILDCTL_AGENT_MODEL !== "review-a") process.exit(43);
+if (process.env.GUILDCTL_CLAIM_TOKEN || process.env.GUILDCTL_OPERATOR_TOKEN) process.exit(44);
+if (process.argv.join(" ").includes(${JSON.stringify(CREDENTIAL_VALUE)})) process.exit(45);
+console.log('${REVIEW_MARKER}' + JSON.stringify({ approved: true, reason: "resolved reviewer runtime" }));
+`, "utf8");
+    process.env["AGENT_CMD"] = script;
+    process.env["AGENT_PROVIDER_BASE_URL"] = "https://ambient.example/v1";
+    process.env["EXAMPLE_PRIVATE_API_KEY"] = CREDENTIAL_VALUE;
+
+    const cfg: ResolvedGuildConfig = {
+      ...config({ provider: { routes: { default: ["worker-a"], review: ["worker-a", "review-a"] } } }),
+      guildRoot: workspace,
+      configPath: path.join(workspace, ".guild", "config.yaml"),
+      selectedProfile: "default",
+    };
+
+    const review = harnessReviewer(workspace, cfg, () => "worker-a");
+    const decision = await review({
+      artifactId: "legacy-source:com.acme:Runtime",
+      runId: "run-reviewer-resolution",
+      producerAgent: "code-writer-agent",
+      producerModel: "worker-a",
+      evidence: [],
+    });
+
+    assert.equal(decision.approved, true);
+    // The producing model is skipped, so review stays independent while the
+    // model still comes from the review route via the shared resolver.
+    assert.equal(decision.reviewerModel, "review-a");
+  } finally {
+    if (originalAgentCmd === undefined) delete process.env["AGENT_CMD"];
+    else process.env["AGENT_CMD"] = originalAgentCmd;
+    if (originalBaseUrl === undefined) delete process.env["AGENT_PROVIDER_BASE_URL"];
+    else process.env["AGENT_PROVIDER_BASE_URL"] = originalBaseUrl;
+    if (originalKey === undefined) delete process.env["EXAMPLE_PRIVATE_API_KEY"];
+    else process.env["EXAMPLE_PRIVATE_API_KEY"] = originalKey;
+    fs.rmSync(workspace, { recursive: true, force: true });
   }
 });
 

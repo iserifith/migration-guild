@@ -193,7 +193,7 @@ migration/                          # runtime: registry + orchestrator (repo-onl
     │   └── review.ts               # verification state visible to review              (FR-009)
     └── supervisor/
         ├── loop.ts                 # autonomous claim close, verification, outcomes    (FR-001/030-039)
-        └── queue.ts                # queue dispatch and once-per-queue gates          (FR-017/024/025)
+        └── queue.ts                # queue dispatch; per-queue control flow
 
 migration/test/                     # node:test regression suites (tests written first)
 ├── verification-state.test.ts      # NEW  (US1)

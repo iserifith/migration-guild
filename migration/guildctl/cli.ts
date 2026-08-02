@@ -34,7 +34,7 @@ import { runAuditCoverage, formatCoverageReport } from "./commands/audit";
 import { runEvidenceAdd, runEvidenceList } from "./commands/evidence";
 import { runVerifyCommand } from "./commands/verify";
 import { runAutoCommand } from "./commands/auto";
-import { runAutoRunCommand } from "./commands/auto-run";
+import { PreflightGateError, runAutoRunCommand } from "./commands/auto-run";
 import { runArbitrate } from "./commands/arbitrate";
 import { runSocietyReport } from "./commands/society-report";
 import { runBenchmarkBaselineWorker, runBenchmarkCompare, runBenchmarkGuildReviewWorker, runBenchmarkGuildReworkWorker, runBenchmarkRecord, runBenchmarkReport, runBenchmarkRun } from "./commands/benchmark";
@@ -50,7 +50,7 @@ import {
   stringifySimpleYaml,
 } from "./config";
 import { collectInitEvidence, createRunLedger, renderPrompt, scaffoldDefaultPrompts } from "./workspace";
-import { checkHarness, resolveHarness } from "./harness";
+import { preflightJson, renderPreflightReport, runPreflight } from "./preflight";
 import { runPipelineStateChecks } from "./doctor";
 import { detectStack, loadStackPack } from "./stack";
 
@@ -139,10 +139,37 @@ program
     process.stdout.write(`✓ Set ${key} in ${cfg.configPath}\n`);
   });
 
+// ─── preflight ────────────────────────────────────────────────────────────────
+
+const preflightOffline = (flag: unknown) => Boolean(flag) || process.env.GUILD_PREFLIGHT_OFFLINE === "1";
+
+program
+  .command("preflight")
+  .description("Validate the runtime path a phase run would take: resolve it, then prove the provider answers")
+  .option("--offline", "Perform no live call; report live-dependent results as unvalidated")
+  .option("--json", "Print the preflight result as JSON")
+  .option("--budget-seconds <n>", "Override the shared preflight budget for this invocation", parseFloat)
+  .action(async (opts) => {
+    const cfg = resolveGuildConfig({ cwd: workspaceRoot(), profile: program.opts()["profile"] as string | undefined });
+    const result = await runPreflight({
+      config: cfg,
+      root: cfg.guildRoot,
+      offline: preflightOffline(opts.offline),
+      budgetSeconds: opts.budgetSeconds,
+    });
+    process.stdout.write(opts.json
+      ? `${JSON.stringify(preflightJson(result), null, 2)}\n`
+      : renderPreflightReport(result));
+    // `unvalidated` is a deliberate operator choice, so it exits 0 — the
+    // verdict string, not the exit code, is what keeps it out of a green tick.
+    if (result.verdict === "fail") process.exit(1);
+  });
+
 program
   .command("doctor")
-  .description("Validate Guild config, OpenAI-compatible env, prompt pack, git, and run directories")
-  .action(() => {
+  .description("Validate Guild config, the resolved runtime path, prompt pack, git, and run directories")
+  .option("--offline", "Run preflight without a live call; the runtime path reports as unvalidated")
+  .action(async (opts) => {
     const checks: Array<[boolean, string]> = [];
     let cfg;
     try {
@@ -152,14 +179,6 @@ program
       process.stderr.write(`✗ ${(err as Error).message}\n`);
       process.exit(1);
     }
-    checks.push([!!cfg.model.model, `model configured: ${cfg.model.model || "missing"}`]);
-    try {
-      const harnessCheck = checkHarness(resolveHarness(cfg, cfg.guildRoot));
-      checks.push([harnessCheck.ok, harnessCheck.message]);
-    } catch (err) {
-      checks.push([false, (err as Error).message]);
-    }
-    checks.push([!cfg.model.api_key_env || !!process.env[cfg.model.api_key_env], cfg.model.api_key_env ? `${cfg.model.api_key_env} ${process.env[cfg.model.api_key_env] ? "present" : "missing"}` : "no API key env required"]);
     const promptPackPath = path.resolve(cfg.guildRoot, cfg.prompts.directory, cfg.prompts.active_pack);
     checks.push([fs.existsSync(promptPackPath), `prompt pack: ${promptPackPath}`]);
     const gitDetected = isInsideGitWorkTree(cfg.guildRoot);
@@ -175,6 +194,17 @@ program
     checks.push([fs.existsSync(path.join(cfg.guildRoot, ".guild", "runs")), "run ledger directory writable"]);
     for (const [ok, message] of checks) process.stdout.write(`${ok ? "✓" : "✗"} ${message}\n`);
 
+    // The former model / harness / credential ticks are one delegated preflight,
+    // so a green doctor means a validated runtime path — and an offline doctor
+    // reports `unvalidated` instead of a tick it has not earned.
+    process.stdout.write("\nRuntime path:\n");
+    const preflight = await runPreflight({
+      config: cfg,
+      root: cfg.guildRoot,
+      offline: preflightOffline(opts.offline),
+    });
+    process.stdout.write(renderPreflightReport(preflight));
+
     let stateFailed = false;
     try {
       process.stdout.write("\nPipeline state:\n");
@@ -189,7 +219,7 @@ program
       process.stdout.write(`✗ pipeline-state checks failed to run: ${(err as Error).message}\n`);
     }
 
-    if (checks.some(([ok]) => !ok) || stateFailed) process.exit(1);
+    if (checks.some(([ok]) => !ok) || preflight.verdict === "fail" || stateFailed) process.exit(1);
   });
 
 const dbPath = () => resolveRegistryDbPath({ explicitPath: program.opts()["db"] as string | undefined, workspaceRoot: workspaceRoot() });
@@ -454,7 +484,15 @@ program
   .option("--json", "Print one final queue result as JSON")
   .action(async (opts) => {
     assertDbExists(dbPath());
-    await runAutoRunCommand(db(), { ...opts, registryDbPath: dbPath() });
+    try {
+      await runAutoRunCommand(db(), { ...opts, registryDbPath: dbPath() });
+    } catch (err) {
+      if (!(err instanceof PreflightGateError)) throw err;
+      // The runtime path is not known good, so nothing was claimed. Report it
+      // as the gate it is, not as a crash.
+      process.stderr.write(`\n✗ ${err.message}\n  Run \`guildctl preflight\` for the resolved path.\n\n`);
+      process.exit(1);
+    }
   });
 
 

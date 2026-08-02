@@ -6,6 +6,8 @@ import test from "node:test";
 import Database from "better-sqlite3";
 import { runAutoQueue, type QueueArtifactExecutor } from "../guildctl/supervisor/queue";
 import { runAutoRunCommand } from "../guildctl/commands/auto-run";
+import { DEFAULT_GUILD_CONFIG } from "../guildctl/config";
+import type { PreflightResult } from "../guildctl/preflight";
 import { claimArtifactById } from "../registry/commands/claim";
 import { registerArtifact, setArtifactStatus, setArtifactWave } from "../registry/commands/artifacts";
 import { finishRun, startRun } from "../registry/commands/runs";
@@ -15,6 +17,23 @@ function createDb(): Database.Database {
   const db = new Database(":memory:");
   applySchema(db);
   return db;
+}
+
+function passingPreflight(): PreflightResult {
+  return {
+    verdict: "pass",
+    resolved: {
+      harness: { name: "opencode", command: "/kit/harness/opencode.mjs", targetCommand: "opencode", source: "config" },
+      providerBaseUrl: DEFAULT_GUILD_CONFIG.model.base_url ?? "",
+      model: DEFAULT_GUILD_CONFIG.model.model,
+      credentialEnv: DEFAULT_GUILD_CONFIG.model.api_key_env ?? "",
+      divergences: [],
+    },
+    divergences: [],
+    stages: [{ id: "resolution", status: "pass" }, { id: "response", status: "pass" }],
+    elapsedMs: 8,
+    budgetSeconds: DEFAULT_GUILD_CONFIG.preflight.budget_seconds,
+  };
 }
 
 function seed(db: Database.Database, name: string, wave = 1, status = "planned"): string {
@@ -245,6 +264,9 @@ test("auto-run command delegates queue items with bounded options and emits one 
       json: true,
       setExitCode: false,
     }, {
+      // The queue gates on one shared preflight verdict; this suite is about
+      // dispatch, so the verdict is supplied rather than measured here.
+      preflight: async () => passingPreflight(),
       executeArtifact: async (input) => {
         calls.push(input);
         setArtifactStatus(db, input.artifactId, "reviewed");
