@@ -7,7 +7,9 @@ import Sqlite from "better-sqlite3";
 import { compareBenchmarkRuns, deriveBenchmarkMetrics, listBenchmarkRuns, recordBenchmarkRun } from "../../registry/commands/benchmark";
 import { spawnAgent } from "../runner";
 import { getLogDir } from "../util";
-import { loadConfig, resolvePhaseModel } from "../config";
+import { loadConfig, resolvePhaseModel, resolveWorkspaceRoot } from "../config";
+import { resolveAndReportRuntime } from "../runtime-report";
+import type { ResolvedRuntimeConfig } from "../harness";
 import type { BenchmarkMode, BenchmarkRun, BenchmarkVerdict } from "../../registry/types";
 
 export interface BenchmarkRecordOptions {
@@ -157,12 +159,17 @@ function executeMode(kitRoot: string, fixture: string, mode: "guild" | "baseline
 
 export async function runBenchmarkBaselineWorker(db: Database.Database): Promise<void> {
   const cfg = loadConfig();
+  const model = resolvePhaseModel("code-writing", cfg);
+  // FR-024: the baseline worker is its own entry point, so it reports its own
+  // resolution and launches with it.
+  const runtime = resolveAndReportRuntime({ config: cfg, root: resolveWorkspaceRoot(), model });
   const result = await spawnAgent({
     agent: "migration-agent",
-    model: resolvePhaseModel("code-writing", cfg),
+    model,
     db,
     logDir: getLogDir(),
     phase: "code-writing",
+    resolution: runtime,
     prompt: [
       "Run a one-pass single-agent migration of every Java file under legacy/ into modern/.",
       "Register every source as a legacy-source artifact if it is absent, then migrate it and self-mark it reviewed.",
@@ -172,7 +179,13 @@ export async function runBenchmarkBaselineWorker(db: Database.Database): Promise
   if (result.exitCode !== 0) throw new Error(`Baseline agent failed with exit code ${result.exitCode}`);
 }
 
-async function runWorker(db: Database.Database, agent: string, phase: "code-writing" | "review", prompt: string): Promise<void> {
+async function runWorker(
+  db: Database.Database,
+  agent: string,
+  phase: "code-writing" | "review",
+  prompt: string,
+  resolution: ResolvedRuntimeConfig,
+): Promise<void> {
   const result = await spawnAgent({
     agent,
     model: resolvePhaseModel(phase, loadConfig()),
@@ -180,34 +193,53 @@ async function runWorker(db: Database.Database, agent: string, phase: "code-writ
     logDir: getLogDir(),
     phase,
     prompt,
+    resolution,
   });
   if (result.exitCode !== 0) throw new Error(`${agent} failed with exit code ${result.exitCode}`);
 }
 
+/**
+ * FR-024: each benchmark worker action is one entry point, so it resolves and
+ * reports once even when it drives more than one agent.
+ */
+function benchmarkRuntime(phase: "code-writing" | "review"): ResolvedRuntimeConfig {
+  const cfg = loadConfig();
+  return resolveAndReportRuntime({
+    config: cfg,
+    root: resolveWorkspaceRoot(),
+    model: resolvePhaseModel(phase, cfg),
+  });
+}
+
 export async function runBenchmarkGuildReviewWorker(db: Database.Database): Promise<void> {
+  const runtime = benchmarkRuntime("review");
   await runWorker(db, "review-agent", "review", [
     "Act only as the Critic for every migrated artifact.",
     "Run executable tests or builds and record the actual command, exit code, pass result, and output with guildctl evidence add.",
     "Do not change artifact status and do not arbitrate; the independent Arbiter runs next.",
-  ].join(" "));
+  ].join(" "), runtime);
   await runWorker(db, "audit-agent", "review", [
     "Act only as the independent Arbiter for every migrated artifact.",
     "Inspect Critic evidence and invoke guildctl arbitrate --approve or --reject for each artifact.",
     "Never set reviewed directly: approval must go through the existing evidence gate and rejection must move the artifact to needs-rework.",
-  ].join(" "));
+  ].join(" "), runtime);
 }
 
 export async function runBenchmarkGuildReworkWorker(db: Database.Database): Promise<void> {
+  const runtime = benchmarkRuntime("code-writing");
   await runWorker(db, "migration-agent", "code-writing", [
     "Rework every artifact currently marked needs-rework from the recorded Critic evidence and arbitration reason.",
     "Modify modern/ as needed, rerun relevant checks, and return each corrected proposal to migrated for a new independent review.",
     "Do not create acceptance evidence, arbitrate, or mark any artifact reviewed.",
-  ].join(" "));
+  ].join(" "), runtime);
 }
 
 export async function runBenchmarkRun(db: Database.Database, opts: BenchmarkRunOptions): Promise<void> {
   const requested = opts.mode ?? "both";
   if (!(["guild", "baseline", "both"] as string[]).includes(requested)) throw new Error("Benchmark mode must be guild, baseline, or both");
+  // FR-024: the runtime this benchmark will drive, reported once before any
+  // fixture workspace is built. Each phase the fixtures run reports its own.
+  benchmarkRuntime("code-writing");
   const kitRoot = path.resolve(__dirname, "..", "..", "..");
   ensureToolsBuilt(kitRoot);
   const modes: Array<"baseline" | "guild"> = requested === "both" ? ["baseline", "guild"] : [requested];

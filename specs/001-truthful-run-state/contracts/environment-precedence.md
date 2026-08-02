@@ -38,8 +38,11 @@ mode that decides its own precedence.
 5. emit the divergence report                 ← always, regardless of winner or mode
 ```
 
-**Candidate order is unchanged** from today: `<cwd>/.env`, then the two CLI-install-relative
-candidates. Only the project-vs-ambient relationship changes.
+**Candidate order is unchanged** for loading project values: the workspace `<cwd>/.env` is the only
+project-local candidate participating in project-vs-ambient divergence and precedence. The two
+CLI-install-relative candidates remain first-definition-wins compatibility inputs, but are excluded
+from the project-local divergence set and do not override ambient values. This keeps the intended
+behaviour change scoped to the workspace checkout.
 
 **Why not `dotenv`'s `override: true`**: it would silently flip precedence *between* the three
 candidate files (today the earlier file wins because dotenv does not override; with `override: true`

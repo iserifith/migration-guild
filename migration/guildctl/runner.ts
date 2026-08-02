@@ -7,7 +7,7 @@ import { Transform } from "stream";
 import type Database from "better-sqlite3";
 import type { PhaseKey } from "./config";
 import { resolveGuildConfig, resolveWorkspaceRoot } from "./config";
-import { resolveAgentLaunch } from "./harness";
+import { resolveAgentLaunch, type ResolvedRuntimeConfig } from "./harness";
 import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions, transientWardenExclusions, type WardenSnapshot } from "./warden";
 import { formatVerificationCloseOut, verifyAtClaimClose } from "./verify";
 import { releaseClaimedArtifactsForOwner } from "../registry/commands/artifacts";
@@ -29,6 +29,13 @@ export interface SpawnAgentOpts {
   releaseClaimsOnFailure?: boolean;
   preClaim?: PreClaimOpts;
   runId?: string;
+  /**
+   * The launch the phase entry resolved and reported (FR-024). When supplied,
+   * this helper uses it as given and merges only run-scoped variables onto its
+   * `agentEnv` — it MUST NOT resolve a second time, or the run-start line and
+   * the process actually spawned could describe different runtimes.
+   */
+  resolution?: ResolvedRuntimeConfig;
 }
 
 export function expandWardenExclusions(paths: string[]): string[] {
@@ -308,8 +315,10 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   const projectRoot = resolveWorkspaceRoot();
   const config = resolveGuildConfig({ cwd: projectRoot });
   // FR-011: the runner and preflight resolve the runtime through one function,
-  // so what is reported is what a run actually uses.
-  const launch = resolveAgentLaunch({ config, root: projectRoot, model });
+  // so what is reported is what a run actually uses. A phase that already
+  // resolved and reported its launch passes it in rather than paying for a
+  // second, potentially different, resolution here.
+  const launch = opts.resolution ?? resolveAgentLaunch({ config, root: projectRoot, model });
   const agentCommand = launch.harness.command;
   const beforeFiles = snapshotChangedFiles(projectRoot);
   const usageFile = path.join(os.tmpdir(), `guild-opencode-usage-${runId}.json`);
@@ -438,22 +447,20 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   // Always run from the project root (my-migration/) so agent shell commands
   // like `node migration/registry/dist/cli.js ...` resolve correctly.
   const agentSpawn = resolveAgentSpawn(agentCommand, args);
-  const agentEnv = resolveAgentLaunch({
-    config,
-    root: projectRoot,
-    model,
-    extraEnv: {
-      GUILDCTL_AGENT_NAME: claimOwner,
-      GUILDCTL_AGENT_KIND: agent,
-      GUILDCTL_RUN_ID: run.run_id,
-      GUILD_OPENCODE_USAGE_FILE: usageFile,
-      ...(preClaimedArtifactId != null ? {
-        GUILDCTL_ARTIFACT_ID: preClaimedArtifactId,
-        GUILDCTL_CLAIM_ID: preClaimId!,
-        GUILDCTL_CLAIM_TOKEN: preClaimToken!,
-      } : {}),
-    },
-  }).agentEnv;
+  const runScopedEnv: Record<string, string> = {
+    GUILDCTL_AGENT_NAME: claimOwner,
+    GUILDCTL_AGENT_KIND: agent,
+    GUILDCTL_RUN_ID: run.run_id,
+    GUILD_OPENCODE_USAGE_FILE: usageFile,
+    ...(preClaimedArtifactId != null ? {
+      GUILDCTL_ARTIFACT_ID: preClaimedArtifactId,
+      GUILDCTL_CLAIM_ID: preClaimId!,
+      GUILDCTL_CLAIM_TOKEN: preClaimToken!,
+    } : {}),
+  };
+  const agentEnv = opts.resolution
+    ? { ...opts.resolution.agentEnv, ...runScopedEnv }
+    : resolveAgentLaunch({ config, root: projectRoot, model, extraEnv: runScopedEnv }).agentEnv;
   const proc = spawn(agentSpawn.command, agentSpawn.args, {
     cwd: projectRoot,
     env: agentEnv,

@@ -34,11 +34,22 @@ export function resolveHarness(config: GuildConfig, root: string, env: NodeJS.Pr
   throw new Error(`Unknown harness "${name}". Supported bundled harnesses: opencode, codex, copilot. Use AGENT_CMD for a custom harness.`);
 }
 
+/**
+ * Where a resolved value came from. `ambient` is the inherited environment,
+ * `project-file` a value a candidate `.env` supplied, `config` the project
+ * configuration itself (a per-phase model or a provider route selection).
+ */
+export type ConfigDivergenceSource = "ambient" | "project-file" | "config";
+
+/** Which source supplied each environment variable, keyed by variable name. */
+export type EnvOriginMap = Record<string, "ambient" | "project-file">;
+
 /** One variable whose resolved value differs from the project declaration. */
 export interface ConfigDivergence {
   setting: string;
   declaredValue: string;
   resolvedValue: string;
+  source: ConfigDivergenceSource;
 }
 
 /** The secret-free projection safe for reports, logs, and JSON output. */
@@ -91,6 +102,14 @@ export interface ResolveAgentLaunchOptions {
   attempt?: number;
   /** Per-run variables the caller layers on top (run id, claim token, …). */
   extraEnv?: Record<string, string>;
+  /**
+   * Which source supplied each environment variable, as computed by the
+   * environment loader in `env.ts`. Supplied explicitly rather than inferred:
+   * this resolver reads values, it does not read `.env` files, so it cannot
+   * know an origin nobody told it. A variable absent from the map is treated
+   * as ambient, which is what it is when no project file defined it.
+   */
+  envOrigin?: EnvOriginMap;
 }
 
 /**
@@ -112,15 +131,22 @@ export function resolveAgentLaunch(opts: ResolveAgentLaunchOptions): ResolvedRun
   const providerBaseUrl = env.AGENT_PROVIDER_BASE_URL || declaredBaseUrl;
   const credentialEnv = config.model.api_key_env ?? "";
 
+  // The variable that produced the value is what decides the reported source,
+  // so an operator reading a divergence learns which file or shell to edit.
+  const envOrigin = opts.envOrigin ?? {};
+  const originOf = (variable: string): ConfigDivergenceSource => envOrigin[variable] ?? "ambient";
+
   const divergences: ConfigDivergence[] = [];
   if (harness.name !== declaredHarness) {
-    divergences.push({ setting: "harness", declaredValue: declaredHarness, resolvedValue: harness.name });
+    divergences.push({ setting: "harness", declaredValue: declaredHarness, resolvedValue: harness.name, source: originOf("AGENT_CMD") });
   }
   if (model !== declaredModel) {
-    divergences.push({ setting: "model.model", declaredValue: declaredModel, resolvedValue: model });
+    // A per-phase model or a provider route selection is project configuration
+    // reading itself, never an environment variable.
+    divergences.push({ setting: "model.model", declaredValue: declaredModel, resolvedValue: model, source: "config" });
   }
   if (providerBaseUrl !== declaredBaseUrl) {
-    divergences.push({ setting: "model.base_url", declaredValue: declaredBaseUrl, resolvedValue: providerBaseUrl });
+    divergences.push({ setting: "model.base_url", declaredValue: declaredBaseUrl, resolvedValue: providerBaseUrl, source: originOf("AGENT_PROVIDER_BASE_URL") });
   }
 
   const agentEnv: Record<string, string> = {};

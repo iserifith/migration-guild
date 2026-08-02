@@ -6,6 +6,12 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### August 2, 2026
+
+- Changed environment loading so the workspace `.env` wins over inherited values by default, with
+  explicit `--ambient-env` / `GUILD_ENV_PRECEDENCE=ambient` opt-in, always-on divergence reporting,
+  and redaction of sensitive values.
+
 ### July 15, 2026
 
 - Changed inventory ID derivation to preserve existing non-colliding IDs while assigning deterministic path-qualified IDs to same-module basename collisions, including safe repair of partially populated registries.
