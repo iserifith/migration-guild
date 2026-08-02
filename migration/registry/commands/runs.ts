@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import type { AttemptOutcome, CleanupOutcome, FilesWrittenSource, OutcomeLabel } from "../types";
 import { reconcileStaleClaims } from "./claim";
 
 const STALE_RUN_MINUTES = Math.max(1, parseInt(process.env["GUILDCTL_STALE_RUN_MINS"] ?? "30", 10));
@@ -24,6 +25,14 @@ export interface Run {
   token_fresh: number;
   token_total: number;
   status: "running" | "completed" | "failed";
+  files_written_count: AttemptOutcome["files_written_count"];
+  files_written_source: AttemptOutcome["files_written_source"];
+  status_from: AttemptOutcome["status_from"];
+  status_to: AttemptOutcome["status_to"];
+  budget_consumed: AttemptOutcome["budget_consumed"];
+  cleanup_outcome: AttemptOutcome["cleanup_outcome"];
+  survivor_pids: AttemptOutcome["survivor_pids"];
+  outcome_label: AttemptOutcome["outcome_label"];
 }
 
 export interface StartRunOptions {
@@ -47,7 +56,24 @@ export interface RunTokenUsage {
   total: number;
 }
 
-export interface FinishRunOptions {
+/**
+ * Attempt-outcome fields (FR-030–FR-034). Every one is optional; omitting all
+ * of them reproduces the pre-feature `finishRun` behaviour exactly, and each
+ * column stays NULL. `0` is a meaningful value for `filesWrittenCount`,
+ * distinct from "not determined".
+ */
+export interface AttemptOutcomeInput {
+  filesWrittenCount?: number | null;
+  filesWrittenSource?: FilesWrittenSource | null;
+  statusFrom?: string | null;
+  statusTo?: string | null;
+  budgetConsumed?: 0 | 1 | boolean | null;
+  cleanupOutcome?: CleanupOutcome | null;
+  survivorPids?: number[] | null;
+  outcomeLabel?: OutcomeLabel | null;
+}
+
+export interface FinishRunOptions extends AttemptOutcomeInput {
   runId: string;
   exitCode: number;
   reason?: string;
@@ -100,9 +126,17 @@ export function setRunPid(
   return db.prepare(`SELECT * FROM runs WHERE run_id = ?`).get(runId) as Run;
 }
 
+function normalizeBudgetConsumed(value: AttemptOutcomeInput["budgetConsumed"]): 0 | 1 | null {
+  if (value == null) return null;
+  if (typeof value === "boolean") return value ? 1 : 0;
+  return value ? 1 : 0;
+}
+
 export function finishRun(db: Database.Database, opts: FinishRunOptions): Run {
   const status = opts.exitCode === 0 ? "completed" : "failed";
   const usage = opts.tokenUsage;
+  // The attempt outcome is written in the same statement that closes the run, so
+  // a run is never observed finished-but-unlabelled (FR-033).
   db.prepare(`
     UPDATE runs
     SET finished_at = datetime('now'),
@@ -115,7 +149,15 @@ export function finishRun(db: Database.Database, opts: FinishRunOptions): Run {
         token_cache_write = @token_cache_write,
         token_fresh = @token_fresh,
         token_total = @token_total,
-        status = @status
+        status = @status,
+        files_written_count  = COALESCE(@files_written_count,  files_written_count),
+        files_written_source = COALESCE(@files_written_source, files_written_source),
+        status_from          = COALESCE(@status_from,          status_from),
+        status_to            = COALESCE(@status_to,            status_to),
+        budget_consumed      = COALESCE(@budget_consumed,      budget_consumed),
+        cleanup_outcome      = COALESCE(@cleanup_outcome,      cleanup_outcome),
+        survivor_pids        = COALESCE(@survivor_pids,        survivor_pids),
+        outcome_label        = COALESCE(@outcome_label,        outcome_label)
     WHERE run_id = @run_id
   `).run({
     run_id: opts.runId,
@@ -129,6 +171,14 @@ export function finishRun(db: Database.Database, opts: FinishRunOptions): Run {
     token_fresh: usage?.fresh ?? 0,
     token_total: usage?.total ?? 0,
     status,
+    files_written_count: opts.filesWrittenCount ?? null,
+    files_written_source: opts.filesWrittenSource ?? null,
+    status_from: opts.statusFrom ?? null,
+    status_to: opts.statusTo ?? null,
+    budget_consumed: normalizeBudgetConsumed(opts.budgetConsumed),
+    cleanup_outcome: opts.cleanupOutcome ?? null,
+    survivor_pids: opts.survivorPids == null ? null : JSON.stringify(opts.survivorPids),
+    outcome_label: opts.outcomeLabel ?? null,
   });
 
   return db.prepare(`SELECT * FROM runs WHERE run_id = ?`).get(opts.runId) as Run;

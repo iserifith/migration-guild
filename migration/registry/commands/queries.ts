@@ -2,11 +2,32 @@ import type Database from "better-sqlite3";
 import { RegistryError, validateId } from "../types";
 import type { Artifact, ArtifactTier, EventType, Kind, Status, Tag } from "../types";
 
-export function getArtifactById(db: Database.Database, id: string): Artifact {
+/**
+ * Verification state read through the coalescing LEFT JOIN (FR-002, FR-009), so
+ * an artifact with no verification attempt reads as unverified rather than
+ * blank and review/arbitration consumers can treat `unverified` and
+ * `verification-failed` as triageable conditions.
+ *
+ * This is visibility only. Verification state cannot approve, cannot substitute
+ * for acceptance evidence, and cannot unlock a status transition.
+ */
+const VERIFICATION_COLUMNS = `
+  COALESCE(v.state,  'unverified')    AS verification_state,
+  COALESCE(v.reason, 'not-attempted') AS verification_reason
+`;
+
+const VERIFICATION_JOIN = "LEFT JOIN artifact_verifications v ON v.artifact_id = a.id";
+
+export type ArtifactWithVerification = Artifact & {
+  verification_state: string;
+  verification_reason: string;
+};
+
+export function getArtifactById(db: Database.Database, id: string): ArtifactWithVerification {
   validateId(id);
-  const row = db.prepare("SELECT * FROM artifacts WHERE id = ?").get(id) as
-    | Artifact
-    | undefined;
+  const row = db.prepare(
+    `SELECT a.*, ${VERIFICATION_COLUMNS} FROM artifacts a ${VERIFICATION_JOIN} WHERE a.id = ?`,
+  ).get(id) as ArtifactWithVerification | undefined;
   if (!row) throw new RegistryError(2, `Artifact not found: "${id}"`);
   return row;
 }
@@ -14,10 +35,10 @@ export function getArtifactById(db: Database.Database, id: string): Artifact {
 export function getArtifactByPath(
   db: Database.Database,
   filePath: string,
-): Artifact {
+): ArtifactWithVerification {
   const row = db
-    .prepare("SELECT * FROM artifacts WHERE path = ?")
-    .get(filePath) as Artifact | undefined;
+    .prepare(`SELECT a.*, ${VERIFICATION_COLUMNS} FROM artifacts a ${VERIFICATION_JOIN} WHERE a.path = ?`)
+    .get(filePath) as ArtifactWithVerification | undefined;
   if (!row)
     throw new RegistryError(2, `No artifact found for path: "${filePath}"`);
   return row;
@@ -34,7 +55,7 @@ export interface ListArtifactsOptions {
 export function listArtifacts(
   db: Database.Database,
   opts: ListArtifactsOptions = {},
-): Artifact[] {
+): ArtifactWithVerification[] {
   const conditions: string[] = [];
   const params: Record<string, string> = {};
 
@@ -55,7 +76,7 @@ export function listArtifacts(
     params["tier"] = opts.tier;
   }
 
-  let sql = "SELECT DISTINCT a.* FROM artifacts a";
+  let sql = `SELECT DISTINCT a.*, ${VERIFICATION_COLUMNS} FROM artifacts a ${VERIFICATION_JOIN}`;
   if (opts.tag) {
     sql += " JOIN artifact_tags t ON t.artifact_id = a.id AND t.tag = @tag";
     params["tag"] = opts.tag;
@@ -63,7 +84,7 @@ export function listArtifacts(
   if (conditions.length) sql += " WHERE " + conditions.join(" AND ");
   sql += " ORDER BY a.tier ASC, a.created_at";
 
-  return db.prepare(sql).all(params) as Artifact[];
+  return db.prepare(sql).all(params) as ArtifactWithVerification[];
 }
 
 export function getEventsQuery(
@@ -155,6 +176,28 @@ export function showStatus(db: Database.Database) {
     total += r.count;
   }
 
+  // FR-008: the verified / unverified / verification-failed split, read through
+  // the coalescing LEFT JOIN so an artifact with no attempt counts as
+  // unverified rather than vanishing. COUNT-shaped, to stay fast on large
+  // registries.
+  const verificationRows = db
+    .prepare(
+      `
+    SELECT COALESCE(v.state, 'unverified') AS state, COUNT(*) AS count
+    FROM artifacts a
+    LEFT JOIN artifact_verifications v ON v.artifact_id = a.id
+    WHERE a.kind IN ('legacy-source', 'target-source')
+    GROUP BY COALESCE(v.state, 'unverified')
+  `,
+    )
+    .all() as { state: string; count: number }[];
+
+  const verification = { verified: 0, unverified: 0, "verification-failed": 0, total: 0 };
+  for (const row of verificationRows) {
+    if (row.state in verification) verification[row.state as keyof typeof verification] = row.count;
+    verification.total += row.count;
+  }
+
   const focusRow = stateRow("current_focus");
   const nextRow = stateRow("next");
   const doneRow = stateRow("completed");
@@ -174,6 +217,7 @@ export function showStatus(db: Database.Database) {
       pending: countMap["pending"] ?? 0,
       by_status: countMap,
     },
+    verification,
   };
 }
 

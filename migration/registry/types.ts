@@ -118,6 +118,9 @@ export const TAG_VOCABULARY = [
   "blocked-external",
   "blocked-human-decision",
   "eval-passed",
+  // FR-010: the attempt required a change outside its authorized output paths.
+  // Reporting the condition never widens write authorization.
+  "blocked:out-of-scope-path",
 ] as const;
 
 export type Tag = (typeof TAG_VOCABULARY)[number];
@@ -203,6 +206,80 @@ export interface ArbitrationDecision {
   decided_at: string;
 }
 
+
+// ─── Artifact verification (FR-001–FR-009) ───────────────────────────────────
+// Verification state is a fact distinct from migration status, and is triage
+// input only: it can never satisfy the arbitration gate, substitute for
+// acceptance evidence, or unlock a status transition.
+
+export type VerificationState = "verified" | "unverified" | "verification-failed";
+
+/** Closed machine-readable vocabulary; `reason` is required unless verified. */
+export const VERIFICATION_REASONS = [
+  "not-attempted",
+  "no-stack-check",
+  "tree-incomplete",
+  "budget-exhausted",
+  "agent-reported-unverifiable",
+  "check-failed",
+  "check-error",
+] as const;
+
+export type VerificationReason = (typeof VERIFICATION_REASONS)[number];
+
+export interface VerificationRecord {
+  artifact_id: string;
+  state: VerificationState;
+  method: string;
+  reason: VerificationReason | null;
+  detail: string | null;
+  scope_json: string | null;
+  budget_ms: number | null;
+  duration_ms: number | null;
+  run_id: string | null;
+  determined_at: string | null;
+}
+
+// ─── Attempt outcome (FR-030–FR-034) ─────────────────────────────────────────
+
+export type FilesWrittenSource = "warden-snapshot" | "git-diff" | "unavailable";
+export type CleanupOutcome = "clean" | "survivors" | "not-applicable";
+export type OutcomeLabel = "succeeded" | "released-retryable" | "no-progress" | "failed";
+
+/** The honest close-out of one agent attempt, persisted on `runs`. */
+export interface AttemptOutcome {
+  files_written_count: number | null;
+  files_written_source: FilesWrittenSource | null;
+  status_from: string | null;
+  status_to: string | null;
+  budget_consumed: 0 | 1 | null;
+  cleanup_outcome: CleanupOutcome | null;
+  /** JSON array of PIDs; non-empty iff `cleanup_outcome = 'survivors'`. */
+  survivor_pids: string | null;
+  outcome_label: OutcomeLabel | null;
+}
+
+// ─── Agent context retrieval (FR-040–FR-044) ─────────────────────────────────
+
+export type ContextForm = "file" | "summary" | "none";
+
+export type ContextNoneReason = "no-context-record" | "no-locatable-file-or-summary";
+
+/**
+ * The `form` discriminator is mandatory, so a caller never has to infer which
+ * kind of context it received.
+ */
+export interface ContextResponse {
+  form: ContextForm;
+  /** Present when `form = "file"`; resolves as written on this host. */
+  path?: string;
+  /** File contents (`form = "file"`) or the stored summary (`form = "summary"`). */
+  content?: string;
+  /** Present when `form = "none"`. */
+  reason?: ContextNoneReason;
+  /** Present when `form = "none"`: the documented fallback to use instead. */
+  fallback?: string;
+}
 
 export type BenchmarkMode = "single-agent" | "guild";
 export type BenchmarkVerdict = "pass" | "fail";

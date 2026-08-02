@@ -59,6 +59,116 @@ interface ScaffoldDescription {
   group_marker: string;
 }
 
+/**
+ * Optional per-artifact verification declared by a stack pack
+ * (contracts/stack-pack-verify.md).
+ *
+ * Constitution VII: a per-unit compile or test invocation is stack-specific
+ * knowledge — `./gradlew compileJava` is meaningless to the Python pack — so it
+ * is declared here as **data**. Core reads it and executes it; core contains no
+ * build or test command for any stack.
+ */
+export interface PerArtifactVerify {
+  /** Recorded as artifact_verifications.method. */
+  id: string;
+  /** Executable, resolved from the workspace root. */
+  cmd: string;
+  args?: string[];
+  /** Probed first; failure means unverified/no-stack-check, not a failed check. */
+  availability_args?: string[];
+  /** Relative to the workspace root; must stay inside it. */
+  working_dir?: string;
+  /** Per-stack override of verification.budget_seconds. */
+  budget_seconds?: number;
+  /** Defaults to [0]. */
+  pass_exit_codes?: number[];
+  /** Operator-facing text when availability_args fails. */
+  unavailable_note?: string;
+}
+
+export interface StackVerify {
+  per_artifact?: PerArtifactVerify;
+}
+
+/** Values substituted into `args` and `working_dir`, all from registry rows. */
+export interface VerifyPlaceholderValues {
+  artifact_path: string;
+  output_paths: string[];
+  dependency_paths: string[];
+  module: string;
+  workspace_root: string;
+}
+
+/**
+ * The closed verify placeholder vocabulary. There is deliberately no
+ * `{all_artifacts}`: a pack must not be able to request a tree-wide build.
+ */
+const VERIFY_PLACEHOLDERS = new Set([
+  "artifact_path",
+  "output_paths",
+  "dependency_paths",
+  "scope_paths",
+  "module",
+  "workspace_root",
+]);
+
+function verifyPlaceholderValue(key: string, values: VerifyPlaceholderValues): string {
+  switch (key) {
+    case "artifact_path": return values.artifact_path;
+    case "output_paths": return values.output_paths.join(" ");
+    case "dependency_paths": return values.dependency_paths.join(" ");
+    case "scope_paths": return [...values.output_paths, ...values.dependency_paths].join(" ");
+    case "module": return values.module;
+    case "workspace_root": return values.workspace_root;
+    default: throw new Error(`Unsupported verify placeholder: {${key}}`);
+  }
+}
+
+function expandVerifyTemplate(template: string, values: VerifyPlaceholderValues): string {
+  return template.replace(/\{([^{}]+)\}/g, (_whole, key: string) => {
+    if (!VERIFY_PLACEHOLDERS.has(key)) throw new Error(`Unsupported verify placeholder: {${key}}`);
+    return verifyPlaceholderValue(key, values);
+  });
+}
+
+/**
+ * Expand each arg template into exactly one argv entry. Values are never
+ * concatenated into a command line, so a path containing a space, quote, or
+ * shell metacharacter cannot alter the command — the caller spawns with
+ * `shell: false`.
+ */
+export function expandVerifyArgs(args: string[], values: VerifyPlaceholderValues): string[] {
+  return args.map((arg) => expandVerifyTemplate(arg, values));
+}
+
+export function expandVerifyWorkingDir(
+  workingDir: string | undefined,
+  values: VerifyPlaceholderValues,
+): string | undefined {
+  return workingDir == null ? undefined : expandVerifyTemplate(workingDir, values);
+}
+
+/** Reject an unknown verify placeholder at pack load, not at execution time. */
+function validateVerifyTemplates(verify: StackVerify | undefined): void {
+  const check = verify?.per_artifact;
+  if (!check) return;
+  for (const template of [...(check.args ?? []), ...(check.working_dir ? [check.working_dir] : [])]) {
+    for (const match of template.matchAll(/\{([^{}]+)\}/g)) {
+      if (!VERIFY_PLACEHOLDERS.has(match[1])) throw new Error(`Unsupported verify placeholder: {${match[1]}}`);
+    }
+  }
+}
+
+/** A pack without a `verify:` block is valid; it simply declares no check. */
+export function resolvePerArtifactVerify(pack: LoadedStackPack): PerArtifactVerify | undefined {
+  const check = pack.manifest.verify?.per_artifact;
+  if (!check) return undefined;
+  if (!check.id || !check.cmd) {
+    throw new Error(`[guildctl] Stack pack "${pack.manifest.id}" declares verify.per_artifact without an id and cmd`);
+  }
+  return check;
+}
+
 export interface StackManifest {
   id: string;
   display_name: string;
@@ -70,6 +180,8 @@ export interface StackManifest {
   classification_spec?: string;
   project_types: Record<string, ProjectTypeDescription>;
   audit: { rules_file: string; external_probes: ExternalProbe[] };
+  /** Optional; absent means artifacts record unverified/no-stack-check. */
+  verify?: StackVerify;
   instructions: { classify: string; mappings: string; tests: string };
   scaffold: ScaffoldDescription;
 }
@@ -121,8 +233,12 @@ export function loadStackPack(id: string, workspaceRoot: string): LoadedStackPac
   if (!dir) throw new Error(`[guildctl] Unknown stack pack "${id}"`);
   const manifest = parse(fs.readFileSync(path.join(dir, "stack.yaml"), "utf8")) as StackManifest;
   const rules = parse(fs.readFileSync(path.join(dir, manifest.audit.rules_file), "utf8")) as StackAuditRule[];
-  validateTemplates(manifest);
+  // The `verify:` block carries its own closed placeholder vocabulary, so it is
+  // validated separately from the audit/scaffold interpolation vocabulary.
+  const { verify, ...interpolated } = manifest;
+  validateTemplates(interpolated);
   validateTemplates(rules);
+  validateVerifyTemplates(verify);
   return { dir, manifest, rules };
 }
 

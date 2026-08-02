@@ -55,6 +55,22 @@ export function applySchema(db: Database.Database): void {
   ensureColumn(db, "acceptance_evidence", "authenticity", "TEXT");
   ensureColumn(db, "acceptance_evidence", "content_sha256", "TEXT");
   ensureColumn(db, "acceptance_evidence", "signature_json", "TEXT");
+
+  // Attempt-outcome columns on runs. The migrations section already carries the
+  // matching ALTER statements, but this SQLite build rejects
+  // `ADD COLUMN IF NOT EXISTS`, so the guarded ALTERs here are what actually
+  // upgrade an existing database. Both halves are required.
+  ensureColumn(db, "runs", "files_written_count", "INTEGER");
+  ensureColumn(db, "runs", "files_written_source", "TEXT");
+  ensureColumn(db, "runs", "status_from", "TEXT");
+  ensureColumn(db, "runs", "status_to", "TEXT");
+  ensureColumn(db, "runs", "budget_consumed", "INTEGER");
+  ensureColumn(db, "runs", "cleanup_outcome", "TEXT");
+  ensureColumn(db, "runs", "survivor_pids", "TEXT");
+  ensureColumn(db, "runs", "outcome_label", "TEXT");
+
+  // The index depends on a column the guards above may have just added.
+  db.exec("CREATE INDEX IF NOT EXISTS idx_runs_outcome_label ON runs(outcome_label)");
 }
 
 function ensureColumn(

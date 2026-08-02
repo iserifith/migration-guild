@@ -9,9 +9,29 @@ import { requireNonEmptyRegistry } from "../readiness";
 
 const REVIEW_TIMEOUT_MINUTES = Math.max(1, parseInt(process.env["GUILDCTL_REVIEW_TIMEOUT_MINS"] ?? "10", 10));
 
-function getMigratedArtifacts(db: Database.Database): Array<{ id: string; path: string }> {
+interface ReviewCandidate {
+  id: string;
+  path: string;
+  verification_state: string;
+  verification_reason: string;
+}
+
+/**
+ * Review candidates carry their verification state and reason (FR-009).
+ *
+ * This is **triage input only**: it tells a reviewer where to look first. It
+ * grants no approval power, cannot substitute for acceptance evidence, and
+ * cannot unlock a status transition — the arbitration gate is unchanged
+ * (Constitution IV, research R11). Nothing here filters an artifact out of
+ * review on the strength of its verification state.
+ */
+function getMigratedArtifacts(db: Database.Database): ReviewCandidate[] {
   return db.prepare(`
-    SELECT a.id, a.path FROM artifacts a
+    SELECT a.id, a.path,
+           COALESCE(v.state,  'unverified')    AS verification_state,
+           COALESCE(v.reason, 'not-attempted') AS verification_reason
+    FROM artifacts a
+    LEFT JOIN artifact_verifications v ON v.artifact_id = a.id
     WHERE a.tier = 'first-class' AND a.status = 'migrated'
       AND NOT EXISTS (
         SELECT 1 FROM runs r
@@ -20,7 +40,15 @@ function getMigratedArtifacts(db: Database.Database): Array<{ id: string; path: 
           AND r.status = 'running'
       )
     ORDER BY a.path
-  `).all() as Array<{ id: string; path: string }>;
+  `).all() as ReviewCandidate[];
+}
+
+/** The triage note a reviewer sees alongside the artifact under review. */
+export function formatReviewTriageNote(candidate: ReviewCandidate): string {
+  if (candidate.verification_state === "verified") {
+    return "verification: verified (triage input only — independent evidence is still required)";
+  }
+  return `verification: ${candidate.verification_state} (${candidate.verification_reason}) — triage input only, review on its merits`;
 }
 
 function hasMigratingRemaining(db: Database.Database): boolean {
@@ -106,11 +134,11 @@ export async function runReview(
       for (let i = 0; i < newArtifacts.length; i += parallel) {
         const batch = newArtifacts.slice(i, i + parallel);
         const snapshotBefore = getReviewSnapshot(db);
-        const procs = batch.map(({ path: file }) =>
+        const procs = batch.map((candidate) =>
           runAgent({
             agent: "review-agent",
             model,
-            prompt: `Review migration for ${file}`,
+            prompt: `Review migration for ${candidate.path}\n${formatReviewTriageNote(candidate)}`,
             db,
             logDir,
             phase: "review",

@@ -8,6 +8,7 @@ import {
   releaseClaimedArtifactsForOwner as releaseClaimedArtifactsForOwnerImpl,
   validateRunOperatorCredential,
 } from "./claim";
+import { resetVerification } from "./verification";
 
 export interface RegisterArtifactOptions {
   id: string;
@@ -130,6 +131,13 @@ export function setArtifactStatus(
             updated_at = datetime('now')
         WHERE id = @id
       `).run({ id, status });
+    }
+
+    // Content-bound evidence rule (Constitution I): a verification of superseded
+    // output must not survive the change. Re-entering in-progress or
+    // needs-rework invalidates the record back to unverified / not-attempted.
+    if (status === "in-progress" || status === "needs-rework") {
+      resetVerification(db, id);
     }
 
     const shouldRecordEvent = opts.agent || opts.reason || opts.model;

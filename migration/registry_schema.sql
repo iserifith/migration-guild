@@ -199,18 +199,62 @@ CREATE TABLE IF NOT EXISTS runs (
     token_cache_write INTEGER NOT NULL DEFAULT 0 CHECK (token_cache_write >= 0),
     token_fresh INTEGER NOT NULL DEFAULT 0 CHECK (token_fresh >= 0),
     token_total INTEGER NOT NULL DEFAULT 0 CHECK (token_total >= 0),
-    status       TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'completed', 'failed'))
+    status       TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'completed', 'failed')),
+    -- Attempt outcome. Every column is nullable so pre-existing rows and every
+    -- current consumer keep working; value domains are enforced in finishRun
+    -- because ALTER TABLE ADD COLUMN cannot add a CHECK in this SQLite build.
+    files_written_count  INTEGER,
+    files_written_source TEXT,
+    status_from          TEXT,
+    status_to            TEXT,
+    budget_consumed      INTEGER,
+    cleanup_outcome      TEXT,
+    survivor_pids        TEXT,
+    outcome_label        TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_runs_agent  ON runs(agent);
 CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
 CREATE INDEX IF NOT EXISTS idx_runs_owner  ON runs(owner_id);
+-- idx_runs_outcome_label is created in the migrations section below, not here.
+-- The base section is executed as one statement batch against existing
+-- databases too, where `CREATE TABLE IF NOT EXISTS runs` is a no-op and
+-- outcome_label does not exist yet — indexing it here would abort the whole
+-- batch and break in-place upgrade. The migrations section runs for fresh and
+-- existing databases alike, after the ALTERs, so both end with the index.
 
 CREATE TABLE IF NOT EXISTS run_operator_credentials (
     run_id       TEXT PRIMARY KEY REFERENCES runs(run_id) ON DELETE CASCADE,
     token_hash   TEXT NOT NULL,
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- ─── Artifact Verification ───────────────────────────────────────────────────
+-- Verification state is a fact distinct from migration status: it records
+-- whether an artifact's own output was checked, by what method, and why.
+-- It is triage input only. It has deliberately NO foreign key to
+-- acceptance_evidence, cannot substitute for it, and cannot satisfy the
+-- arbitration gate.
+
+CREATE TABLE IF NOT EXISTS artifact_verifications (
+    artifact_id    TEXT PRIMARY KEY REFERENCES artifacts(id) ON DELETE CASCADE,
+    state          TEXT NOT NULL CHECK (state IN (
+                       'verified',
+                       'unverified',
+                       'verification-failed'
+                   )),
+    method         TEXT NOT NULL,
+    reason         TEXT,
+    detail         TEXT,
+    scope_json     TEXT,
+    budget_ms      INTEGER,
+    duration_ms    INTEGER,
+    run_id         TEXT REFERENCES runs(run_id) ON DELETE SET NULL,
+    determined_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifact_verifications_state ON artifact_verifications(state);
+CREATE INDEX IF NOT EXISTS idx_artifact_verifications_run   ON artifact_verifications(run_id);
 
 -- ─── Acceptance Evidence Gate ────────────────────────────────────────────────
 
@@ -487,6 +531,23 @@ ALTER TABLE acceptance_evidence ADD COLUMN IF NOT EXISTS duration_ms INTEGER;
 ALTER TABLE acceptance_evidence ADD COLUMN IF NOT EXISTS authenticity TEXT;
 ALTER TABLE acceptance_evidence ADD COLUMN IF NOT EXISTS content_sha256 TEXT;
 ALTER TABLE acceptance_evidence ADD COLUMN IF NOT EXISTS signature_json TEXT;
+
+-- Attempt-outcome columns on runs (FR-030–FR-034). Every one is nullable, so an
+-- existing workspace registry upgrades in place with no backfill.
+-- Note: SQLite in this build rejects `ADD COLUMN IF NOT EXISTS`, so schema.ts
+-- also adds each of these at runtime via a plain ALTER guarded by a
+-- column-existence check. Both halves are required; either alone leaves fresh
+-- or existing databases wrong.
+ALTER TABLE runs ADD COLUMN files_written_count  INTEGER;
+ALTER TABLE runs ADD COLUMN files_written_source TEXT;
+ALTER TABLE runs ADD COLUMN status_from          TEXT;
+ALTER TABLE runs ADD COLUMN status_to            TEXT;
+ALTER TABLE runs ADD COLUMN budget_consumed      INTEGER;
+ALTER TABLE runs ADD COLUMN cleanup_outcome      TEXT;
+ALTER TABLE runs ADD COLUMN survivor_pids        TEXT;
+ALTER TABLE runs ADD COLUMN outcome_label        TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_runs_outcome_label ON runs(outcome_label);
 
 CREATE TABLE IF NOT EXISTS run_operator_credentials (
     run_id       TEXT PRIMARY KEY REFERENCES runs(run_id) ON DELETE CASCADE,

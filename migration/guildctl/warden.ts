@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { appendEvent } from "../registry/commands/events";
+import { addTag } from "../registry/commands/artifacts";
 import { deriveExpectedOutputPaths } from "../registry/commands/claim";
 import type { Artifact } from "../registry/types";
 
@@ -28,6 +29,9 @@ export interface EnforceWardenOptions {
   allowedPaths: string[];
   excludedPaths?: string[];
   agent: string;
+  /** Recorded in the filesystem-violation payload so the blockage is traceable. */
+  claimId?: string | null;
+  runId?: string | null;
 }
 
 export interface WardenResult {
@@ -203,13 +207,30 @@ export function enforceWardenSnapshot(
   }
 
   if (violations.length > 0 && db) {
+    // FR-010: the blockage becomes a *named condition* on the artifact
+    // identifying the out-of-scope path, instead of a silent revert that still
+    // lets the artifact advance as if complete. Restore-and-fail above is
+    // unchanged, and recording this MUST NOT add the path to any allow-list —
+    // broadening write authorization is out of scope.
+    const outOfScopePaths = violations.map((violation) => violation.path);
     appendEvent(db, {
       id: opts.artifactId,
       type: "filesystem-violation",
       agent: opts.agent,
       summary: `${violations.length} unauthorized filesystem change(s) restored`,
-      data: JSON.stringify({ violations }),
+      data: JSON.stringify({
+        violations,
+        out_of_scope_paths: outOfScopePaths,
+        claim_id: opts.claimId ?? null,
+        run_id: opts.runId ?? null,
+      }),
     });
+    try {
+      addTag(db, opts.artifactId, "blocked:out-of-scope-path");
+    } catch {
+      // The tag is a report, never a gate: failing to record it must not turn a
+      // restored violation into a crash.
+    }
   }
 
   return { clean: violations.length === 0, violations };

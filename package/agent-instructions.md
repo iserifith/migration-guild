@@ -44,6 +44,34 @@ Key commands:
 - `wave-plan` — show migration waves and their status
 - `set-artifact-status --id <id> --status <status>` — update artifact state
 - `show-status` — operator dashboard
+- `set-verification --id <id> --state <state> --method <method> [--reason <slug>]` — record whether your own output was checked
+- `get-verification --id <id>` — read the current verification state (always answers, never blank)
+
+## Reporting Verification
+
+Migration status and verification state are **two separate facts**. Reaching `migrated`
+says you produced the output; it does not say the output was checked. Record what you
+actually know:
+
+- After finishing an artifact, record your own bounded check with `set-verification`.
+  Use `--state verified` only when a check actually ran and passed, and pass
+  `--duration-ms` and `--scope` so the record can say what it covered.
+- If you could not verify your own output — no toolchain, the check could not run, you
+  ran out of budget, or you simply did not check — record it explicitly:
+
+  ```bash
+  node migration/registry/dist/cli.js set-verification --id <id> \
+    --state unverified --method none --reason agent-reported-unverifiable
+  ```
+
+- **Never close silently.** An artifact with no verification record reads as
+  `unverified` / `not-attempted`, which is honest but tells the operator nothing about
+  why. Saying `agent-reported-unverifiable` is always better than saying nothing.
+- Never claim `verified` for work you did not check. Verification is triage input for
+  reviewers; it does not approve anything, does not substitute for acceptance evidence,
+  and does not unlock a status transition. Overstating it only misleads the next reader.
+- Valid reasons: `not-attempted`, `no-stack-check`, `tree-incomplete`, `budget-exhausted`,
+  `agent-reported-unverifiable`, `check-failed`, `check-error`.
 
 ## Agent Rules
 

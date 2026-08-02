@@ -8,7 +8,7 @@ import { loadActiveStack } from "../guildctl/stack";
 import { loadClassificationSpec } from "../guildctl/classification";
 import { applySchema } from "./db/schema";
 import { RegistryError } from "./types";
-import type { Agent, Artifact, ArtifactClaim, ArtifactTier, EventType, Kind, MappingStrategy, Relation, Role, Status } from "./types";
+import type { Agent, Artifact, ArtifactClaim, ArtifactTier, EventType, Kind, MappingStrategy, Relation, Role, Status, VerificationReason, VerificationState } from "./types";
 import {
   addTag,
   registerArtifact,
@@ -54,6 +54,7 @@ import {
 } from "./commands/evidence";
 
 import { getContextPath, writeContext } from "./commands/context";
+import { getVerification, listVerification, setVerification } from "./commands/verification";
 import { appendChangelog, getChangelogPath } from "./commands/changelog";
 import { addCompleted, getOperatorState, setFocus, setNext } from "./commands/operator";
 import {
@@ -696,11 +697,44 @@ program
   .requiredOption("--run-id <id>", "Run ID returned by start-run")
   .requiredOption("--exit-code <n>", "Exit code of the agent process", parseInt)
   .option("--reason <reason>", "Optional termination reason")
-  .action((opts) => run(() => finishRun(db(), {
-    runId: opts.runId,
-    exitCode: opts.exitCode,
-    reason: opts.reason,
-  })));
+  // Attempt-outcome fields (FR-030–FR-034). All optional: omitting every one of
+  // them reproduces the pre-feature behaviour exactly.
+  .option("--files-written <n>", "Files the attempt wrote (0 is meaningful)", parseInt)
+  .option("--files-written-source <source>", "warden-snapshot | git-diff | unavailable")
+  .option("--status-from <status>", "Artifact status when the attempt began")
+  .option("--status-to <status>", "Artifact status after cleanup")
+  .option("--budget-consumed <n>", "1 when any provider tokens were recorded", parseInt)
+  .option("--cleanup-outcome <outcome>", "clean | survivors | not-applicable")
+  .option("--survivor-pids <json>", "JSON array of PIDs that outlived termination")
+  .option("--outcome-label <label>", "succeeded | released-retryable | no-progress | failed")
+  .action((opts) => run(() => {
+    let survivorPids: number[] | null = null;
+    if (opts.survivorPids != null) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(opts.survivorPids);
+      } catch {
+        throw new RegistryError(1, "--survivor-pids must be a JSON array of integers");
+      }
+      if (!Array.isArray(parsed) || parsed.some((pid) => !Number.isInteger(pid))) {
+        throw new RegistryError(1, "--survivor-pids must be a JSON array of integers");
+      }
+      survivorPids = parsed as number[];
+    }
+    return finishRun(db(), {
+      runId: opts.runId,
+      exitCode: opts.exitCode,
+      reason: opts.reason,
+      filesWrittenCount: opts.filesWritten,
+      filesWrittenSource: opts.filesWrittenSource,
+      statusFrom: opts.statusFrom,
+      statusTo: opts.statusTo,
+      budgetConsumed: opts.budgetConsumed,
+      cleanupOutcome: opts.cleanupOutcome,
+      survivorPids,
+      outcomeLabel: opts.outcomeLabel,
+    });
+  }));
 
 program
   .command("list-runs")
@@ -726,6 +760,78 @@ program
   .command("show-in-progress")
   .description("List all currently claimed (in-progress) artifacts with ownership and age")
   .action(() => run(() => showInProgress(db())));
+
+// ─── Artifact Verification ───────────────────────────────────────────────────
+//
+// Verification state is triage input only. These commands never change
+// artifacts.status, never write acceptance_evidence, and never unlock a gate.
+
+program
+  .command("set-verification")
+  .description("Record the outcome of a bounded per-artifact check (triage input only)")
+  .requiredOption("--id <id>", "Artifact ID")
+  .requiredOption("--state <state>", "verified | unverified | verification-failed")
+  .requiredOption("--method <method>", "How it was determined, e.g. the stack check id")
+  .option("--reason <slug>", "Required when --state is not verified; closed vocabulary")
+  .option("--detail <text>", "Human-readable detail; redacted before write")
+  .option("--scope <json>", "JSON array of the paths the check actually covered")
+  .option("--budget-ms <n>", "Effective budget applied", parseInt)
+  .option("--duration-ms <n>", "Wall-clock the check consumed", parseInt)
+  .option("--run-id <id>", "Run that determined it")
+  .option("--operator-token <token>", "Run operator credential authorizing the write")
+  .option("--claim-id <claimId>", "Active claim ID authorizing the write")
+  .option("--claim-token <claimToken>", "Active claim token authorizing the write")
+  .option("--agent <agent>", "Agent recorded on the audit event")
+  .action((opts) =>
+    run(() => {
+      let scope: string[] | undefined;
+      if (opts.scope != null) {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(opts.scope);
+        } catch {
+          throw new RegistryError(1, "--scope must be a JSON array of paths");
+        }
+        if (!Array.isArray(parsed)) {
+          throw new RegistryError(1, "--scope must be a JSON array of paths");
+        }
+        scope = parsed.map(String);
+      }
+      return setVerification(db(), {
+        artifactId: opts.id,
+        state: opts.state as VerificationState,
+        method: opts.method,
+        reason: opts.reason as VerificationReason | undefined,
+        detail: opts.detail,
+        scope,
+        budgetMs: opts.budgetMs,
+        durationMs: opts.durationMs,
+        runId: opts.runId,
+        operatorToken: opts.operatorToken,
+        claimId: opts.claimId,
+        claimToken: opts.claimToken,
+        agent: opts.agent,
+      });
+    }),
+  );
+
+program
+  .command("get-verification")
+  .description("Get an artifact's verification record; a missing row returns the coalesced default")
+  .requiredOption("--id <id>", "Artifact ID")
+  .action((opts) => run(() => getVerification(db(), opts.id)));
+
+program
+  .command("list-verification")
+  .description("List artifacts by verification state, or the three-state split with no filter")
+  .option("--state <state>", "verified | unverified | verification-failed")
+  .option("--reason <slug>", "Filter by machine-readable reason")
+  .option("--limit <n>", "Max results", parseInt)
+  .action((opts) => run(() => listVerification(db(), {
+    state: opts.state as VerificationState | undefined,
+    reason: opts.reason as VerificationReason | undefined,
+    limit: opts.limit,
+  })));
 
 // ─── Stack Mappings ──────────────────────────────────────────────────────────
 
