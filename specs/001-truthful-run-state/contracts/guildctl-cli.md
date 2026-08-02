@@ -14,6 +14,7 @@ operator explicitly invoked.
 
 ```text
 guildctl preflight [--offline] [--json] [--budget-seconds <n>]
+  (or GUILD_PREFLIGHT_OFFLINE=1)
 ```
 
 Validates the runtime path a phase run will actually take, then reports what it resolved.
@@ -24,17 +25,18 @@ Executed in order, sharing one wall-clock budget, stopping at the first failure:
 
 | # | Stage id | What it asserts | Fails when |
 |---|----------|-----------------|------------|
-| 1 | `resolution` | harness, provider base URL, model, and credential variable resolve through `resolveAgentLaunch()` — the same function the runner calls | any value missing or unresolvable; harness name unknown; credential variable unset |
-| 2 | `authorization` / `model-availability` / `response` | one minimal end-to-end model request through the resolved launch path, asserting a **non-empty completion in the response body** | see status mapping below |
+| 1 | `resolution` | harness, provider base URL, model, and credential variable resolve through `resolveAgentLaunch()` — the same function the runner calls; adapter reachability is checked when the selected harness requires an adapter | any value missing or unresolvable; harness name unknown; credential variable unset; required adapter unreachable |
+| 2 | `authorization` / `model-availability` / `response` | one minimal completion issued directly against the resolved provider base URL/model via injectable `fetch`, asserting a **non-empty completion in the response body** | see status mapping below |
 
 **Stage 1 is the FR-011 commitment**: preflight and the runner share one resolver, so preflight
 cannot drift from what a run does. A duplicate resolution path in preflight would violate this
 contract even if it produced the same answer today.
 
 **Stage 2 is the FR-012 commitment**: proving the adapter *starts* is explicitly not a pass. Today's
-`checkHarness()` `--version` probe does not satisfy the end-to-end request and cannot be reused as the
-preflight verdict. The adapter and provider request are one live path under one shared budget; preflight
-must not bill two completions for separate harness and provider stages.
+`checkHarness()` `--version` probe does not satisfy the provider request and cannot be reused as the
+preflight verdict. The live request deliberately uses the resolved provider route so status mapping
+remains hermetic through injectable `fetch`; adapter fidelity beyond reachability is not probed, and
+preflight must not bill two completions for separate harness and provider stages.
 
 ### Provider status → stage mapping (FR-016)
 

@@ -131,25 +131,23 @@ the shortest phase ceiling, so verification could outlive the agent that request
 
 ## R5. What preflight actually exercises
 
-**Decision**: a three-stage probe sharing one wall-clock budget, in this order, stopping at the first
+**Decision**: a two-stage probe sharing one wall-clock budget, in this order, stopping at the first
 failure:
 
 1. **resolution** — resolve harness, provider base URL, model, and credential variable through a
    single shared resolver, `resolveAgentLaunch()`, extracted from the runner and called by both
-   `spawnAgent` and preflight. Fails when any resolved value is missing or the harness is unknown.
-2. **live resolved launch request** — issue one minimal end-to-end model request through the resolved
-   launch path, asserting a non-empty completion. Provider status and body map to `authorization`,
-   `model-availability`, or `response`: `401`/`403` → authorization; `404` or a model-not-found body
-   → model availability; `429`/quota bodies → authorization with the provider-reported reason; network
-   error, malformed body, empty completion, or budget elapse → response.
+   `spawnAgent` and preflight. Fails when any resolved value is missing or the harness is unknown;
+   adapter reachability is checked here when the selected harness requires an adapter.
+2. **live resolved provider request** — issue one minimal model request directly through the resolved
+   provider base URL/model using injectable `fetch`, asserting a non-empty completion. Provider status
+   and body map to `authorization`, `model-availability`, or `response`: `401`/`403` → authorization;
+   `404` or a model-not-found body → model availability; `429`/quota bodies → authorization with the
+   provider-reported reason; network error, malformed body, empty completion, or budget elapse → response.
 
-The live stage may invoke the resolved adapter or its provider request path, but it must be one request
-under one shared budget. Adapter startup alone is never a pass, and preflight must not issue a second
+The live stage deliberately uses the resolved provider request rather than a separate adapter
+subprocess, so the injectable fetch can make provider mapping hermetic. A resolvable adapter whose
+provider request returns an empty completion is never a pass; preflight must not issue a second
 completion solely to test adapter fidelity.
-The single live stage preserves both concerns without issuing two completions: it reports provider
-authorization/model-availability/response attribution when the request exposes it, while requiring a
-non-empty model response through the resolved launch path. Adapter startup alone remains insufficient,
-and a missing adapter is a resolution or response failure rather than a separate successful stage.
 
 **Alternatives considered**:
 

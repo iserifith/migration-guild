@@ -277,7 +277,9 @@ test("doctor command exits non-zero when pipeline-state checks fail", () => {
     ], {
       cwd: migrationRoot,
       encoding: "utf8",
-      env: { ...process.env, DASHSCOPE_API_KEY: "dummy" },
+      // doctor now delegates its runtime checks to preflight; offline keeps
+      // this pipeline-state assertion hermetic (no live provider request).
+      env: { ...process.env, DASHSCOPE_API_KEY: "dummy", GUILD_PREFLIGHT_OFFLINE: "1" },
     });
     const output = result.stdout + result.stderr;
     assert.notEqual(result.status, 0, output);

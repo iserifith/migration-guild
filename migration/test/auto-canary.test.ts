@@ -600,13 +600,10 @@ console.log('${REVIEW_MARKER}' + JSON.stringify({ approved: true, reason: "indep
       provider: { routes: { default: ["producer-model"], review: ["producer-model", "review-model"] } },
     };
     let decision;
-    await withEnv({ ROOTSYS_API_KEY: "secret-value-never-print" }, async () => {
-      const review = harnessReviewer(
-        workspace,
-        { name: "custom", command: script, targetCommand: script, source: "environment" },
-        cfg,
-        () => "producer-model",
-      );
+    // The reviewer resolves its harness through the shared launch resolver, so
+    // the custom adapter is selected the way an operator selects one: AGENT_CMD.
+    await withEnv({ ROOTSYS_API_KEY: "secret-value-never-print", AGENT_CMD: script }, async () => {
+      const review = harnessReviewer(workspace, cfg, () => "producer-model");
       decision = await review({
         artifactId: "legacy-source:com.acme:AutoCanary",
         runId: "run-review",
@@ -641,22 +638,20 @@ console.log('${REVIEW_MARKER}' + JSON.stringify({ approved: true, reason: "backu
       selectedProfile: "default",
       provider: { routes: { review: ["reject-model", "approve-model"] } },
     };
-    const review = harnessReviewer(
-      workspace,
-      { name: "custom", command: script, targetCommand: script, source: "environment" },
-      cfg,
-      () => "producer-model",
-    );
-    const decision = await review({
-      artifactId: "legacy-source:com.acme:AutoCanary",
-      runId: "run-review",
-      producerAgent: "code-writer-agent",
-      producerModel: "producer-model",
-      evidence: [],
+    let decision;
+    await withEnv({ AGENT_CMD: script }, async () => {
+      const review = harnessReviewer(workspace, cfg, () => "producer-model");
+      decision = await review({
+        artifactId: "legacy-source:com.acme:AutoCanary",
+        runId: "run-review",
+        producerAgent: "code-writer-agent",
+        producerModel: "producer-model",
+        evidence: [],
+      });
     });
-    assert.equal(decision.approved, false);
-    assert.equal(decision.reviewerModel, "reject-model");
-    assert.equal(decision.reason, "review found drift");
+    assert.equal(decision?.approved, false);
+    assert.equal(decision?.reviewerModel, "reject-model");
+    assert.equal(decision?.reason, "review found drift");
   } finally {
     fs.rmSync(workspace, { recursive: true, force: true });
   }
@@ -674,22 +669,19 @@ test("harness-backed reviewer blocks when all reviewer outputs are malformed", a
       selectedProfile: "default",
       provider: { routes: { review: ["review-model"] } },
     };
-    const review = harnessReviewer(
-      workspace,
-      { name: "custom", command: script, targetCommand: script, source: "environment" },
-      cfg,
-      () => "producer-model",
-    );
-    await assert.rejects(
-      () => review({
-        artifactId: "legacy-source:com.acme:AutoCanary",
-        runId: "run-review",
-        producerAgent: "code-writer-agent",
-        producerModel: "producer-model",
-        evidence: [],
-      }),
-      /independent review failed closed/,
-    );
+    await withEnv({ AGENT_CMD: script }, async () => {
+      const review = harnessReviewer(workspace, cfg, () => "producer-model");
+      await assert.rejects(
+        () => review({
+          artifactId: "legacy-source:com.acme:AutoCanary",
+          runId: "run-review",
+          producerAgent: "code-writer-agent",
+          producerModel: "producer-model",
+          evidence: [],
+        }),
+        /independent review failed closed/,
+      );
+    });
   } finally {
     fs.rmSync(workspace, { recursive: true, force: true });
   }
@@ -785,13 +777,17 @@ execSync(command, { cwd: process.cwd(), stdio: "inherit", env: process.env });
   }
 });
 
-test("runAutoCommand bundled harness requires provider credential preflight", async () => {
+test("runAutoCommand no longer keeps a second credential-only gate — the queue owns the preflight verdict", async () => {
   const db = createDb();
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-auto-preflight-"));
   try {
     fs.mkdirSync(path.join(workspace, ".guild"), { recursive: true });
     fs.writeFileSync(path.join(workspace, ".guild", "config.yaml"), stringifySimpleYaml(DEFAULT_GUILD_CONFIG as unknown as Record<string, unknown>));
     const id = seed(db);
+    // T035/FR-011: the credential check moved to the one shared preflight the
+    // autonomous queue runs before it claims anything. A per-artifact
+    // credential-only gate here would be a second, weaker answer to the same
+    // question — so this call now fails on its own invariant instead.
     await assert.rejects(
       () => withEnv({
         AGENT_CMD: undefined,
@@ -800,7 +796,11 @@ test("runAutoCommand bundled harness requires provider credential preflight", as
       }, async () => {
         await runAutoCommand(db, { artifact: id, command: ["true"], maxAttempts: 1 });
       }),
-      /ROOTSYS_API_KEY is missing/,
+      (error: Error) => {
+        assert.match(error.message, /requires the resolved absolute registry DB path/);
+        assert.doesNotMatch(error.message, /ROOTSYS_API_KEY is missing/);
+        return true;
+      },
     );
   } finally {
     db.close();
