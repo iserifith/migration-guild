@@ -17,6 +17,7 @@ import {
   rejectArtifactWithEvidence,
 } from "../registry/commands/evidence";
 import { getArtifactById } from "../registry/commands/queries";
+import { getVerification, setVerification } from "../registry/commands/verification";
 import { applySchema } from "../registry/db/schema";
 import { RegistryError } from "../registry/types";
 
@@ -201,6 +202,86 @@ test("rejection sets needs-rework and records decision", () => {
     const events = getEvents(db, ARTIFACT_ID, "arbitration-rejected", 1);
     assert.equal(events.length, 1);
     assert.match(events[0].summary, /rejected/i);
+  } finally {
+    db.close();
+  }
+});
+
+// ─── Constitution IV / research R11 enforcement point ────────────────────────
+//
+// `artifact_verifications` is a builder-side record. It is triage input only:
+// it must never satisfy the arbitration gate, substitute for independent
+// verifier evidence, or unlock a status transition. This is the test the whole
+// separation rests on.
+
+test("a verified artifact with no passing evidence is still rejected by arbitration", () => {
+  const db = createDb();
+  try {
+    markMigrated(db);
+    const runId = `run-${Math.random().toString(16).slice(2)}`;
+    db.prepare("INSERT INTO runs (run_id, agent, owner_id, status) VALUES (?, 'code-writer-agent', 'guildctl', 'running')").run(runId);
+    const operatorToken = createRunOperatorCredential(db, runId).token;
+
+    setVerification(db, {
+      artifactId: ARTIFACT_ID,
+      state: "verified",
+      method: "java-per-artifact",
+      durationMs: 812,
+      scope: ["modern/src/main/java/com/acme/customer/CustomerService.java"],
+      runId,
+      operatorToken,
+    });
+    assert.equal(getVerification(db, ARTIFACT_ID).state, "verified");
+
+    const verdict = canApproveArtifact(db, ARTIFACT_ID, "arbiter-agent", { runId, operatorToken });
+    assert.equal(verdict.ok, false, "verification state cannot stand in for acceptance evidence");
+    assert.match(verdict.reason ?? "", /evidence/i);
+
+    assert.throws(
+      () => approveArtifactWithEvidence(db, {
+        artifactId: ARTIFACT_ID,
+        arbiter: "arbiter-agent",
+        reason: "the artifact verified its own output",
+        runId,
+        operatorToken,
+      }),
+      RegistryError,
+    );
+    assert.equal(getArtifactById(db, ARTIFACT_ID).status, "migrated", "verification must not unlock a status transition");
+  } finally {
+    db.close();
+  }
+});
+
+test("verification-failed does not by itself block an otherwise well-evidenced approval", () => {
+  const db = createDb();
+  try {
+    markMigrated(db);
+    const signed = signedRuntimeEvidence(db, { command: "npm test --prefix migration" });
+    try {
+      setVerification(db, {
+        artifactId: ARTIFACT_ID,
+        state: "verification-failed",
+        method: "java-per-artifact",
+        reason: "check-failed",
+        runId: signed.runId,
+        operatorToken: signed.operatorToken,
+      });
+
+      // The gate reads acceptance evidence, not verification state: verification
+      // is triage input in both directions, never a second gate.
+      const decision = approveArtifactWithEvidence(db, {
+        artifactId: ARTIFACT_ID,
+        arbiter: "arbiter-agent",
+        reason: "independent executable evidence passed",
+        runId: signed.runId,
+        operatorToken: signed.operatorToken,
+      });
+      assert.equal(decision.decision, "approved");
+      assert.equal(getVerification(db, ARTIFACT_ID).state, "verification-failed");
+    } finally {
+      fs.rmSync(signed.dir, { recursive: true, force: true });
+    }
   } finally {
     db.close();
   }

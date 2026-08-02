@@ -7,11 +7,13 @@ import { Transform } from "stream";
 import type Database from "better-sqlite3";
 import type { PhaseKey } from "./config";
 import { resolveGuildConfig, resolveWorkspaceRoot } from "./config";
-import { resolveHarness } from "./harness";
+import { resolveAgentLaunch } from "./harness";
 import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions, transientWardenExclusions, type WardenSnapshot } from "./warden";
+import { formatVerificationCloseOut, verifyAtClaimClose } from "./verify";
 import { releaseClaimedArtifactsForOwner } from "../registry/commands/artifacts";
-import { releaseClaimsForRun } from "../registry/commands/claim";
+import { createRunOperatorCredential, releaseClaimsForRun } from "../registry/commands/claim";
 import { startRun, finishRun, setRunPid, type RunTokenUsage } from "../registry/commands/runs";
+import type { VerificationRecord } from "../registry/types";
 
 export interface SpawnAgentOpts {
   agent: string;
@@ -305,7 +307,10 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   const startedIso = new Date(startMs).toISOString();
   const projectRoot = resolveWorkspaceRoot();
   const config = resolveGuildConfig({ cwd: projectRoot });
-  const agentCommand = resolveHarness(config, projectRoot).command;
+  // FR-011: the runner and preflight resolve the runtime through one function,
+  // so what is reported is what a run actually uses.
+  const launch = resolveAgentLaunch({ config, root: projectRoot, model });
+  const agentCommand = launch.harness.command;
   const beforeFiles = snapshotChangedFiles(projectRoot);
   const usageFile = path.join(os.tmpdir(), `guild-opencode-usage-${runId}.json`);
   const logFile = opts.logDir
@@ -433,12 +438,11 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   // Always run from the project root (my-migration/) so agent shell commands
   // like `node migration/registry/dist/cli.js ...` resolve correctly.
   const agentSpawn = resolveAgentSpawn(agentCommand, args);
-  const proc = spawn(agentSpawn.command, agentSpawn.args, {
-    cwd: projectRoot,
-    env: {
-      ...process.env,
-      ...(config.model.base_url ? { AGENT_PROVIDER_BASE_URL: config.model.base_url } : {}),
-      ...(config.model.api_key_env ? { AGENT_PROVIDER_API_KEY_ENV: config.model.api_key_env } : {}),
+  const agentEnv = resolveAgentLaunch({
+    config,
+    root: projectRoot,
+    model,
+    extraEnv: {
       GUILDCTL_AGENT_NAME: claimOwner,
       GUILDCTL_AGENT_KIND: agent,
       GUILDCTL_RUN_ID: run.run_id,
@@ -449,6 +453,10 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
         GUILDCTL_CLAIM_TOKEN: preClaimToken!,
       } : {}),
     },
+  }).agentEnv;
+  const proc = spawn(agentSpawn.command, agentSpawn.args, {
+    cwd: projectRoot,
+    env: agentEnv,
     stdio: logStream ? ["ignore", "pipe", "pipe"] : "inherit",
     shell: agentSpawn.shell,
   });
@@ -500,9 +508,16 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
       claimWatchHandle.unref?.();
     }
 
-    const finalize = (exitCode: number) => {
+    // Verification at claim close is async, so settling is split: `finalize`
+    // keeps the synchronous single-shot guard its callers rely on, and
+    // `completeRun` does the awaiting work.
+    const finalize = (exitCode: number): void => {
       if (settled) return;
       settled = true;
+      void completeRun(exitCode);
+    };
+
+    const completeRun = async (exitCode: number): Promise<void> => {
       clearLivelinessTimers();
       let finalExitCode = exitCode;
       try {
@@ -514,6 +529,8 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
             allowedPaths: wardenAllowedPaths,
             excludedPaths: wardenExcludedPaths,
             agent: "guildctl-warden",
+            claimId: preClaimId ?? null,
+            runId: run.run_id,
           });
           if (!warden.clean) {
             finalExitCode = 1;
@@ -578,6 +595,26 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
               : `${agent} exited with code ${finalExitCode}`;
       const tokenUsage = readTokenUsageFile(usageFile);
       try { fs.rmSync(usageFile, { force: true }); } catch {}
+
+      // Verification at claim close (FR-001, FR-006, FR-007). Its outcome is a
+      // recorded fact, never a gate: no result here changes finalExitCode or
+      // prevents the artifact from advancing.
+      let verification: VerificationRecord | null = null;
+      if (preClaimedArtifactId) {
+        try {
+          const operator = createRunOperatorCredential(db, run.run_id);
+          verification = await verifyAtClaimClose(db, {
+            artifactId: preClaimedArtifactId,
+            workspaceRoot: projectRoot,
+            config,
+            runId: run.run_id,
+            operatorToken: operator.token,
+          });
+        } catch {
+          // Recording verification must never fail a run.
+        }
+      }
+
       finishRun(db, {
         runId: run.run_id,
         exitCode: finalExitCode,
@@ -611,6 +648,12 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
             ? [`Files written (${written.length}):`, ...written.map((f) => `  ${f}`)]
             : ["Files written: (none)"];
         const claimBlock = getRunClaimLines(db, run.run_id);
+        // Verification is stated in the same close-out block as migration
+        // status, and separately from it: an artifact can be migrated and
+        // unverified at once, and the summary must be able to say so (FR-007).
+        const verificationBlock = verification
+          ? [`Verification: ${formatVerificationCloseOut(verification)}`]
+          : [];
         logStream.end(
           [
             "",
@@ -621,6 +664,7 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
             `Finished: ${new Date().toISOString()}`,
             ...formatTokenUsageLines(tokenUsage),
             ...claimBlock,
+            ...verificationBlock,
             ...filesBlock,
             LOG_SEP,
             "",

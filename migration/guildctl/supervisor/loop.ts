@@ -10,7 +10,8 @@ import { finishRun, startRun } from "../../registry/commands/runs";
 import type { AcceptanceEvidence, ClaimedArtifact } from "../../registry/types";
 import { isPathInside } from "../config";
 import { contentSha256, diffSignatures, signatureDigest, type DeltaKind, type SignatureDelta } from "../signature";
-import { runVerify, type VerifyResult } from "../verify";
+import { formatVerificationCloseOut, runVerify, verifyAtClaimClose, type VerifyResult } from "../verify";
+import { resolveGuildConfig } from "../config";
 import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions, transientWardenExclusions } from "../warden";
 import { classifyFailure, FailureBudget } from "./failures";
 
@@ -332,6 +333,10 @@ export async function runAuto(
     prompt: `auto ${opts.artifactId}`,
   });
   const operator = createRunOperatorCredential(db, runId);
+  // Resolved once per autonomous run; a workspace without a .guild config still
+  // yields defaults, so verification degrades to no-stack-check rather than
+  // failing the run.
+  const autoConfig = resolveGuildConfig({ cwd: opts.workspaceRoot });
   const maxAttempts = opts.maxAttempts ?? 3;
   const budget = new FailureBudget(maxAttempts, 2);
   const worker = opts.worker ?? defaultWorker;
@@ -487,6 +492,8 @@ export async function runAuto(
         allowedPaths,
         excludedPaths: wardenExcludedPaths,
         agent: "guildctl-warden",
+        claimId: claim.claim_id,
+        runId,
       });
       if (!warden.clean) {
         releaseClaimsForRun(db, runId, "guildctl", "auto blocked after filesystem violation");
@@ -528,6 +535,25 @@ export async function runAuto(
         return { status: "blocked", runId, attempts };
       }
       releaseClaimsForRun(db, runId, "guildctl", `auto cleanup after ${phase}`);
+
+      // Verification at the autonomous claim close (FR-001, FR-006, FR-007),
+      // through the same helper the manual runner uses. Its outcome is recorded,
+      // never a gate: nothing below branches on it, so no verification result
+      // can stop the artifact from advancing.
+      const artifactVerification = await verifyAtClaimClose(db, {
+        artifactId: opts.artifactId,
+        workspaceRoot: opts.workspaceRoot,
+        config: autoConfig,
+        runId,
+        operatorToken: operator.token,
+      });
+      if (artifactVerification) {
+        // Stated alongside migration status, and separately from it.
+        const status = (db.prepare("SELECT status FROM artifacts WHERE id = ?").get(opts.artifactId) as { status: string } | undefined)?.status ?? "unknown";
+        process.stderr.write(
+          `[guildctl] ${opts.artifactId} attempt closed — status: ${status}; verification: ${formatVerificationCloseOut(artifactVerification)}\n`,
+        );
+      }
 
       const verification = await verifier();
       appendEvent(db, {

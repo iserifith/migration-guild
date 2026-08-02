@@ -324,3 +324,115 @@ test("runner expands a junction log path to its canonical target", () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+// ─── FR-010: an out-of-scope path is a named condition, not a silent revert ──
+//
+// The warden's restore-and-fail behaviour and its allow-list are unchanged.
+// What is added is the record: the artifact carries a named blocked condition
+// and the offending path travels in the event payload. Recording the condition
+// must NEVER add the path to any allow-list — broadening write authorization is
+// out of scope.
+
+test("an attempt blocked by an out-of-scope path records the tag and a payload naming the path", () => {
+  const db = createDb();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-warden-scope-"));
+  const artifactId = "legacy-source:com.acme:ScopeBlocked";
+  try {
+    fs.mkdirSync(path.join(workspace, "modern"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "build.gradle"), "plugins { id 'java' }\n");
+    fs.writeFileSync(path.join(workspace, "modern", "Allowed.java"), "old\n");
+    registerArtifact(db, {
+      id: artifactId,
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/ScopeBlocked.java",
+    });
+
+    const snapshot = snapshotWorkspaceForWarden(workspace);
+    // The attempt needed a change to a build file it is not authorized to write.
+    fs.writeFileSync(path.join(workspace, "build.gradle"), "plugins { id 'java' }\ndependencies { }\n");
+    fs.writeFileSync(path.join(workspace, "modern", "Allowed.java"), "new\n");
+
+    const result = enforceWardenSnapshot(db, {
+      artifactId,
+      workspaceRoot: workspace,
+      snapshot,
+      allowedPaths: ["modern/Allowed.java"],
+      agent: "guildctl-warden",
+      claimId: "claim-abc",
+      runId: "run-xyz",
+    });
+
+    // Restore-and-fail is unchanged.
+    assert.equal(result.clean, false);
+    assert.deepEqual(result.violations.map((v) => v.path), ["build.gradle"]);
+    assert.equal(fs.readFileSync(path.join(workspace, "build.gradle"), "utf8"), "plugins { id 'java' }\n");
+    assert.equal(fs.readFileSync(path.join(workspace, "modern", "Allowed.java"), "utf8"), "new\n");
+
+    // The condition is now named on the artifact.
+    const tags = db.prepare("SELECT tag FROM artifact_tags WHERE artifact_id = ?").pluck().all(artifactId) as string[];
+    assert.ok(tags.includes("blocked:out-of-scope-path"), "the blockage must be a named condition");
+
+    const event = db.prepare(
+      "SELECT type, event_data FROM events WHERE artifact_id = ? AND type = 'filesystem-violation' ORDER BY rowid DESC LIMIT 1",
+    ).get(artifactId) as { type: string; event_data: string };
+    const payload = JSON.parse(event.event_data) as {
+      out_of_scope_paths?: string[];
+      claim_id?: string;
+      run_id?: string;
+    };
+    assert.deepEqual(payload.out_of_scope_paths, ["build.gradle"]);
+    assert.equal(payload.claim_id, "claim-abc");
+    assert.equal(payload.run_id, "run-xyz");
+
+    // The offending path is never granted write authorization.
+    const followUp = snapshotWorkspaceForWarden(workspace);
+    fs.writeFileSync(path.join(workspace, "build.gradle"), "tampered again\n");
+    const second = enforceWardenSnapshot(db, {
+      artifactId,
+      workspaceRoot: workspace,
+      snapshot: followUp,
+      allowedPaths: ["modern/Allowed.java"],
+      agent: "guildctl-warden",
+    });
+    assert.equal(second.clean, false, "recording the condition must not widen the allow-list");
+    assert.equal(fs.readFileSync(path.join(workspace, "build.gradle"), "utf8"), "plugins { id 'java' }\n");
+  } finally {
+    db.close();
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("a clean attempt records no blocked condition and leaves existing warden behaviour untouched", () => {
+  const db = createDb();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-warden-scope-clean-"));
+  const artifactId = "legacy-source:com.acme:ScopeClean";
+  try {
+    fs.mkdirSync(path.join(workspace, "modern"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "modern", "Allowed.java"), "old\n");
+    registerArtifact(db, {
+      id: artifactId,
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/ScopeClean.java",
+    });
+
+    const snapshot = snapshotWorkspaceForWarden(workspace);
+    fs.writeFileSync(path.join(workspace, "modern", "Allowed.java"), "new\n");
+
+    const result = enforceWardenSnapshot(db, {
+      artifactId,
+      workspaceRoot: workspace,
+      snapshot,
+      allowedPaths: ["modern/Allowed.java"],
+      agent: "guildctl-warden",
+    });
+
+    assert.equal(result.clean, true);
+    const tags = db.prepare("SELECT tag FROM artifact_tags WHERE artifact_id = ?").pluck().all(artifactId) as string[];
+    assert.equal(tags.includes("blocked:out-of-scope-path"), false);
+  } finally {
+    db.close();
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});

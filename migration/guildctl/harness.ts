@@ -34,6 +34,82 @@ export function resolveHarness(config: GuildConfig, root: string, env: NodeJS.Pr
   throw new Error(`Unknown harness "${name}". Supported bundled harnesses: opencode, codex, copilot. Use AGENT_CMD for a custom harness.`);
 }
 
+/** One variable whose resolved value differs from the project declaration. */
+export interface ConfigDivergence {
+  setting: string;
+  declaredValue: string;
+  resolvedValue: string;
+}
+
+/**
+ * What a run will actually use, as opposed to what project configuration
+ * declares (FR-011).
+ *
+ * The credential *value* never enters this object — only the variable name — so
+ * it cannot leak into a log line or a JSON dump (FR-019).
+ */
+export interface ResolvedRuntimeConfig {
+  harness: HarnessResolution;
+  providerBaseUrl: string;
+  model: string;
+  /** Variable NAME only. */
+  credentialEnv: string;
+  /** Exactly the environment the agent process receives. */
+  agentEnv: Record<string, string>;
+  divergences: ConfigDivergence[];
+}
+
+export interface ResolveAgentLaunchOptions {
+  config: GuildConfig;
+  root: string;
+  env?: NodeJS.ProcessEnv;
+  /** The model this run will use; defaults to the project-configured model. */
+  model?: string;
+  /** Per-run variables the caller layers on top (run id, claim token, …). */
+  extraEnv?: Record<string, string>;
+}
+
+/**
+ * The single launch resolver. Both the runner and preflight read this, so
+ * preflight cannot report a runtime a run would not use, and the run-start line
+ * cannot drift from behaviour. A duplicate resolution path anywhere else breaks
+ * FR-011 even if it produced the same answer today.
+ */
+export function resolveAgentLaunch(opts: ResolveAgentLaunchOptions): ResolvedRuntimeConfig {
+  const env = opts.env ?? process.env;
+  const config = opts.config;
+  const harness = resolveHarness(config, opts.root, env);
+
+  const declaredHarness = config.harness || "opencode";
+  const declaredModel = config.model.model;
+  const declaredBaseUrl = config.model.base_url ?? "";
+
+  const model = opts.model ?? declaredModel;
+  const providerBaseUrl = env.AGENT_PROVIDER_BASE_URL || declaredBaseUrl;
+  const credentialEnv = config.model.api_key_env ?? "";
+
+  const divergences: ConfigDivergence[] = [];
+  if (harness.name !== declaredHarness) {
+    divergences.push({ setting: "harness", declaredValue: declaredHarness, resolvedValue: harness.name });
+  }
+  if (model !== declaredModel) {
+    divergences.push({ setting: "model.model", declaredValue: declaredModel, resolvedValue: model });
+  }
+  if (providerBaseUrl !== declaredBaseUrl) {
+    divergences.push({ setting: "model.base_url", declaredValue: declaredBaseUrl, resolvedValue: providerBaseUrl });
+  }
+
+  const agentEnv: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (value != null) agentEnv[key] = value;
+  }
+  if (providerBaseUrl) agentEnv["AGENT_PROVIDER_BASE_URL"] = providerBaseUrl;
+  if (credentialEnv) agentEnv["AGENT_PROVIDER_API_KEY_ENV"] = credentialEnv;
+  Object.assign(agentEnv, opts.extraEnv ?? {});
+
+  return { harness, providerBaseUrl, model, credentialEnv, agentEnv, divergences };
+}
+
 export function checkHarness(resolution: HarnessResolution): { ok: boolean; message: string } {
   if (resolution.source === "config" && !fs.existsSync(resolution.command)) {
     return { ok: false, message: `active harness: ${resolution.name} (missing adapter: ${resolution.command})` };

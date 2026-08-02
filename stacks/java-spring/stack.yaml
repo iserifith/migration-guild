@@ -47,6 +47,16 @@ audit:
       target_suffixes: ["**/*.jar"]
       available_note: Compiled classes or jars are available for optional deprecation inspection.
       fallback_note: No compiled classes or jars found under legacy/; source-scan heuristics were used instead.
+verify:
+  per_artifact:
+    id: javac-scope-compile
+    cmd: javac
+    args: ["-proc:none", "-d", "{workspace_root}/modern/build/verify-classes", "{scope_paths}"]
+    availability_args: ["-version"]
+    pass_exit_codes: [0]
+    unavailable_note: >
+      No javac was found on PATH; per-artifact verification was skipped and the
+      artifact is recorded as unverified rather than verified.
 instructions:
   classify: classify.md
   mappings: mappings.md

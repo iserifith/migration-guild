@@ -9,7 +9,7 @@ import { applySchema } from "../registry/db/schema";
 import { scanAndRegister } from "../guildctl/commands/inventory";
 import { refreshCompatibilityAudits } from "../guildctl/audit";
 import { bootstrapTargetModule } from "../guildctl/commands/bootstrap";
-import { detectStack, interpolate, loadStackPack } from "../guildctl/stack";
+import { detectStack, expandVerifyArgs, interpolate, loadStackPack, resolvePerArtifactVerify } from "../guildctl/stack";
 import { scaffoldGuildConfig } from "../guildctl/config";
 
 const repoRoot = path.resolve(__dirname, "..", "..");
@@ -104,4 +104,118 @@ test("Python pack selects the fixture and drives inventory, audit, and library s
     db.close();
     process.chdir(previousCwd);
   }
+});
+
+test("every stacks/<id>/stack.yaml is byte-identical to its shipped package/stacks/ copy", () => {
+  const sourceRoot = path.join(repoRoot, "stacks");
+  const shippedRoot = path.join(repoRoot, "package", "stacks");
+
+  const sourceIds = fs.readdirSync(sourceRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && fs.existsSync(path.join(sourceRoot, entry.name, "stack.yaml")))
+    .map((entry) => entry.name)
+    .sort();
+  const shippedIds = fs.readdirSync(shippedRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && fs.existsSync(path.join(shippedRoot, entry.name, "stack.yaml")))
+    .map((entry) => entry.name)
+    .sort();
+
+  assert.ok(sourceIds.length > 0, "expected at least one stack pack under stacks/");
+  assert.deepEqual(sourceIds, shippedIds, "stacks/ and package/stacks/ must declare the same stack ids");
+
+  for (const id of sourceIds) {
+    const source = fs.readFileSync(path.join(sourceRoot, id, "stack.yaml"));
+    const shipped = fs.readFileSync(path.join(shippedRoot, id, "stack.yaml"));
+    assert.ok(
+      source.equals(shipped),
+      `stacks/${id}/stack.yaml and package/stacks/${id}/stack.yaml must be byte-identical`,
+    );
+  }
+});
+
+// ─── `verify:` block (contracts/stack-pack-verify.md) ────────────────────────
+//
+// The per-unit check is stack-specific knowledge, so it is declared as data in
+// the pack and executed by core. Core contains no build or test command.
+
+test("the verify: block parses, and both shipped packs declare an availability probe over scope paths", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "guild-verify-block-"));
+  fs.cpSync(path.join(repoRoot, "stacks"), path.join(root, "stacks"), { recursive: true });
+
+  for (const id of ["java-spring", "python"]) {
+    const pack = loadStackPack(id, root);
+    const check = pack.manifest.verify?.per_artifact;
+    assert.ok(check, `${id} must declare verify.per_artifact`);
+    assert.ok(check.id && check.cmd, `${id} verify block needs an id and cmd`);
+    assert.ok(Array.isArray(check.availability_args) && check.availability_args.length > 0,
+      `${id} must declare availability_args so a missing toolchain degrades to no-stack-check`);
+    assert.ok(check.unavailable_note, `${id} must state operator-facing text for a missing toolchain`);
+
+    const argText = (check.args ?? []).join(" ");
+    assert.ok(/\{scope_paths\}|\{output_paths\}/.test(argText),
+      `${id} must act on the verification scope, not the whole tree`);
+    assert.equal(/\{all_artifacts\}/.test(argText), false,
+      "there is no {all_artifacts} placeholder, by design");
+  }
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("verify placeholders expand into discrete argv entries and never through a shell", () => {
+  const expanded = expandVerifyArgs(
+    ["compile", "--paths={scope_paths}", "--module={module}", "--root={workspace_root}"],
+    {
+      artifact_path: "legacy/src/main/java/com/acme/Thing.java",
+      output_paths: ["modern/src/main/java/com/acme/Thing.java"],
+      dependency_paths: ["modern/src/main/java/com/acme/Dep.java"],
+      module: "com.acme",
+      workspace_root: "/tmp/ws",
+    },
+  );
+
+  assert.deepEqual(expanded, [
+    "compile",
+    "--paths=modern/src/main/java/com/acme/Thing.java modern/src/main/java/com/acme/Dep.java",
+    "--module=com.acme",
+    "--root=/tmp/ws",
+  ]);
+  // Each template yields exactly one argv entry, so a value containing a space,
+  // quote, or shell metacharacter cannot alter the command.
+  assert.equal(expanded.length, 4);
+
+  const injected = expandVerifyArgs(["--paths={output_paths}"], {
+    artifact_path: "legacy/A.java",
+    output_paths: ["modern/A B.java; rm -rf /"],
+    dependency_paths: [],
+    module: "",
+    workspace_root: "/tmp/ws",
+  });
+  assert.deepEqual(injected, ["--paths=modern/A B.java; rm -rf /"]);
+});
+
+test("an unknown verify placeholder is rejected at pack load", () => {
+  assert.throws(
+    () => expandVerifyArgs(["--all={all_artifacts}"], {
+      artifact_path: "legacy/A.java",
+      output_paths: [],
+      dependency_paths: [],
+      module: "",
+      workspace_root: "/tmp/ws",
+    }),
+    /Unsupported verify placeholder/,
+  );
+});
+
+test("a pack with no verify: block is valid and simply declares no check", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "guild-verify-absent-"));
+  fs.cpSync(path.join(repoRoot, "stacks"), path.join(root, "stacks"), { recursive: true });
+  const stackPath = path.join(root, "stacks", "python", "stack.yaml");
+  fs.writeFileSync(
+    stackPath,
+    fs.readFileSync(stackPath, "utf8").replace(/\nverify:\n(?:[ \t]+.*\n|\n)*/m, "\n"),
+  );
+
+  const pack = loadStackPack("python", root);
+  assert.equal(pack.manifest.verify, undefined);
+  assert.equal(resolvePerArtifactVerify(pack), undefined,
+    "no verify: block resolves to no check, which maps to no-stack-check");
+  fs.rmSync(root, { recursive: true, force: true });
 });

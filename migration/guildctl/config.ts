@@ -21,7 +21,10 @@ export interface GuildConfig {
   inventory: { classificationBatchSize: number; maxBatchRetries: number };
   // TASK-07: agent liveliness limits (seconds). inactivity = kill on silence;
   // ceiling = backstop wall-clock kill so a chatty-but-stuck agent can't run forever.
-  agent_limits: { inactivity_timeout_seconds: number; ceiling_seconds: number };
+  // termination_grace_seconds bounds the graceful→forced escalation window.
+  agent_limits: { inactivity_timeout_seconds: number; ceiling_seconds: number; termination_grace_seconds: number };
+  // Wall-clock budget for one bounded per-artifact verification check.
+  verification: { budget_seconds: number };
   profiles: Record<string, JsonMap>;
 }
 
@@ -61,7 +64,8 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   approval: { mode: "manual", destructive_commands: "manual" },
   migration: { default_mode: "init", require_evidence_before_intent: true, max_autonomous_steps: 3 },
   inventory: { classificationBatchSize: 100, maxBatchRetries: 2 },
-  agent_limits: { inactivity_timeout_seconds: 120, ceiling_seconds: 1800 },
+  agent_limits: { inactivity_timeout_seconds: 120, ceiling_seconds: 1800, termination_grace_seconds: 5 },
+  verification: { budget_seconds: 120 },
   profiles: {
     default: { base_url: "https://rootsys.cloud/v1", model: "fiq/hy3-tencent", api_key_env: "ROOTSYS_API_KEY" },
     dashscope: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "deepseek-v4-pro", api_key_env: "DASHSCOPE_API_KEY" },
@@ -366,6 +370,42 @@ export function loadConfig(): ResolvedGuildConfig {
 
 export function getConfigPath(): string {
   return guildConfigPath();
+}
+
+function positiveNumber(raw: string | undefined, fallback: number): number {
+  if (raw == null || raw === "") return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/**
+ * Wall-clock budget for one bounded per-artifact verification check, in ms.
+ * Precedence: per-stack override (passed by the caller) → GUILDCTL_VERIFY_BUDGET_SECONDS
+ * → `verification.budget_seconds` → built-in default of 120s.
+ */
+export function resolveVerificationBudgetMs(
+  config: Pick<GuildConfig, "verification"> = DEFAULT_GUILD_CONFIG,
+  env: Record<string, string | undefined> = process.env,
+  stackOverrideSeconds?: number | null,
+): number {
+  if (stackOverrideSeconds != null && Number.isFinite(stackOverrideSeconds) && stackOverrideSeconds > 0) {
+    return stackOverrideSeconds * 1000;
+  }
+  const configured = config.verification?.budget_seconds ?? DEFAULT_GUILD_CONFIG.verification.budget_seconds;
+  return positiveNumber(env["GUILDCTL_VERIFY_BUDGET_SECONDS"], configured) * 1000;
+}
+
+/**
+ * Bounded grace period between graceful and forced termination, in ms.
+ * Replaces the 5000ms literal the runner used to hardcode.
+ */
+export function resolveTerminationGraceMs(
+  config: Pick<GuildConfig, "agent_limits"> = DEFAULT_GUILD_CONFIG,
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const configured = config.agent_limits?.termination_grace_seconds
+    ?? DEFAULT_GUILD_CONFIG.agent_limits.termination_grace_seconds;
+  return positiveNumber(env["GUILDCTL_TERMINATION_GRACE_SECONDS"], configured) * 1000;
 }
 
 export function resolvePhaseModel(phase: PhaseKey, config: ResolvedGuildConfig | GuildConfig = loadConfig()): string {

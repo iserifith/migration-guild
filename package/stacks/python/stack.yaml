@@ -18,7 +18,7 @@ project_types:
     template: scaffold/pyproject.web.toml.template
     any:
       roles: [rest-endpoint, controller, view]
-      frameworks: [django, flask, fastapi, starlette]
+      frameworks: [django, flask, fastapi, starlette, pylons]
       paths: [/web/, /views/, /api/]
   library:
     template: scaffold/pyproject.library.toml.template
@@ -43,6 +43,16 @@ audit:
       target_suffixes: ["**/*.py"]
       available_note: Python sources are available for optional pyupgrade inspection.
       fallback_note: No Python sources were found under legacy/; source-scan heuristics were used instead.
+verify:
+  per_artifact:
+    id: py-compile-scope
+    cmd: python3
+    args: ["-m", "py_compile", "{scope_paths}"]
+    availability_args: ["--version"]
+    pass_exit_codes: [0]
+    unavailable_note: >
+      No python3 was found on PATH; per-artifact verification was skipped and the
+      artifact is recorded as unverified rather than verified.
 instructions:
   classify: classify.md
   mappings: mappings.md
