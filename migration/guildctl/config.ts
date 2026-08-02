@@ -25,6 +25,8 @@ export interface GuildConfig {
   agent_limits: { inactivity_timeout_seconds: number; ceiling_seconds: number; termination_grace_seconds: number };
   // Wall-clock budget for one bounded per-artifact verification check.
   verification: { budget_seconds: number };
+  // Shared wall-clock budget for live preflight; CLI --budget-seconds may override it per invocation.
+  preflight: { budget_seconds: number };
   profiles: Record<string, JsonMap>;
 }
 
@@ -66,6 +68,7 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   inventory: { classificationBatchSize: 100, maxBatchRetries: 2 },
   agent_limits: { inactivity_timeout_seconds: 120, ceiling_seconds: 1800, termination_grace_seconds: 5 },
   verification: { budget_seconds: 120 },
+  preflight: { budget_seconds: 30 },
   profiles: {
     default: { base_url: "https://rootsys.cloud/v1", model: "fiq/hy3-tencent", api_key_env: "ROOTSYS_API_KEY" },
     dashscope: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "deepseek-v4-pro", api_key_env: "DASHSCOPE_API_KEY" },

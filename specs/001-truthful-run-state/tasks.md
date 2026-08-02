@@ -47,9 +47,9 @@ statuses.
 
 **Purpose**: establish the pre-feature baseline and the hermetic test seams every later suite needs.
 
-- [ ] T001 Install workspace dependencies and build the runtime from the repository root per quickstart.md: `npm install`, `npm --prefix migration install`, `npm --prefix migration/ui install`, `npm --prefix migration run build`
-- [ ] T002 Record the pre-feature `npm test` baseline (the `migration/test/` suite plus the `migration/ui/` suite) before any source change, and note any pre-existing failure so it is never attributed to this feature — procedure in `specs/001-truthful-run-state/quickstart.md`
-- [ ] T003 [P] Create the shared hermetic-fixture helper `migration/test/truthful-run-state-fixtures.ts` exporting an injectable-`fetch` provider stub, a fake harness adapter writer, and a SIGTERM-ignoring grandchild-spawner script writer; filename deliberately excludes `.test.ts` so the `test/*.test.ts` glob skips it, and it follows the portability conventions already in `migration/test/run-reliability.test.ts` (cwd-derived repo root, `file://` tsx loader URLs)
+- [x] T001 Install workspace dependencies and build the runtime from the repository root per quickstart.md: `npm install`, `npm --prefix migration install`, `npm --prefix migration/ui install`, `npm --prefix migration run build`
+- [x] T002 Record the pre-feature `npm test` baseline (the `migration/test/` suite plus the `migration/ui/` suite) before any source change, and note any pre-existing failure so it is never attributed to this feature — procedure in `specs/001-truthful-run-state/quickstart.md`
+- [x] T003 [P] Create the shared hermetic-fixture helper `migration/test/truthful-run-state-fixtures.ts` exporting an injectable-`fetch` provider stub, a fake harness adapter writer, and a SIGTERM-ignoring grandchild-spawner script writer; filename deliberately excludes `.test.ts` so the `test/*.test.ts` glob skips it, and it follows the portability conventions already in `migration/test/run-reliability.test.ts` (cwd-derived repo root, `file://` tsx loader URLs)
 
 ---
 
@@ -60,16 +60,16 @@ than one user story consumes. Placing them here is what keeps US1–US6 independ
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T004 Write the failing foundational regression tests before the foundational implementations: schema upgrade coverage in `migration/test/registry-schema-delta.test.ts` (fresh and in-place registries end with the `artifact_verifications` table, all eight new `runs` columns, and the three new indexes, with no existing table, column, `CHECK`, trigger, or index modified or dropped); `finishRun` persistence coverage in `migration/test/run-outcome-plumbing.test.ts`; shared runtime-resolution coverage in `migration/test/runtime-resolution.test.ts`; graceful/forced/confirmed process-group primitive coverage in `migration/test/process-group-primitives.test.ts`; and the existing `stacks/` ↔ `package/stacks/` byte-parity baseline in `migration/test/stack-pack-engine.test.ts`
-- [ ] T005 Add the `artifact_verifications` table and `idx_artifact_verifications_state` / `idx_artifact_verifications_run` to the base section of `migration/registry_schema.sql`, exactly as specified in `specs/001-truthful-run-state/contracts/registry-schema.md` §1
-- [ ] T006 [US1] Add the eight attempt-outcome columns (`files_written_count`, `files_written_source`, `status_from`, `status_to`, `budget_consumed`, `cleanup_outcome`, `survivor_pids`, `outcome_label`) to the base `CREATE TABLE runs`; create `idx_runs_outcome_label` only after the guarded existing-database column upgrades so the base schema batch remains safe for in-place upgrades
-- [ ] T007 Register all eight new `runs` columns with the `ensureColumn()` guard at the end of `applySchema()` in `migration/registry/db/schema.ts` — required because this SQLite build rejects `ADD COLUMN IF NOT EXISTS`; adding only the `ALTER TABLE` half leaves existing databases wrong
-- [ ] T008 [P] Add `VerificationState`, the closed verification-reason vocabulary (`not-attempted`, `no-stack-check`, `tree-incomplete`, `budget-exhausted`, `agent-reported-unverifiable`, `check-failed`, `check-error`), `VerificationRecord`, `AttemptOutcome`, and `ContextResponse` to `migration/registry/types.ts`
-- [ ] T009 [P] Add config keys `verification.budget_seconds` (default 120, overridable by `GUILDCTL_VERIFY_BUDGET_SECONDS`) and `agent_limits.termination_grace_seconds` (default 5, replacing the value hardcoded in the runner) to `migration/guildctl/config.ts`
-- [ ] T010 Extend `finishRun` in `migration/registry/commands/runs.ts` to accept and persist the eight attempt-outcome fields in the same transaction that closes the run (plumbing only — label derivation and domain validation belong to US4 T050)
-- [ ] T011 Add the optional `finish-run` flags (`--files-written`, `--files-written-source`, `--status-from`, `--status-to`, `--budget-consumed`, `--cleanup-outcome`, `--survivor-pids`, `--outcome-label`) and emit the new columns from `list-runs --json` in `migration/registry/cli.ts`; omitting every new flag must reproduce today's behaviour exactly
-- [ ] T012 [P] Add `resolveAgentLaunch()` to `migration/guildctl/harness.ts` returning `ResolvedRuntimeConfig` (harness name/command/source, provider base URL, model, `credentialEnv` name only, `agentEnv`, `divergences[]`) and re-point `migration/guildctl/runner.ts` at it, so US2's preflight and US3's run-start line read the one resolver a run actually uses (FR-011)
-- [ ] T013 [P] Add platform-conditional process-group termination primitives to `migration/guildctl/util.ts` — POSIX `process.kill(-pgid, SIGTERM|SIGKILL)` with `kill(-pgid, 0)`/`ESRCH` confirmation, Windows `taskkill /PID <pid> /T [/F]` with `tasklist` confirmation — consumed by US1's verification budget (T026) and US5's attempt termination (T057)
+- [x] T004 Write the failing foundational regression tests before the foundational implementations: schema upgrade coverage in `migration/test/registry-schema-delta.test.ts` (fresh and in-place registries end with the `artifact_verifications` table, all eight new `runs` columns, and the three new indexes, with no existing table, column, `CHECK`, trigger, or index modified or dropped); `finishRun` persistence coverage in `migration/test/run-outcome-plumbing.test.ts`; shared runtime-resolution coverage in `migration/test/runtime-resolution.test.ts`; graceful/forced/confirmed process-group primitive coverage in `migration/test/process-group-primitives.test.ts`; and the existing `stacks/` ↔ `package/stacks/` byte-parity baseline in `migration/test/stack-pack-engine.test.ts`
+- [x] T005 Add the `artifact_verifications` table and `idx_artifact_verifications_state` / `idx_artifact_verifications_run` to the base section of `migration/registry_schema.sql`, exactly as specified in `specs/001-truthful-run-state/contracts/registry-schema.md` §1
+- [x] T006 [US1] Add the eight attempt-outcome columns (`files_written_count`, `files_written_source`, `status_from`, `status_to`, `budget_consumed`, `cleanup_outcome`, `survivor_pids`, `outcome_label`) to the base `CREATE TABLE runs`; create `idx_runs_outcome_label` only after the guarded existing-database column upgrades so the base schema batch remains safe for in-place upgrades
+- [x] T007 Register all eight new `runs` columns with the `ensureColumn()` guard at the end of `applySchema()` in `migration/registry/db/schema.ts` — required because this SQLite build rejects `ADD COLUMN IF NOT EXISTS`; adding only the `ALTER TABLE` half leaves existing databases wrong
+- [x] T008 [P] Add `VerificationState`, the closed verification-reason vocabulary (`not-attempted`, `no-stack-check`, `tree-incomplete`, `budget-exhausted`, `agent-reported-unverifiable`, `check-failed`, `check-error`), `VerificationRecord`, `AttemptOutcome`, and `ContextResponse` to `migration/registry/types.ts`
+- [x] T009 [P] Add config keys `verification.budget_seconds` (default 120, overridable by `GUILDCTL_VERIFY_BUDGET_SECONDS`), `preflight.budget_seconds` (default 30, overridable only by the preflight flag), and `agent_limits.termination_grace_seconds` (default 5, replacing the value hardcoded in the runner) to `migration/guildctl/config.ts`
+- [x] T010 Extend `finishRun` in `migration/registry/commands/runs.ts` to accept and persist the eight attempt-outcome fields in the same transaction that closes the run (plumbing only — label derivation and domain validation belong to US4 T050)
+- [x] T011 Add the optional `finish-run` flags (`--files-written`, `--files-written-source`, `--status-from`, `--status-to`, `--budget-consumed`, `--cleanup-outcome`, `--survivor-pids`, `--outcome-label`) and emit the new columns from `list-runs --json` in `migration/registry/cli.ts`; omitting every new flag must reproduce today's behaviour exactly
+- [x] T012 [P] Add `resolveAgentLaunch()` to `migration/guildctl/harness.ts` returning launch-private `ResolvedRuntimeConfig` plus a secret-free `ResolvedRuntimeReport` projection (harness name/command/source, provider base URL, model, `credentialEnv` name only, divergences[]); re-point `migration/guildctl/runner.ts` at the resolver and require all operator/reporting paths to use the projection (FR-011, FR-019)
+- [x] T013 [P] Add platform-conditional process-group termination primitives to `migration/guildctl/util.ts` — POSIX `process.kill(-pgid, SIGTERM|SIGKILL)` with `kill(-pgid, 0)`/`ESRCH` confirmation, Windows `taskkill /PID <pid> /T [/F]` with `tasklist` confirmation — consumed by US1's verification budget (T026) and US5's attempt termination (T057)
 
 **Checkpoint**: schema, types, config, and both shared resolvers exist. User story implementation can now begin.
 
@@ -94,27 +94,29 @@ without reading logs.
 
 > Write these FIRST and confirm they FAIL before any implementation task in this phase.
 
-- [ ] T014 [P] [US1] Write `migration/test/verification-state.test.ts`: the three states and the closed reason vocabulary; `reason` required and non-empty whenever `state <> 'verified'`; `verified` requires non-null `duration_ms` and non-empty `scope_json`; missing row coalesces to `unverified` / `not-attempted` / `none` through the `LEFT JOIN` read-model; upsert is last-write-wins with an `events` audit row; `detail` passes `redactSecrets()`; verification resets to `unverified` / `not-attempted` when the artifact re-enters `in-progress` or `needs-rework`; and the US1 close-out summary renders verification state, method, and reason separately from migration status
-- [ ] T015 [P] [US1] Write `migration/test/verification-bounds.test.ts`: scope is the claim's `expected_output_paths` plus one-hop `source_dependencies` + `dependencies` and never the transitive closure; every substituted path is asserted inside the workspace root via `isPathInside` and a path escaping it yields `verification-failed` / `check-error`; the budget terminates the check's process group and records `unverified` / `budget-exhausted` while the claim still closes; an unmigrated one-hop dependency yields `unverified` / `tree-incomplete` and the artifact still advances; no filesystem globbing and no read outside the workspace occurs
-- [ ] T016 [P] [US1] Extend `migration/test/arbiter-gate.test.ts` with the Constitution IV enforcement point from research R11: an artifact with `artifact_verifications.state = 'verified'` and no passing `acceptance_evidence` row is still **rejected** by arbitration, and verification state can neither substitute for evidence nor unlock a status transition
-- [ ] T017 [P] [US1] Extend `migration/test/stack-pack-engine.test.ts` for the `verify:` block in `specs/001-truthful-run-state/contracts/stack-pack-verify.md`: schema parsing, placeholder expansion (`{artifact_path}`, `{output_paths}`, `{dependency_paths}`, `{scope_paths}`, `{module}`, `{workspace_root}`) passed as discrete argv entries with `shell: false`, absence of any `{all_artifacts}` placeholder, a failing `availability_args` probe mapping to `unverified` / `no-stack-check` rather than `verification-failed`, and a pack with no `verify:` block mapping to `no-stack-check`
-- [ ] T018 [P] [US1] Extend `migration/test/warden.test.ts` for FR-010: an attempt blocked by a required change outside its authorized output paths records the `blocked:out-of-scope-path` tag plus a `filesystem-violation` event carrying `{ out_of_scope_paths, claim_id, run_id }`, while the warden's existing restore-and-fail behaviour and its allow-list are unchanged and the offending path is never added to any allow-list
+- [x] T014 [P] [US1] Write `migration/test/verification-state.test.ts`: the three states and the closed reason vocabulary; `reason` required and non-empty whenever `state <> 'verified'`; `verified` requires non-null `duration_ms` and non-empty `scope_json`; missing row coalesces to `unverified` / `not-attempted` / `none` through the `LEFT JOIN` read-model; upsert is last-write-wins with an `events` audit row; `detail` passes `redactSecrets()`; verification resets to `unverified` / `not-attempted` when the artifact re-enters `in-progress` or `needs-rework`; and the US1 close-out summary renders verification state, method, and reason separately from migration status
+- [x] T015 [P] [US1] Write `migration/test/verification-bounds.test.ts`: scope is the claim's `expected_output_paths` plus one-hop `source_dependencies` + `dependencies` and never the transitive closure; every substituted path is asserted inside the workspace root via `isPathInside` and a path escaping it yields `verification-failed` / `check-error`; the budget terminates the check's process group and records `unverified` / `budget-exhausted` while the claim still closes; an unmigrated one-hop dependency yields `unverified` / `tree-incomplete` and the artifact still advances; no filesystem globbing and no read outside the workspace occurs
+- [x] T016 [P] [US1] Extend `migration/test/arbiter-gate.test.ts` with the Constitution IV enforcement point from research R11: an artifact with `artifact_verifications.state = 'verified'` and no passing `acceptance_evidence` row is still **rejected** by arbitration, and verification state can neither substitute for evidence nor unlock a status transition
+- [x] T017 [P] [US1] Extend `migration/test/stack-pack-engine.test.ts` for the `verify:` block in `specs/001-truthful-run-state/contracts/stack-pack-verify.md`: schema parsing, placeholder expansion (`{artifact_path}`, `{output_paths}`, `{dependency_paths}`, `{scope_paths}`, `{module}`, `{workspace_root}`) passed as discrete argv entries with `shell: false`, absence of any `{all_artifacts}` placeholder, a failing `availability_args` probe mapping to `unverified` / `no-stack-check` rather than `verification-failed`, and a pack with no `verify:` block mapping to `no-stack-check`
+- [x] T018 [P] [US1] Extend `migration/test/warden.test.ts` for FR-010: an attempt blocked by a required change outside its authorized output paths records the `blocked:out-of-scope-path` tag plus a `filesystem-violation` event carrying `{ out_of_scope_paths, claim_id, run_id }`, while the warden's existing restore-and-fail behaviour and its allow-list are unchanged and the offending path is never added to any allow-list
 
 ### Implementation for User Story 1
 
-- [ ] T019 [US1] Create `migration/registry/commands/verification.ts` with `setVerification` / `getVerification` / `listVerification`, enforcing the above-schema invariants (reason vocabulary, `verified` requires duration + scope), `redactSecrets()` on `detail`, the coalescing `LEFT JOIN` read-model, the `ON CONFLICT (artifact_id) DO UPDATE` upsert, and the companion `events` audit row; it must never write `artifacts.status`, never write `acceptance_evidence`, and never unlock a gate
-- [ ] T020 [US1] Register `set-verification`, `get-verification`, and `list-verification` in `migration/registry/cli.ts` per `specs/001-truthful-run-state/contracts/registry-cli.md` §A — active claim token or valid run operator credential required (a privileged-looking actor name does not bypass it), exit `0`/`1`/`2` with a missing verification row returning exit `0` and the coalesced default
-- [ ] T021 [US1] Add the verification invalidation reset (state → `unverified`, reason → `not-attempted`) when an artifact enters `in-progress` or `needs-rework` in `setArtifactStatus` in `migration/registry/commands/artifacts.ts`, mirroring the content-bound evidence rule of Constitution I
-- [ ] T022 [US1] Add `verification_state` and `verification_reason`, read through the coalescing `LEFT JOIN`, to `getArtifact`, `listArtifacts`, and `showStatus` in `migration/registry/commands/queries.ts` so review and arbitration consumers can treat `unverified` and `verification-failed` as triageable conditions
-- [ ] T023 [US1] Parse the optional `verify.per_artifact` block (`id`, `cmd`, `args`, `availability_args`, `working_dir`, `budget_seconds`, `pass_exit_codes`, `unavailable_note`) in `migration/guildctl/stack.ts`, treating it as data only — no build or test command may enter core runtime (Constitution VII)
-- [ ] T024 [P] [US1] Add the `verify.per_artifact` block acting on `{scope_paths}` with declared `availability_args` to `stacks/java-spring/stack.yaml` and copy it byte-identically into `package/stacks/java-spring/stack.yaml`
-- [ ] T025 [P] [US1] Add the `verify.per_artifact` block acting on `{scope_paths}` with declared `availability_args` to `stacks/python/stack.yaml` and copy it byte-identically into `package/stacks/python/stack.yaml`
-- [ ] T026 [US1] Implement bounded per-artifact verification in `migration/guildctl/verify.ts`: build the `VerificationScope` from registry rows only, assert containment with `isPathInside`, probe `availability_args` first, `spawn` with `shell: false` under `scrubVerificationEnv()`, enforce the budget by terminating the check's process group via the T013 helpers, and map outcomes per `specs/001-truthful-run-state/contracts/stack-pack-verify.md` § Outcome mapping
-- [ ] T027 [US1] Invoke verification at claim close and persist the record through the registry in both `migration/guildctl/runner.ts` and the autonomous close path in `migration/guildctl/supervisor/loop.ts`, ensuring no verification outcome ever blocks the artifact from advancing; emit verification state, method, and reason in the same attempt close-out block as migration status on both paths; and ensure a run whose agent reported it could not verify its own output records `unverified` / `agent-reported-unverifiable` instead of reading as a verified completion (FR-006, FR-007)
-- [ ] T028 [US1] Record the `blocked:out-of-scope-path` tag and the `filesystem-violation` event payload naming the offending path in `migration/guildctl/warden.ts`, leaving restore-and-fail behaviour and the allow-list untouched
-- [ ] T029 [US1] Add the `COUNT`-shaped verification split (`verified · unverified · verification-failed`) with the `registry list-verification --state <state>` pointer to `migration/guildctl/commands/status.ts` per `specs/001-truthful-run-state/contracts/guildctl-cli.md` §H
-- [ ] T030 [US1] Surface verification state and reason as triage input in `migration/guildctl/commands/review.ts`, explicitly without granting it any approval or gate-unlocking power (FR-009, research R11)
-- [ ] T031 [US1] Add the verification-reporting expectation — agents record their own bounded check outcome through `set-verification`, and state `agent-reported-unverifiable` rather than closing silently — to `package/agent-instructions.md` (same file as T054; do not run the two in parallel)
+- [x] T019 [US1] Create `migration/registry/commands/verification.ts` with `setVerification` / `getVerification` / `listVerification`, enforcing the above-schema invariants (reason vocabulary, `verified` requires duration + scope), `redactSecrets()` on `detail`, the coalescing `LEFT JOIN` read-model, the `ON CONFLICT (artifact_id) DO UPDATE` upsert, and the companion `events` audit row; it must never write `artifacts.status`, never write `acceptance_evidence`, and never unlock a gate
+- [x] T020 [US1] Register `set-verification`, `get-verification`, and `list-verification` in `migration/registry/cli.ts` per `specs/001-truthful-run-state/contracts/registry-cli.md` §A — active claim token or valid run operator credential required (a privileged-looking actor name does not bypass it), exit `0`/`1`/`2` with a missing verification row returning exit `0` and the coalesced default
+- [x] T021 [US1] Add the verification invalidation reset (state → `unverified`, reason → `not-attempted`) when an artifact enters `in-progress` or `needs-rework` in `setArtifactStatus` in `migration/registry/commands/artifacts.ts`, mirroring the content-bound evidence rule of Constitution I
+- [x] T022 [US1] Add `verification_state` and `verification_reason`, read through the coalescing `LEFT JOIN`, to `getArtifact`, `listArtifacts`, and `showStatus` in `migration/registry/commands/queries.ts` so review and arbitration consumers can treat `unverified` and `verification-failed` as triageable conditions
+- [x] T023 [US1] Parse the optional `verify.per_artifact` block (`id`, `cmd`, `args`, `availability_args`, `working_dir`, `budget_seconds`, `pass_exit_codes`, `unavailable_note`) in `migration/guildctl/stack.ts`, treating it as data only — no build or test command may enter core runtime (Constitution VII)
+- [x] T024 [P] [US1] Add the `verify.per_artifact` block acting on `{scope_paths}` with declared `availability_args` to `stacks/java-spring/stack.yaml` and copy it byte-identically into `package/stacks/java-spring/stack.yaml`
+- [x] T025 [P] [US1] Add the `verify.per_artifact` block acting on `{scope_paths}` with declared `availability_args` to `stacks/python/stack.yaml` and copy it byte-identically into `package/stacks/python/stack.yaml`
+- [x] T026 [US1] Implement bounded per-artifact verification in `migration/guildctl/verify.ts`: build the `VerificationScope` from registry rows only, assert containment with `isPathInside`, probe `availability_args` first, `spawn` with `shell: false` under `scrubVerificationEnv()`, enforce the budget by terminating the check's process group via the T013 helpers, and map outcomes per `specs/001-truthful-run-state/contracts/stack-pack-verify.md` § Outcome mapping
+- [x] T027 [US1] Invoke verification at claim close and persist the record through the registry in both `migration/guildctl/runner.ts` and the autonomous close path in `migration/guildctl/supervisor/loop.ts`, ensuring no verification outcome ever blocks the artifact from advancing; emit verification state, method, and reason in the same attempt close-out block as migration status on both paths; and ensure a run whose agent reported it could not verify its own output records `unverified` / `agent-reported-unverifiable` instead of reading as a verified completion (FR-006, FR-007)
+- [x] T028 [US1] Record the `blocked:out-of-scope-path` tag and the `filesystem-violation` event payload naming the offending path in `migration/guildctl/warden.ts`, leaving restore-and-fail behaviour and the allow-list untouched
+- [x] T029 [US1] Add the `COUNT`-shaped verification split (`verified · unverified · verification-failed`) with the `registry list-verification --state <state>` pointer to `migration/guildctl/commands/status.ts` per `specs/001-truthful-run-state/contracts/guildctl-cli.md` §H
+- [x] T030 [US1] Surface verification state and reason as triage input in `migration/guildctl/commands/review.ts`, explicitly without granting it any approval or gate-unlocking power (FR-009, research R11)
+- [x] T031 [US1] Add the verification-reporting expectation — agents record their own bounded check outcome through `set-verification`, and state `agent-reported-unverifiable` rather than closing silently — to `package/agent-instructions.md` (same file as T054; do not run the two in parallel)
+
+- [ ] T031a [Foundational] Extend the shared launch resolver for the autonomous path: route `commands/auto.ts` through `resolveAgentLaunch()` (with an explicit provider-route option delegating to `resolveProviderRoute`), add the autonomous twin of the runtime-resolution test, and add a safe-report projection test proving `agentEnv`/credential values never enter `ResolvedRuntimeReport`
 
 **Checkpoint**: User Story 1 is fully functional and independently testable. This is the MVP.
 
@@ -136,13 +138,13 @@ and model.
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T032 [P] [US2] Write `migration/test/preflight-resolved-path.test.ts` using the injectable-`fetch` stub and fake adapter from `migration/test/truthful-run-state-fixtures.ts`: table-driven provider mapping (`401`/`403` → `authorization`; `429`/quota body → `authorization`; `404`/model-not-found body → `model-availability`; network error, malformed body, or empty completion → `response`; `2xx` with non-empty completion → pass); an adapter that starts but returns no model reply is **not** a pass; budget elapse returns `fail` citing the elapsed budget; `--offline` returns the third verdict `unvalidated` and never `pass`; divergences are reported even on success; the credential value appears in no output path while its setting name always does; preflight and the runner resolve through the same `resolveAgentLaunch()`; doctor delegates to preflight, including explicit `doctor --offline` reporting `unvalidated`; and `commands/auto.ts` gates claims on the same preflight verdict before dispatching work
+- [ ] T032 [P] [US2] Write `migration/test/preflight-resolved-path.test.ts` using the injectable-`fetch` stub and fake adapter from `migration/test/truthful-run-state-fixtures.ts`: table-driven provider mapping (`401`/`403` → `authorization`; `429`/quota body → `authorization`; `404`/model-not-found body → `model-availability`; network error, malformed body, or empty completion → `response`; `2xx` with non-empty completion → pass); an adapter that starts but returns no model reply is **not** a pass; an environment-sourced harness (`AGENT_CMD`) is still gated; budget elapse returns `fail` citing the elapsed budget; `--offline` returns the third verdict `unvalidated` and never `pass`; divergences are reported even on success; the credential value appears in no output path while its setting name always does; preflight and the runner resolve through the same `resolveAgentLaunch()`; doctor delegates to preflight, including explicit `doctor --offline` reporting `unvalidated`; and `commands/auto-run.ts` gates the queue on one shared preflight verdict before dispatching work
 
 ### Implementation for User Story 2
 
-- [ ] T033 [US2] Create `migration/guildctl/preflight.ts` implementing the three stages (`resolution` via `resolveAgentLaunch()`, live `chat/completions` request asserting a non-empty completion, resolved-adapter round-trip), one shared wall-clock budget defaulting to 30 seconds, the three verdicts `pass` / `fail` / `unvalidated`, the fail-closed rule of FR-015, the stage mapping of FR-016, and an injectable `fetch` defaulting to global `fetch`
-- [ ] T034 [US2] Register `guildctl preflight [--offline] [--json] [--budget-seconds <n>] [--profile <name>]` in `migration/guildctl/cli.ts`, honouring `GUILD_PREFLIGHT_OFFLINE=1`, always printing the `resolved` block on both pass and fail, and exiting `0` for `pass` and `unvalidated`, `1` for `fail`
-- [ ] T035 [US2] Replace the three model / harness / credential checks with delegation to `preflight` in `migration/guildctl/cli.ts` (where the current doctor command action lives), keep the config, prompt-pack, git, and pipeline-state checks unchanged, add and test explicit `doctor --offline` handling that reports the `unvalidated` verdict rather than a green tick, and replace the independent credential-presence gate at `migration/guildctl/commands/auto.ts` with the same preflight verdict before any autonomous artifact is claimed
+- [ ] T033 [US2] Create `migration/guildctl/preflight.ts` implementing two stages (`resolution` via `resolveAgentLaunch()`, then one live end-to-end model request through the resolved launch path with provider failure mapping to `authorization` / `model-availability` / `response`), one shared wall-clock budget defaulting to 30 seconds, the three verdicts `pass` / `fail` / `unvalidated`, the fail-closed rule of FR-015, and an injectable `fetch` defaulting to global `fetch`; adapter startup alone is never a pass and the path must not issue a second completion request
+- [ ] T034 [US2] Register `guildctl preflight [--offline] [--json] [--budget-seconds <n>]` in `migration/guildctl/cli.ts`, using the already-global `--profile <name>` option rather than re-declaring a command-level shadow, honouring `GUILD_PREFLIGHT_OFFLINE=1`, always printing the `resolved` block on both pass and fail, and exiting `0` for `pass` and `unvalidated`, `1` for `fail`
+- [ ] T035 [US2] Replace the three model / harness / credential checks with delegation to `preflight` in `migration/guildctl/cli.ts` (where the current doctor command action lives), keep the config, prompt-pack, git, and pipeline-state checks unchanged, add and test explicit `doctor --offline` handling that reports the `unvalidated` verdict rather than a green tick, and unconditionally gate `commands/auto-run.ts` on one shared preflight verdict before any autonomous artifact is claimed regardless of harness source; reuse that verdict for the queue rather than issuing one live request per artifact
 
 **Checkpoint**: User Stories 1 and 2 both work independently.
 
@@ -170,8 +172,8 @@ line names both values and the winner, and the run-start line reports the resolv
 ### Implementation for User Story 3
 
 - [ ] T037 [US3] Export the existing module-private `isSensitiveEnvName` predicate from `migration/guildctl/verify.ts`, then create `migration/guildctl/env.ts` implementing the snapshot-then-apply loader of `specs/001-truthful-run-state/contracts/environment-precedence.md` §B — snapshot ambient `process.env`, parse each candidate with `dotenv.parse` (no side effects), compute divergences, apply precedence, emit the report — reusing that predicate so one definition of "secret" governs evidence logs, preflight output, and this report alike
-- [ ] T038 [US3] Replace the implicit three-candidate `dotenv` auto-load at the top of `migration/guildctl/cli.ts` with the T037 loader and add the global `--ambient-env` flag, keeping the existing candidate order (`<cwd>/.env`, then the two CLI-install-relative candidates) and explicitly not using `dotenv`'s `override: true`
-- [ ] T039 [US3] Create or expose one shared runtime-report helper alongside `resolveAgentLaunch()` and emit the always-on divergence report plus the single run-start runtime line (`harness=… provider=… model=…`, with divergence when a resolved value differs from the project configuration declaration) from both `migration/guildctl/runner.ts` and `migration/guildctl/commands/auto.ts`, guarded so it appears once per phase run rather than once per artifact in the `auto-run` supervisor queue; cover `inventory`, `plan`, `migrate`, `review`, `remediate`, `benchmark`, and autonomous dispatch without printing a credential value
+- [ ] T038 [US3] Replace the implicit three-candidate `dotenv` auto-load at the top of `migration/guildctl/cli.ts` with the T037 loader and add the global `--ambient-env` flag, keeping the existing candidate order (`<cwd>/.env`, then the two CLI-install-relative candidates) and explicitly not using `dotenv`'s `override: true`; pre-scan `process.argv` for `--ambient-env` and the global profile before module-level loading, then let Commander perform the authoritative parse
+- [ ] T039 [US3] Create `migration/guildctl/runtime-report.ts` as the shared rendering helper for the run-start line and divergence block; it must consume the existing secret-free `toResolvedRuntimeReport()` projection from `harness.ts` and never recreate or serialize `agentEnv`. Emit exactly once per manual phase from the six phase-command entry points (`inventory`, `plan`, `migrate`, `review`, `remediate`, `benchmark`) and exactly once per autonomous queue from `migration/guildctl/commands/auto-run.ts`; `commands/auto.ts`, `supervisor/queue.ts`, and `spawnAgent` emit nothing. Cover all six manual phases plus autonomous dispatch without printing credential values.
 - [ ] T040 [P] [US3] Document project-local `.env` precedence, the `GUILD_ENV_PRECEDENCE=ambient` / `--ambient-env` opt-in, and that this is a **change in behaviour** in `README.md`
 - [ ] T041 [P] [US3] Document the same three points plus the concrete `AGENT_CMD` migration note (a workspace whose `.env` sets `AGENT_CMD` now wins over an exported ambient `AGENT_CMD`) in `GETTING-STARTED.md`
 - [ ] T042 [P] [US3] Record the environment-precedence behaviour change under `Unreleased`, grouped by a human-readable date heading, in `CHANGELOGS.MD`
@@ -203,7 +205,7 @@ and spent budget.
 
 - [ ] T045 [US4] Create `migration/guildctl/limits.ts` returning the `EffectiveLimit` descriptor (`phase`, `kind`, `knob`, `effectiveValueMs`, `requestedValueMs`, `source`, `floorApplied`, `precedenceOrder`) for both the ceiling and inactivity kinds, implementing precedence per-phase setting → project configuration → built-in default without changing which knobs exist
 - [ ] T046 [US4] Register `guildctl limits [--phase <phase>] [--json]` in `migration/guildctl/cli.ts`, printing the precedence line and the per-phase table with the `floor` column stating the requested value when a minimum was applied
-- [ ] T047 [US4] Replace the current termination message — which always names `agent_limits.ceiling_seconds` even when an overriding per-phase constant fired — with one that quotes `knob`, `effectiveValueMs`, and `source` from the enforcing descriptor in `migration/guildctl/runner.ts` and the autonomous limit path in `migration/guildctl/commands/auto.ts`
+- [ ] T047 [US4] Add autonomous limit enforcement around the per-artifact worker dispatch in `migration/guildctl/commands/auto.ts` / `migration/guildctl/commands/auto-run.ts`, and replace the current termination message in both manual and autonomous paths — which always names `agent_limits.ceiling_seconds` even when an overriding per-phase constant fired — with one that quotes `knob`, `effectiveValueMs`, and `source` from the enforcing descriptor
 - [ ] T048 [US4] Count files written from the warden snapshot diff, falling back to the existing git diff only when no warden snapshot exists, and record which mechanism produced the count in `files_written_source` in both `migration/guildctl/runner.ts` and `migration/guildctl/supervisor/loop.ts`
 - [ ] T049 [US4] Derive `outcome_label` and emit the single close-out summary block in both `migration/guildctl/runner.ts` and `migration/guildctl/supervisor/loop.ts` — files written with source, artifact status transition, **verification state with method/reason**, claim disposition, process-cleanup outcome, provider budget with the explicit statement that spend is not recovered, and terminal reason — so a no-progress termination can never carry a success-equivalent label and neither manual nor autonomous summaries present migration status without its verification state
 - [ ] T050 [US4] Validate the attempt-outcome value domains in `finishRun` in `migration/registry/commands/runs.ts` — `files_written_source`, `budget_consumed`, `cleanup_outcome`, `outcome_label`, `survivor_pids` non-empty iff `cleanup_outcome = 'survivors'` — and reject `succeeded` when `status_from` equals `status_to`
@@ -232,7 +234,7 @@ is named in the run output.
 
 - [ ] T055 [P] [US5] Write `migration/test/process-tree-termination.test.ts` using the SIGTERM-ignoring grandchild fixture from `migration/test/truthful-run-state-fixtures.ts`: graceful group signal is attempted first; forced escalation follows only after the bounded grace period; confirmation reports zero survivors when the tree is gone; a process that ignores graceful termination is forcibly terminated; an unkillable survivor is reported as a cleanup failure naming its PID while the claim is still released; an attempt terminated between processes reports `clean (0 survivors)` as success; and both the runner and autonomous `auto-run` path are covered, with the Windows `taskkill` path guarded on POSIX CI
 - [ ] T056 [US5] Spawn agents as process-group leaders (`detached: true`) in `migration/guildctl/runner.ts` and `migration/guildctl/commands/auto.ts`, forwarding operator `SIGINT`/`SIGTERM` into each group so Ctrl-C no longer leaves either tree running, and explicitly not calling `child.unref()` so each parent still awaits the exit needed to finalize its run
-- [ ] T057 [US5] Replace direct-child `proc.kill()` in the runner and autonomous supervisor path with graceful → forced → confirm escalation over the whole group using the T013 helpers, bounded by `agent_limits.termination_grace_seconds`, in `migration/guildctl/runner.ts` and `migration/guildctl/supervisor/loop.ts`
+- [ ] T057 [US5] Add graceful → forced → confirm escalation for autonomous workers, rather than replacing a nonexistent autonomous `proc.kill()` path, using the T013 helpers and bounded by `agent_limits.termination_grace_seconds` in `migration/guildctl/commands/auto.ts` / `migration/guildctl/commands/auto-run.ts`; the supervisor loop consumes the cleanup result while the existing manual runner path is updated separately
 - [ ] T058 [US5] Persist `cleanup_outcome` and `survivor_pids` through `finish-run` in the runner and autonomous cleanup paths, in `migration/guildctl/runner.ts` and `migration/guildctl/supervisor/loop.ts`, reporting any survivor as a cleanup failure rather than omitting it or treating it as acceptable
 - [ ] T059 [US5] Print the claim disposition and the process-cleanup outcome together in both manual and autonomous close-out summaries, in `migration/guildctl/runner.ts` and `migration/guildctl/supervisor/loop.ts` — a released claim is never printed alone, and the claim is still released when cleanup fails, since claim recoverability outranks cleanup completeness
 
@@ -290,21 +292,29 @@ Phase 1 Setup (T001-T003)
         ▼
 Phase 2 Foundational (T004-T013)   ◄── BLOCKS every user story
         │
-        ├──────────┬──────────┬──────────┬──────────┬──────────┐
-        ▼          ▼          ▼          ▼          ▼          ▼
-   Phase 3      Phase 4    Phase 5    Phase 6    Phase 7    Phase 8
-   US1 (P1)     US2 (P2)   US3 (P3)   US4 (P4)   US5 (P5)   US6 (P6)
-   T014-T031    T032-T035  T036-T042  T043-T054  T055-T059  T060-T066
-        └──────────┴──────────┴──────────┴──────────┴──────────┘
-                              │
-                              ▼
-                  Phase 9 Polish (T067-T072)
+        ├──────────────┬──────────────┬──────────────┬──────────────┐
+        ▼              ▼              ▼              ▼              ▼
+   Phase 3 US1     Phase 6 US4    Phase 7 US5    Phase 8 US6    (independent after foundation)
+   T014-T031       T043-T054      T055-T059      T060-T066
+        │
+        ▼
+Shared foundation gate (T031a)      ◄── required only before US2/US3
+        ├──────────────┬──────────────┐
+        ▼              ▼              │
+   Phase 4 US2     Phase 5 US3       │
+   T032-T035       T036-T042         │
+        └──────────────┴──────────────┘
+                       │
+                       ▼
+           Phase 9 Polish (T067-T072)
 ```
 
 - **Setup (Phase 1)**: no dependencies — start immediately.
-- **Foundational (Phase 2)**: depends on Setup. **Blocks all user stories.**
-- **User Stories (Phases 3–8)**: all depend only on Phase 2. They may then run in parallel if staffed,
-  or sequentially in priority order P1 → P6.
+- **Foundational (Phase 2)**: depends on Setup. **Blocks all user stories.** T031a has only T012 as
+  a technical prerequisite; it is a delivery-order gate before US2/US3, not a technical dependency
+  of US4–US6.
+- **User Stories (Phases 3–8)**: US1 and US4–US6 depend only on Phase 2; US2 and US3 additionally
+  depend on T031a. They may then run in parallel if staffed, or sequentially in priority order P1 → P6.
 - **Polish (Phase 9)**: depends on all desired user stories being complete.
 
 ### Foundational task dependencies
@@ -317,11 +327,12 @@ Phase 2 Foundational (T004-T013)   ◄── BLOCKS every user story
 
 ### User Story Dependencies
 
-All six stories depend **only** on Phase 2. None depends on another story's completion:
+All six stories depend on Phase 2; only US2 and US3 additionally depend on T031a. None depends on
+another story's completion:
 
 - **US1 (P1)** — needs T005/T007 (schema), T008 (types), T009 (budget config), T013 (group kill).
-- **US2 (P2)** — needs T012 (`resolveAgentLaunch()`). Independent of US1 and US3.
-- **US3 (P3)** — needs T012 for the run-start line. Independent of US1 and US2.
+- **US2 (P2)** — needs T012 (`resolveAgentLaunch()`) and T031a (autonomous shared resolution). Independent of US1 and US3.
+- **US3 (P3)** — needs T012 for the run-start line and T031a for autonomous dispatch. Independent of US1 and US2.
 - **US4 (P4)** — needs T006/T007 (columns), T010/T011 (`finishRun` plumbing). Independent of US1–US3.
 - **US5 (P5)** — needs T013 (group kill) and T010/T011 (persisting `cleanup_outcome`). Independent of
   US4: US4 owns label derivation and the summary, US5 owns cleanup population.
@@ -337,6 +348,10 @@ These files are touched by two phases. Order them; do not parallelize across the
 | `package/agent-instructions.md` | T031 (US1), T054 (US4) | T031 → T054 |
 | `README.md` / `GETTING-STARTED.md` | T040/T041 (US3), T053 (US4) | T040/T041 → T053 |
 | `migration/guildctl/runner.ts` | T027 (US1), T047–T049 (US4), T056–T059 (US5) | one story at a time |
+| `migration/guildctl/commands/auto.ts` | T031a (foundation), T047/T056/T057 (US4/US5) | T031a → T047/T056/T057 |
+| `migration/guildctl/commands/auto-run.ts` | T035 (US2), T039 (US3), T047/T057 (US4/US5) | T035/T039 → T047/T057 |
+| `migration/guildctl/supervisor/queue.ts` | T035 (US2), T039 (US3), T047/T057 (US4/US5) | T035/T039 → T047/T057 |
+| `migration/guildctl/supervisor/loop.ts` | T027 (US1), T048/T049/T058/T059 (US4/US5) | one story at a time |
 | `migration/guildctl/cli.ts` | T034 (US2), T038 (US3), T046 (US4) | one story at a time |
 | `migration/registry/cli.ts` | T011 (Foundational), T020 (US1), T051 (US4), T062 (US6) | T011 first |
 | `migration/test/stack-pack-engine.test.ts` | T017 (US1), T069 (Polish) | T017 → T069 |
@@ -361,13 +376,18 @@ functions.
 
 - T003 runs in parallel with T001/T002 once the repo is cloned.
 
+### Before User Stories 2–3
+
+- T031a follows the MVP and must land before T032 or T036. It touches the autonomous resolver path and
+  the existing runtime-resolution suite, so it is not parallelized with T035 or T039.
+
 ### Within Phase 2
 
 - T008, T009, T012, T013 — four different files, no shared state:
 
 ```bash
 Task: "Add registry verification/outcome/context types in migration/registry/types.ts"
-Task: "Add verification.budget_seconds and agent_limits.termination_grace_seconds in migration/guildctl/config.ts"
+Task: "Add verification.budget_seconds, preflight.budget_seconds, and agent_limits.termination_grace_seconds in migration/guildctl/config.ts"
 Task: "Add resolveAgentLaunch() in migration/guildctl/harness.ts"
 Task: "Add process-group termination primitives in migration/guildctl/util.ts"
 ```
@@ -431,7 +451,9 @@ sequencing table above.
 
 ### MVP scope
 
-**MVP = Phase 1 + Phase 2 + Phase 3 (User Story 1), tasks T001–T031.**
+**MVP = Phase 1 + Phase 2 + Phase 3 (User Story 1), tasks T001–T031.** T031a is a required
+post-MVP shared foundation gate before implementing US2 or US3; it is not part of the MVP acceptance
+checkpoint.
 
 User Story 1 is the MVP because it is the only slice that addresses a direct violation of the
 constitution's non-negotiable first principle — status advancing on an agent's self-report. The other
@@ -453,6 +475,7 @@ limit, termination, or context work.
 |-----------|-------|----------|
 | Foundation | T001–T013 | Schema, types, config, shared resolvers |
 | **MVP** | + T014–T031 | US1 — truthful completion and bounded verification |
+| Pre-US2/US3 foundation | + T031a | Autonomous shared resolution and safe runtime-report projection |
 | 2 | + T032–T035 | US2 — preflight that validates the resolved path |
 | 3 | + T036–T042 | US3 — environment precedence and divergence visibility |
 | 4 | + T043–T054 | US4 — honest limits and attempt outcomes |
@@ -469,7 +492,7 @@ which is what makes stopping after any increment safe.
 1. Everyone completes Phase 1 + Phase 2 together (T001–T013).
 2. Then, respecting the shared-file sequencing table:
    - **Developer A**: US1 (T014–T031) — the largest slice, and the MVP.
-   - **Developer B**: US2 (T032–T035) then US6 (T060–T066) — both self-contained.
+   - **Developer B**: T031a, then US2 (T032–T035), then US6 (T060–T066) — all self-contained after the shared foundation.
    - **Developer C**: US3 (T036–T042) then US4 (T043–T054).
    - **Developer D**: US5 (T055–T059), coordinating `runner.ts` edits with A and C.
 3. Land US1 first regardless of finish order, so the MVP is the first thing on the branch.

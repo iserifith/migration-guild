@@ -13,7 +13,7 @@ operator explicitly invoked.
 ## A. `guildctl preflight` — NEW (FR-011–FR-019)
 
 ```text
-guildctl preflight [--offline] [--json] [--budget-seconds <n>] [--profile <name>]
+guildctl preflight [--offline] [--json] [--budget-seconds <n>]
 ```
 
 Validates the runtime path a phase run will actually take, then reports what it resolved.
@@ -25,15 +25,16 @@ Executed in order, sharing one wall-clock budget, stopping at the first failure:
 | # | Stage id | What it asserts | Fails when |
 |---|----------|-----------------|------------|
 | 1 | `resolution` | harness, provider base URL, model, and credential variable resolve through `resolveAgentLaunch()` — the same function the runner calls | any value missing or unresolvable; harness name unknown; credential variable unset |
-| 2 | `authorization` / `model-availability` / `response` | one minimal live `chat/completions` request through the resolved base URL, model, and credential, asserting a **non-empty completion in the response body** | see status mapping below |
-| 3 | `harness` | the resolved adapter, invoked with a trivial prompt, returns a non-empty model reply | adapter missing, non-zero exit, empty reply, or budget elapsed |
+| 2 | `authorization` / `model-availability` / `response` | one minimal end-to-end model request through the resolved launch path, asserting a **non-empty completion in the response body** | see status mapping below |
 
 **Stage 1 is the FR-011 commitment**: preflight and the runner share one resolver, so preflight
 cannot drift from what a run does. A duplicate resolution path in preflight would violate this
 contract even if it produced the same answer today.
 
-**Stage 3 is the FR-012 commitment**: proving the adapter *starts* is explicitly not a pass. Today's
-`checkHarness()` `--version` probe does not satisfy this stage and cannot be reused for it.
+**Stage 2 is the FR-012 commitment**: proving the adapter *starts* is explicitly not a pass. Today's
+`checkHarness()` `--version` probe does not satisfy the end-to-end request and cannot be reused as the
+preflight verdict. The adapter and provider request are one live path under one shared budget; preflight
+must not bill two completions for separate harness and provider stages.
 
 ### Provider status → stage mapping (FR-016)
 
@@ -104,8 +105,11 @@ $ guildctl preflight
 - `resolved` is always printed, on pass and on fail (FR-013).
 - `divergences` is reported **even when the live check succeeds** (FR-014), naming the setting, the
   declared value, and the resolved value.
+- The launch environment is private process input, not part of the resolved report projection; callers
+  MUST use the secret-free `ResolvedRuntimeReport` rather than serializing `ResolvedRuntimeConfig`.
 - The credential **setting name** is always printed; the credential **value** never is, in any mode,
-  on any path (FR-019). The value never enters the resolved-config object at all.
+  on any path (FR-019). The value may exist only in the private process launch environment; it never
+  enters the resolved report object or any output payload.
 
 ## B. `guildctl doctor` — CHANGED
 
@@ -227,8 +231,13 @@ reported as a cleanup failure with the survivor identified, and the claim is sti
 
 ## G. Run-start line — NEW (FR-024, FR-025)
 
-Exactly one unconditional runtime line at the start of every phase run, emitted from the shared
-runner path used by all agent-spawning phase commands:
+Exactly one unconditional runtime line is emitted at the start of every run:
+
+- For manual phase commands (`inventory`, `plan`, `migrate`, `review`, `remediate`, and
+  `benchmark`), the phase command emits it once at phase entry, before any agent spawn. This keeps
+  the emission at the phase-run seam even when tests inject a replacement `spawnAgent`.
+- For autonomous queues, `commands/auto-run.ts` emits it once before queue dispatch. The per-artifact
+  `commands/auto.ts`, `supervisor/queue.ts`, and shared `spawnAgent` helper emit nothing.
 
 ```text
 [guildctl] runtime: harness=opencode provider=https://rootsys.cloud/v1 model=fiq/hy3-tencent
