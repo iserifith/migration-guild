@@ -194,6 +194,46 @@ Environment knobs introduced for migration pool reliability:
 
 If any of the above semantics change, update both maintainer docs (`DEVELOPMENT.md`, `CHANGELOGS.MD`) and any external maintainer-only runtime architecture notes.
 
+## Truthful run state (001-truthful-run-state)
+
+Run/claim lifecycle and reporting changes from this feature:
+
+- `runs` gained eight attempt-outcome columns (`files_written_count`, `files_written_source`,
+  `status_from`, `status_to`, `budget_consumed`, `cleanup_outcome`, `survivor_pids`,
+  `outcome_label`), all nullable/defaulted so existing rows and consumers keep working. A new
+  `artifact_verifications` table carries verification state as a fact distinct from migration
+  status — never a gate, never a substitute for `acceptance_evidence`.
+- `finishRun` (`migration/registry/commands/runs.ts`) validates these fields' domains and
+  rejects `outcome_label: "succeeded"` when `status_from` equals `status_to`.
+- Agents now spawn as process-group leaders (`detached: true`) in both the manual runner
+  (`migration/guildctl/runner.ts`) and the autonomous paths (`migration/guildctl/commands/auto.ts`).
+  Terminating an attempt terminates the whole tree it started (`terminateProcessGroup()` in
+  `migration/guildctl/util.ts`), not only the direct child — this was a structural gap before
+  (`proc.kill()` only reached the harness shim, not the binary it spawned).
+  Operator `SIGINT`/`SIGTERM` is forwarded into the group.
+- Per-phase timeout knobs (`GUILDCTL_ANALYZE_TIMEOUT_MINS` and siblings) are resolved through
+  the single `resolveEffectiveLimit()` in `migration/guildctl/limits.ts` rather than being
+  read ad hoc per phase command; `guildctl limits` reports the four-tier precedence
+  (per-phase setting → environment override → project configuration → built-in default) before
+  a run.
+- `AutonomousLimitError` (`migration/guildctl/limits.ts`) distinguishes a descriptor-derived
+  limit termination from every other autonomous review failure — only the former routes through
+  a non-throwing per-artifact close-out; every other review failure (identity mismatch,
+  malformed marker) still fails closed by propagating out of `runAuto`.
+
+New `migration/test/` suites added by this feature: `registry-schema-delta.test.ts`,
+`run-outcome-plumbing.test.ts`, `runtime-resolution.test.ts`, `process-group-primitives.test.ts`,
+`verification-state.test.ts`, `verification-bounds.test.ts`, `preflight-resolved-path.test.ts`,
+`env-precedence.test.ts`, `limit-knob-naming.test.ts`, `attempt-outcome.test.ts`,
+`process-tree-termination.test.ts`, `context-retrieval.test.ts`, and the shared (non-`.test.ts`)
+fixture helper `truthful-run-state-fixtures.ts`.
+
+Maintainer checklist answers for this feature: repo-only (registry/guildctl runtime, no new
+shipped Agent artifact except the `package/agent-instructions.md` and packaged-agent doc
+updates, and the `verify:` stack-pack blocks); `package/` updated for the four context-consuming
+agents and `stacks/*/stack.yaml` ↔ `package/stacks/*/stack.yaml` parity; `migration/` updated
+extensively (see above); this file and `CHANGELOGS.MD` updated.
+
 ## Docs expectations for this repo
 
 Use docs by audience:

@@ -6,6 +6,36 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### August 12, 2026
+
+- Added artifact verification as a fact separate from migration status: a new `artifact_verifications`
+  table records whether an artifact's own output was checked, by what method, and why (or why not),
+  through a bounded per-artifact check (stack-pack `verify:` block) scoped to the claim's own outputs
+  plus one hop of declared dependencies — never the transitive closure, never gating the status
+  transition, and never able to satisfy the arbitration gate. `guildctl status` and `registry
+  list-verification` surface the verified/unverified/verification-failed split.
+- Added `guildctl preflight`, which resolves the runtime path a phase run would actually take
+  (`resolveAgentLaunch()`, shared with the runner) and proves it with one live minimal completion
+  request before any artifact is claimed; `doctor` and `auto-run` now delegate to it instead of
+  separate harness/credential-only checks.
+- Added `guildctl limits`, reporting each phase's effective wall-clock ceiling and inactivity timeout
+  through a single four-tier precedence resolver (`resolveEffectiveLimit()`): per-phase setting →
+  environment override → project configuration → built-in default. Termination messages now name the
+  knob that actually governed instead of always suggesting `agent_limits.ceiling_seconds`.
+- Added attempt-outcome recording: `runs` gained `files_written_count`/`files_written_source`,
+  `status_from`/`status_to`, `budget_consumed`, `cleanup_outcome`/`survivor_pids`, and a computed
+  `outcome_label` (never agent-supplied). `registry show-no-progress-attempts` and a `guildctl status`
+  repeat-waste line surface artifacts with repeated no-progress attempts.
+- Changed process termination so an attempt's whole process tree is terminated, not only its direct
+  child: agents now spawn as process-group leaders and a kill escalates graceful → forced → confirmed
+  (`terminateProcessGroup()`), covering both the manual runner and the autonomous worker/reviewer
+  spawns. Any survivor is reported as a cleanup failure naming its PID; the claim is still released.
+- Added `registry get-context`, returning usable context whenever a record exists — the stored file
+  when it resolves on this host (normalizing stored path separators and rebuilding the canonical
+  `migration/artifacts/<slug>/context/<agent>.md` layout when the stored path does not), otherwise the
+  stored summary, always labelled by a `form` field. `get-context-path` is re-pointed at the same
+  resolver; the four context-consuming packaged agents were updated to use it.
+
 ### August 2, 2026
 
 - Changed environment loading so the workspace `.env` wins over inherited values by default, with
