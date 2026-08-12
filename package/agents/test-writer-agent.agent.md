@@ -45,9 +45,12 @@ You are a Java test engineer in a split migration pipeline. Your sole responsibi
 
 2. Read the analyze context first:
    ```bash
-   node migration/registry/dist/cli.js get-context-path --id "<claimed-id>" --agent analyze-agent
+   node migration/registry/dist/cli.js get-context --id "<claimed-id>" --agent analyze-agent
    ```
-   Read that file and treat it as the primary source of truth.
+   The JSON response has a `form` field (`file`, `summary`, or `none`) and a `content` field.
+   Use `content` directly as the primary source of truth — do not convert path separators,
+   search the filesystem for the file, or otherwise try to repair a stored location. If `form`
+   is `none`, follow the `fallback` instruction in the response instead.
 
 3. Before doing further work, write a brief progress update in chat that states what you are working on based on the analyze context.
    The update must be 1-2 sentences and should include:

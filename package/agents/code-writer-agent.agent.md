@@ -46,8 +46,12 @@ You are a Java migration engineer in a split migration pipeline. Your sole respo
 
 2. Read the analyze context for the claimed artifact first:
   ```bash
-  node migration/registry/dist/cli.js get-context-path --id "<id>" --agent analyze-agent
+  node migration/registry/dist/cli.js get-context --id "<id>" --agent analyze-agent
   ```
+  The JSON response has a `form` field (`file`, `summary`, or `none`) and a `content` field.
+  Use `content` directly as the context — do not convert path separators, search the filesystem
+  for the file, or otherwise try to repair a stored location. If `form` is `none`, follow the
+  `fallback` instruction in the response instead.
   Treat that context as the high-level behavioral summary of the artifact.
 
 3. Read the legacy source file from `legacy/`.
