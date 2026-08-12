@@ -384,7 +384,7 @@ function closeOutReviewError(
   process.stderr.write(
     `[guildctl] ${opts.artifactId} review attempt closed — claim: released, retryable; process cleanup: ${
       cleanupOutcome === "survivors" ? `FAILED — ${survivorPids.length} survivor(s) (pid ${survivorPids.join(", ")})` : `${cleanupOutcome} (0 survivors)`
-    }\n`,
+    }; provider budget: consumed — this spend is not recovered\n`,
   );
   finishRun(db, {
     runId,
@@ -392,6 +392,11 @@ function closeOutReviewError(
     reason: message,
     filesWrittenCount: 0,
     filesWrittenSource,
+    // A reviewer invocation that reached this point actually launched a
+    // provider request; autonomous workers do not (yet) plumb per-attempt
+    // token usage the way the manual runner's usage file does, so this is
+    // the honest conservative default: assume spend, never claim recovery.
+    budgetConsumed: 1,
     cleanupOutcome,
     survivorPids: survivorPids.length > 0 ? survivorPids : null,
     statusFrom,
@@ -644,7 +649,7 @@ export async function runAuto(
             workerCleanupOutcome === "survivors"
               ? `FAILED — ${workerSurvivorPids.length} survivor(s) (pid ${workerSurvivorPids.join(", ")})`
               : `${workerCleanupOutcome} (0 survivors)`
-          }\n`,
+          }; provider budget: consumed — this spend is not recovered\n`,
         );
         finishRun(db, {
           runId,
@@ -654,6 +659,10 @@ export async function runAuto(
           filesWrittenSource: "warden-snapshot",
           statusFrom: fromStatus,
           statusTo: statusToRow?.status ?? fromStatus,
+          // See closeOutReviewError: autonomous workers do not yet plumb
+          // per-attempt token usage; a worker that reached this point
+          // actually ran, so the honest conservative default is "consumed".
+          budgetConsumed: 1,
           cleanupOutcome: workerCleanupOutcome,
           survivorPids: workerSurvivorPids.length > 0 ? workerSurvivorPids : null,
           outcomeLabel,
