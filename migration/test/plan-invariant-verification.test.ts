@@ -257,9 +257,9 @@ test("existing stack mappings are reused without rerunning stack-advisor", async
   const root = fixtureRoot();
   const ids = registerArtifacts(db, 10);
   createMapping(db, {
-    legacy_framework: "javax.servlet",
-    target_framework: "jakarta.servlet",
-    strategy: "rewrite",
+    legacy_framework: "plain-java",
+    target_framework: "plain-java",
+    strategy: "direct",
     notes: "already reviewed",
   });
   const agents: string[] = [];

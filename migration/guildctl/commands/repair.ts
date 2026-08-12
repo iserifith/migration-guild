@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { reapDeadRuns } from "../../registry/commands/runs";
+import { reapDeadRuns, isProcessAlive } from "../../registry/commands/runs";
 import { reconcileStaleClaims } from "../../registry/commands/claim";
 import { releaseTask } from "../../registry/commands/artifacts";
 import { setNext } from "../../registry/commands/operator";
@@ -93,13 +93,13 @@ export function runRepair(db: Database.Database, opts: RepairOpts = {}): void {
   process.stdout.write("\n  Reconciling stale claims...\n");
   let reconciledCount = 0;
   if (!dryRun) {
-    const recovered = reconcileStaleClaims(db, "guildctl-repair");
+    const recovered = reconcileStaleClaims(db, "guildctl-repair", opts.wave);
     reconciledCount = recovered.length;
     for (const artifact of recovered) {
       console.log(`  ${GREEN}↻${R} ${artifact.id} returned to ${YELLOW}${artifact.status}${R}`);
     }
   } else {
-    const recovered = reconcileStaleClaimsDryRun(db);
+    const recovered = reconcileStaleClaimsDryRun(db, opts.wave);
     reconciledCount = recovered.length;
     for (const artifact of recovered) {
       console.log(`  ${DIM}↻ (dry-run)${R} ${artifact.id} would return to ${artifact.status}`);
@@ -254,7 +254,7 @@ function reapDeadRunsDryRun(db: Database.Database): DeadRunLike[] {
 
   const STALE_RUN_MINUTES = parseInt(process.env["GUILDCTL_STALE_RUN_MINUTES"] ?? "10", 10);
   return rows
-    .filter((row) => row.pid == null && row.age_minutes >= STALE_RUN_MINUTES)
+    .filter((row) => (row.pid != null && !isProcessAlive(row.pid)) || (row.pid == null && row.age_minutes >= STALE_RUN_MINUTES))
     .map((row) => ({
       run_id: row.run_id,
       agent: row.agent,
@@ -267,18 +267,20 @@ interface ArtifactLike {
   status: string;
 }
 
-function reconcileStaleClaimsDryRun(db: Database.Database): ArtifactLike[] {
+function reconcileStaleClaimsDryRun(db: Database.Database, wave?: number): ArtifactLike[] {
   const { now } = db.prepare("SELECT datetime('now') AS now").get() as { now: string };
   const rows = db.prepare(`
     SELECT c.artifact_id AS id, c.from_status AS status
     FROM artifact_claims c
     LEFT JOIN runs r ON r.run_id = c.run_id
+    JOIN artifacts a ON a.id = c.artifact_id
     WHERE c.state = 'active'
+      AND (@wave IS NULL OR a.wave = @wave)
       AND (
         c.lease_expires_at <= @now
         OR (c.run_id IS NOT NULL AND (r.run_id IS NULL OR r.status != 'running'))
       )
     ORDER BY c.claimed_at ASC
-  `).all({ now }) as ArtifactLike[];
+  `).all({ now, wave: wave ?? null }) as ArtifactLike[];
   return rows;
 }
