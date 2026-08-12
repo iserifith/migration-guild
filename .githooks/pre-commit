@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# migration-guild pre-commit gate
+# 1. Block secrets in staged changes
+# 2. Block direct commits to protected branches (use a feature branch)
+# 3. Run build + tests (repo verify commands: npm run build / npm run test)
+set -u
+
+fail() { echo "pre-commit: FAIL: $*" >&2; exit 1; }
+
+branch="$(git symbolic-ref --short HEAD 2>/dev/null || echo detached)"
+
+# --- 2. Protected branches ------------------------------------------------
+case "$branch" in
+  main|master)
+    fail "direct commits to '$branch' are blocked; create a feature branch (or commit with --no-verify to bypass)"
+    ;;
+esac
+
+# --- 1. Secret scan on staged diff ---------------------------------------
+staged="$(git diff --cached --diff-filter=ACMR -U0 2>/dev/null || true)"
+if [ -n "$staged" ]; then
+  hits="$(printf '%s\n' "$staged" | grep '^+' | grep -v '^+++' \
+    | grep -inE '(api[_-]?key|secret|password|passwd|token|private[_-]?key)\s*[:=]\s*["'"'"'][^"'"'"']{8,}["'"'"']' \
+    | grep -ivE '(process\.env|env\.|example|placeholder|dummy|changeme|your-|<[A-Z_]+>|\$\{)' || true)"
+  if [ -n "$hits" ]; then
+    echo "pre-commit: possible hardcoded secret(s) in staged changes:" >&2
+    printf '%s\n' "$hits" | head -10 >&2
+    fail "remove the secret or commit with --no-verify if it is a false positive"
+  fi
+
+  # PEM / private key blocks
+  if printf '%s\n' "$staged" | grep '^+' | grep -q 'BEGIN [A-Z ]*PRIVATE KEY'; then
+    fail "private key material in staged changes"
+  fi
+fi
+
+# --- 3. Build + tests -----------------------------------------------------
+echo "pre-commit: running build..."
+npm run build --silent || fail "npm run build failed"
+
+echo "pre-commit: running tests..."
+npm run test --silent || fail "npm run test failed"
+
+echo "pre-commit: OK"
+exit 0
