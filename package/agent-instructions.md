@@ -73,6 +73,29 @@ actually know:
 - Valid reasons: `not-attempted`, `no-stack-check`, `tree-incomplete`, `budget-exhausted`,
   `agent-reported-unverifiable`, `check-failed`, `check-error`.
 
+## Closing an Attempt Honestly
+
+`guildctl` computes the outcome label for your attempt (`succeeded`, `released-retryable`,
+`no-progress`, `failed`) from recorded state — you never choose it, and you cannot make an
+attempt read as more successful than it was. When your work is released back to the queue
+(a claim you did not finalize with `set-artifact-status`), that release is **never** proof
+the attempt succeeded — it only means the work is safe to retry. An honest close-out states
+five facts together, all of them answerable from the registry without reading logs:
+
+1. **Files written** — what you actually changed, not what you intended to change.
+2. **Artifact status transition** — the status before your attempt and after it; if they
+   are the same, nothing advanced, no matter what you did in between.
+3. **Verification state** — see "Reporting Verification" above; stated separately from
+   migration status.
+4. **Claim disposition** — finalized, or released for retry.
+5. **Terminal reason** — why the attempt ended, in your own words if it was not a clean
+   finish.
+
+If you are terminated by a time limit before finishing, that is not a failure you need to
+apologize for — it is bounded by design. But do not finalize a claim as `migrated` for work
+you did not actually complete just to avoid a `no-progress` or `released-retryable` outcome;
+the label is derived from what you actually wrote and changed, not from what you report.
+
 ## Agent Rules
 
 - `legacy/` is **read-only** — never modify files here

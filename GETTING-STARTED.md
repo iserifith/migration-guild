@@ -71,6 +71,18 @@ ambient `AGENT_CMD`; this can change which harness is launched.
 
 ---
 
+### Effective time limits
+
+Each phase's wall-clock ceiling and inactivity timeout resolve through one precedence order,
+first match wins: **per-phase setting → environment override → project configuration → built-in
+default**. Run `node __MIGRATION_GUILDCTL__/dist/cli.js limits` to see, per phase, which knob
+governs, the effective value, and whether a floor was applied (5 minutes for analyze/test/
+code-writing/remediation, 1 minute for review/inventory). A kill message always names the knob
+that actually fired, so raising the wrong setting never silently does nothing. This is unrelated
+to `auto-run --limit <n>`, which bounds the number of artifacts processed, not time.
+
+---
+
 ## Run the pipeline
 
 ```bash
