@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
 import { enforceWardenSnapshot, snapshotWorkspaceForWarden, snapshotWorkspaceForWardenWithExclusions } from "../guildctl/warden";
+import { expandWardenExclusions } from "../guildctl/runner";
 import { registerArtifact } from "../registry/commands/artifacts";
 import { applySchema } from "../registry/db/schema";
 
@@ -121,5 +122,154 @@ test("filesystem warden excludes exact active registry DB sidecars while protect
   } finally {
     db.close();
     fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("filesystem warden excludes a runner-owned log directory subtree", () => {
+  const db = createDb();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-warden-logs-"));
+  try {
+    const logDir = path.join(workspace, "migration", "logs");
+    fs.mkdirSync(logDir, { recursive: true });
+    fs.mkdirSync(path.join(workspace, "legacy"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "legacy", "Forbidden.java"), "original\n");
+    registerArtifact(db, {
+      id: "legacy-source:com.acme:WardenLogs",
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/WardenLogs.java",
+    });
+
+    const snapshot = snapshotWorkspaceForWardenWithExclusions(workspace, [logDir]);
+    fs.writeFileSync(path.join(logDir, "worker-a.log"), "worker a\n");
+    fs.mkdirSync(path.join(logDir, "nested"), { recursive: true });
+    fs.writeFileSync(path.join(logDir, "nested", "worker-b.log"), "worker b\n");
+    fs.writeFileSync(path.join(workspace, "legacy", "Forbidden.java"), "tampered\n");
+
+    const result = enforceWardenSnapshot(db, {
+      artifactId: "legacy-source:com.acme:WardenLogs",
+      workspaceRoot: workspace,
+      snapshot,
+      allowedPaths: [],
+      excludedPaths: [logDir],
+      agent: "guildctl-warden",
+    });
+
+    assert.equal(result.clean, false);
+    assert.deepEqual(result.violations.map((v) => v.path), ["legacy/Forbidden.java"]);
+    assert.equal(fs.readFileSync(path.join(logDir, "worker-a.log"), "utf8"), "worker a\n");
+    assert.equal(fs.readFileSync(path.join(logDir, "nested", "worker-b.log"), "utf8"), "worker b\n");
+    assert.equal(fs.readFileSync(path.join(workspace, "legacy", "Forbidden.java"), "utf8"), "original\n");
+  } finally {
+    db.close();
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("filesystem warden preserves registry-owned migration artifact context", () => {
+  const db = createDb();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-warden-context-"));
+  try {
+    const contextDir = path.join(workspace, "nested-package", "migration", "artifacts", "artifact-one", "context");
+    fs.mkdirSync(contextDir, { recursive: true });
+    registerArtifact(db, {
+      id: "legacy-source:com.acme:ContextOwner",
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/ContextOwner.java",
+    });
+
+    const snapshot = snapshotWorkspaceForWarden(workspace);
+    const contextFile = path.join(contextDir, "analyze-agent.md");
+    fs.writeFileSync(contextFile, "## Summary\ncontext\n");
+
+    const result = enforceWardenSnapshot(db, {
+      artifactId: "legacy-source:com.acme:ContextOwner",
+      workspaceRoot: workspace,
+      snapshot,
+      allowedPaths: [],
+      agent: "guildctl-warden",
+    });
+
+    assert.equal(result.clean, true);
+    assert.equal(fs.readFileSync(contextFile, "utf8"), "## Summary\ncontext\n");
+  } finally {
+    db.close();
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("filesystem warden preserves output paths sanctioned by parallel claims", () => {
+  const db = createDb();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-warden-parallel-"));
+  try {
+    fs.mkdirSync(path.join(workspace, "modern"), { recursive: true });
+    registerArtifact(db, {
+      id: "legacy-source:com.acme:Current",
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/Current.java",
+    });
+    registerArtifact(db, {
+      id: "legacy-source:com.acme:Sibling",
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/Sibling.java",
+    });
+    db.prepare(`
+      INSERT INTO artifact_claims (
+        claim_id, artifact_id, owner_id, agent, from_status, claim_token,
+        state, attempt_no, expected_output_paths, claimed_at, lease_expires_at
+      ) VALUES (
+        'claim-sibling', 'legacy-source:com.acme:Sibling', 'sibling-owner',
+        'test-writer-agent', 'analyzed', 'token-sibling', 'completed', 1,
+        '["modern/SiblingTest.java"]', datetime('now'), datetime('now', '+30 minutes')
+      )
+    `).run();
+
+    const snapshot = snapshotWorkspaceForWarden(workspace);
+    fs.writeFileSync(path.join(workspace, "modern", "SiblingTest.java"), "sanctioned\n");
+    fs.writeFileSync(path.join(workspace, "modern", "Unauthorized.java"), "unauthorized\n");
+
+    const result = enforceWardenSnapshot(db, {
+      artifactId: "legacy-source:com.acme:Current",
+      workspaceRoot: workspace,
+      snapshot,
+      allowedPaths: [],
+      agent: "guildctl-warden",
+    });
+
+    assert.equal(result.clean, false);
+    assert.deepEqual(result.violations.map((v) => v.path), ["modern/Unauthorized.java"]);
+    assert.equal(fs.readFileSync(path.join(workspace, "modern", "SiblingTest.java"), "utf8"), "sanctioned\n");
+    assert.equal(fs.existsSync(path.join(workspace, "modern", "Unauthorized.java")), false);
+  } finally {
+    db.close();
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("runner expands a junction log path to its canonical target", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "guild-warden-junction-"));
+  try {
+    const realMigration = path.join(root, "migration-guild-src", "migration");
+    const realLogs = path.join(realMigration, "logs");
+    const migrationAlias = path.join(root, "migration");
+    fs.mkdirSync(realLogs, { recursive: true });
+    fs.symlinkSync(realMigration, migrationAlias, "junction");
+
+    const aliasLogs = path.join(migrationAlias, "logs");
+    const exclusions = expandWardenExclusions([aliasLogs]);
+
+    assert.ok(exclusions.includes(path.resolve(aliasLogs)));
+    assert.ok(exclusions.includes(fs.realpathSync.native(realLogs)));
+
+    const snapshot = snapshotWorkspaceForWardenWithExclusions(root, exclusions);
+    fs.writeFileSync(path.join(realLogs, "concurrent-worker.log"), "still here\n");
+    const after = snapshotWorkspaceForWardenWithExclusions(root, exclusions);
+    assert.deepEqual([...after.files.keys()], [...snapshot.files.keys()]);
+    assert.equal(fs.readFileSync(path.join(realLogs, "concurrent-worker.log"), "utf8"), "still here\n");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });

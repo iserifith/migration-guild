@@ -164,6 +164,26 @@ test("stale active claims warn with owner and age", () => {
   }
 });
 
+test("recent SQLite UTC timestamps without a timezone suffix are not stale", () => {
+  const db = createDb();
+  const root = fixtureRoot();
+  try {
+    const id = addArtifact(db, 4);
+    const sqliteNow = new Date().toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "");
+    db.prepare(`
+      INSERT INTO artifact_claims (claim_id, artifact_id, owner_id, agent, from_status, claim_token, state, attempt_no, claimed_at, heartbeat_at, lease_expires_at)
+      VALUES ('claim-live', ?, 'worker-live', 'analyze-agent', 'pending', 'tok', 'active', 1, ?, ?, ?)
+    `).run(id, sqliteNow, sqliteNow, sqliteNow);
+
+    const result = check(db, root);
+    assert.ok(result.some((r) => r.status === "pass" && /1 active claim.*none stale/.test(r.message)), messages(result));
+    assert.equal(result.some((r) => /dangling active claim/.test(r.message)), false, messages(result));
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("unclassified and fallback-heavy registries warn without failing", () => {
   const db = createDb();
   const root = fixtureRoot();

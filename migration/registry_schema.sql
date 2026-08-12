@@ -95,6 +95,12 @@ CREATE TABLE IF NOT EXISTS source_dependencies (
     PRIMARY KEY (dependent_id, dependency_id, signal)
 );
 
+-- Claim ordering (claimNextTask) aggregates in-degree per dependency_id on
+-- every claim; the PK above leads with dependent_id, so without this index
+-- each claim is a full scan of source_dependencies.
+CREATE INDEX IF NOT EXISTS idx_source_dependencies_dependency
+    ON source_dependencies(dependency_id);
+
 -- ─── Event Log (append-only) ─────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS events (
