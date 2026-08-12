@@ -8,8 +8,6 @@ import { reapDeadRuns } from "../../registry/commands/runs";
 import { requireNonEmptyRegistry } from "../readiness";
 import { resolveAndReportRuntime } from "../runtime-report";
 
-const REVIEW_TIMEOUT_MINUTES = Math.max(1, parseInt(process.env["GUILDCTL_REVIEW_TIMEOUT_MINS"] ?? "10", 10));
-
 interface ReviewCandidate {
   id: string;
   path: string;
@@ -146,8 +144,7 @@ export async function runReview(
             db,
             logDir,
             phase: "review",
-            timeoutMs: REVIEW_TIMEOUT_MINUTES * 60_000,
-            resolution: runtime,
+                        resolution: runtime,
           })
         );
         const results = await Promise.all(procs);

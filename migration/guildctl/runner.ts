@@ -6,14 +6,16 @@ import * as path from "path";
 import { Transform } from "stream";
 import type Database from "better-sqlite3";
 import type { PhaseKey } from "./config";
-import { resolveGuildConfig, resolveWorkspaceRoot } from "./config";
+import { resolveGuildConfig, resolveTerminationGraceMs, resolveWorkspaceRoot } from "./config";
 import { resolveAgentLaunch, type ResolvedRuntimeConfig } from "./harness";
-import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions, transientWardenExclusions, type WardenSnapshot } from "./warden";
+import { formatLimitTerminationNote, resolveEffectiveLimit, LIMIT_PRECEDENCE_ORDER, type EffectiveLimit } from "./limits";
+import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions, transientWardenExclusions, type WardenFileSnapshot, type WardenSnapshot } from "./warden";
 import { formatVerificationCloseOut, verifyAtClaimClose } from "./verify";
+import { signalProcessGroup, terminateProcessGroup, type ProcessGroupTerminationResult } from "./util";
 import { releaseClaimedArtifactsForOwner } from "../registry/commands/artifacts";
 import { createRunOperatorCredential, releaseClaimsForRun } from "../registry/commands/claim";
 import { startRun, finishRun, setRunPid, type RunTokenUsage } from "../registry/commands/runs";
-import type { VerificationRecord } from "../registry/types";
+import type { FilesWrittenSource, OutcomeLabel, VerificationRecord } from "../registry/types";
 
 export interface SpawnAgentOpts {
   agent: string;
@@ -29,6 +31,13 @@ export interface SpawnAgentOpts {
   releaseClaimsOnFailure?: boolean;
   preClaim?: PreClaimOpts;
   runId?: string;
+  /**
+   * Which phase's effective limit governs this attempt (T045). Defaults to
+   * `phase`. Distinct from `phase` because a command may label its run one
+   * way (e.g. remediation runs are logged under phase "review") while its
+   * limit knob belongs to a different phase (e.g. "remediation").
+   */
+  limitPhase?: string;
   /**
    * The launch the phase entry resolved and reported (FR-024). When supplied,
    * this helper uses it as given and merges only run-scoped variables onto its
@@ -155,6 +164,49 @@ export function snapshotChangedFiles(root: string): Set<string> {
 function getNewlyWrittenFiles(root: string, before: Set<string>): string[] {
   const after = snapshotChangedFiles(root);
   return [...after].filter((f) => !before.has(f)).sort();
+}
+
+/**
+ * Files created or modified between two warden snapshots (research R10). More
+ * accurate than a git diff and already paid for by every pre-claimed run —
+ * unlike `snapshotChangedFiles`, it does not silently report zero in a
+ * non-git workspace.
+ */
+function wardenWrittenFiles(before: WardenSnapshot, after: WardenSnapshot): string[] {
+  const written: string[] = [];
+  for (const [file, current] of after.files as Map<string, WardenFileSnapshot>) {
+    const prior = before.files.get(file);
+    if (!prior || prior.sha256 !== current.sha256) written.push(file);
+  }
+  return written.sort();
+}
+
+/**
+ * `outcome_label` derivation (data-model.md §2, FR-031): computed, never
+ * chosen by an agent. `no-progress` requires both zero files written and no
+ * status advance; a terminated attempt that wrote files, or whose file count
+ * is unavailable, is `released-retryable` instead — never a success-equivalent
+ * label for a no-progress termination.
+ */
+export function deriveOutcomeLabel(input: {
+  exitCode: number;
+  limitKilled: boolean;
+  statusFrom: string | null;
+  statusTo: string | null;
+  filesWrittenCount: number | null;
+  filesWrittenSource: FilesWrittenSource;
+  wardenClean: boolean;
+}): OutcomeLabel {
+  const advanced = input.statusFrom != null && input.statusTo != null && input.statusFrom !== input.statusTo;
+  if (input.limitKilled) {
+    if (input.filesWrittenSource === "unavailable") return "released-retryable";
+    if ((input.filesWrittenCount ?? 0) === 0 && !advanced) return "no-progress";
+    return "released-retryable";
+  }
+  if (input.exitCode === 0 && advanced && input.wardenClean) return "succeeded";
+  if (input.exitCode !== 0 && !input.wardenClean) return "failed";
+  if (input.exitCode !== 0) return "failed";
+  return "released-retryable";
 }
 
 function writeLogLine(stream: fs.WriteStream | undefined, line: string): void {
@@ -461,13 +513,28 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   const agentEnv = opts.resolution
     ? { ...opts.resolution.agentEnv, ...runScopedEnv }
     : resolveAgentLaunch({ config, root: projectRoot, model, extraEnv: runScopedEnv }).agentEnv;
+  // R8/FR-035: spawn as a process-group leader so terminating this attempt can
+  // reach the whole tree it started, not only this direct child (which for
+  // every bundled harness is itself a shim that spawns the real binary).
   const proc = spawn(agentSpawn.command, agentSpawn.args, {
     cwd: projectRoot,
     env: agentEnv,
     stdio: logStream ? ["ignore", "pipe", "pipe"] : "inherit",
     shell: agentSpawn.shell,
+    detached: true,
   });
   setRunPid(db, run.run_id, proc.pid ?? null);
+
+  // A detached child no longer receives the terminal's SIGINT, so operator
+  // Ctrl-C must be forwarded into the group or the tree would keep running.
+  const onOperatorSigint = () => signalProcessGroup(proc.pid, "graceful");
+  const onOperatorSigterm = () => signalProcessGroup(proc.pid, "graceful");
+  process.on("SIGINT", onOperatorSigint);
+  process.on("SIGTERM", onOperatorSigterm);
+  const stopForwardingOperatorSignals = (): void => {
+    process.off("SIGINT", onOperatorSigint);
+    process.off("SIGTERM", onOperatorSigterm);
+  };
 
   if (logStream && proc.stdout && proc.stderr) {
     proc.stdout.pipe(createTimestampTransform()).pipe(logStream, { end: false });
@@ -494,9 +561,10 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
     let inactivityKilled = false;
     let ceilingKilled = false;
     let timeoutHandle: NodeJS.Timeout | undefined;
-    let killHandle: NodeJS.Timeout | undefined;
     let claimWatchHandle: NodeJS.Timeout | undefined;
     let claimIntroWritten = false;
+    let firingLimit: EffectiveLimit | undefined;
+    let terminationPromise: Promise<ProcessGroupTerminationResult> | undefined;
 
     if (logStream) {
       claimWatchHandle = setInterval(() => {
@@ -527,6 +595,7 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
     const completeRun = async (exitCode: number): Promise<void> => {
       clearLivelinessTimers();
       let finalExitCode = exitCode;
+      let wardenClean = true;
       try {
         if (preClaimedArtifactId && wardenSnapshot) {
           const warden = enforceWardenSnapshot(db, {
@@ -539,6 +608,7 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
             claimId: preClaimId ?? null,
             runId: run.run_id,
           });
+          wardenClean = warden.clean;
           if (!warden.clean) {
             finalExitCode = 1;
             const msg = `[guildctl] filesystem warden restored ${warden.violations.length} unauthorized change(s); marking run failed`;
@@ -591,12 +661,13 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
         process.stderr.write(msg + "\n");
         writeLogLine(logStream, msg);
       }
+      const limitKilled = inactivityKilled || ceilingKilled;
       const terminationReason = timedOut
         ? `${agent} timed out`
-        : inactivityKilled
-          ? `${agent} killed: no activity for ${Math.round((opts.inactivityTimeoutMs ?? config.agent_limits.inactivity_timeout_seconds * 1000) / 1000)}s (last activity after ${Math.round((Date.now() - lastActivityMs) / 1000)}s of silence)`
-          : ceilingKilled
-            ? `${agent} killed: exceeded wall-clock ceiling ${Math.round((opts.timeoutMs ?? config.agent_limits.ceiling_seconds * 1000) / 1000)}s (still active)`
+        : inactivityKilled && firingLimit
+          ? `${agent} killed: no activity for ${Math.round(firingLimit.effectiveValueMs / 1000)}s (last activity after ${Math.round((Date.now() - lastActivityMs) / 1000)}s of silence); ${formatLimitTerminationNote(firingLimit)}`
+          : ceilingKilled && firingLimit
+            ? `${agent} killed: exceeded wall-clock ceiling ${Math.round(firingLimit.effectiveValueMs / 1000)}s (still active); ${formatLimitTerminationNote(firingLimit)}`
             : finalExitCode === 0
               ? undefined
               : `${agent} exited with code ${finalExitCode}`;
@@ -622,11 +693,62 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
         }
       }
 
+      // Process-tree cleanup (FR-035–FR-039): a released claim is never
+      // reported alone — the cleanup outcome always accompanies it. Claim
+      // recoverability outranks cleanup completeness, so cleanup failure never
+      // blocks the claim release above.
+      const cleanupResult: ProcessGroupTerminationResult = terminationPromise
+        ? await terminationPromise
+        : { cleanupOutcome: "not-applicable", survivorPids: [], escalated: false };
+      stopForwardingOperatorSignals();
+
+      // Files-written count (FR-030, research R10): prefer the warden snapshot
+      // diff, already paid for by every pre-claimed run; fall back to git diff
+      // only when no warden snapshot exists; never silently report a false zero.
+      let filesWrittenCount: number | null = null;
+      let filesWrittenSource: FilesWrittenSource = "unavailable";
+      let writtenFileNames: string[] = [];
+      if (preClaimedArtifactId && wardenSnapshot) {
+        const afterSnapshot = snapshotWorkspaceForWardenWithExclusions(projectRoot, wardenExcludedPaths);
+        writtenFileNames = wardenWrittenFiles(wardenSnapshot, afterSnapshot);
+        filesWrittenCount = writtenFileNames.length;
+        filesWrittenSource = "warden-snapshot";
+      } else if (isGitWorktree(projectRoot)) {
+        writtenFileNames = getNewlyWrittenFiles(projectRoot, beforeFiles);
+        filesWrittenCount = writtenFileNames.length;
+        filesWrittenSource = "git-diff";
+      }
+
+      const statusFrom = preClaimedArtifactId ? (opts.preClaim?.fromStatus ?? null) : null;
+      const statusTo = preClaimedArtifactId
+        ? ((db.prepare("SELECT status FROM artifacts WHERE id = ?").get(preClaimedArtifactId) as { status: string } | undefined)?.status ?? null)
+        : null;
+      const budgetConsumed: 0 | 1 = tokenUsage && tokenUsage.total > 0 ? 1 : 0;
+      const outcomeLabel: OutcomeLabel | undefined = preClaimedArtifactId
+        ? deriveOutcomeLabel({
+          exitCode: finalExitCode,
+          limitKilled,
+          statusFrom,
+          statusTo,
+          filesWrittenCount,
+          filesWrittenSource,
+          wardenClean,
+        })
+        : undefined;
+
       finishRun(db, {
         runId: run.run_id,
         exitCode: finalExitCode,
         reason: terminationReason,
         tokenUsage,
+        filesWrittenCount: preClaimedArtifactId ? filesWrittenCount : null,
+        filesWrittenSource: preClaimedArtifactId ? filesWrittenSource : null,
+        statusFrom,
+        statusTo,
+        budgetConsumed: preClaimedArtifactId ? budgetConsumed : null,
+        cleanupOutcome: cleanupResult.cleanupOutcome,
+        survivorPids: cleanupResult.survivorPids.length > 0 ? cleanupResult.survivorPids : null,
+        outcomeLabel,
       });
 
       const result = {
@@ -649,11 +771,11 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
               : finalExitCode === 0
                 ? "SUCCESS"
                 : "FAILED";
-        const written = getNewlyWrittenFiles(projectRoot, beforeFiles);
-        const filesBlock =
-          written.length > 0
-            ? [`Files written (${written.length}):`, ...written.map((f) => `  ${f}`)]
-            : ["Files written: (none)"];
+        const filesBlock = filesWrittenSource === "unavailable"
+          ? ["Files written: unavailable (no warden snapshot or git worktree)"]
+          : writtenFileNames.length > 0
+            ? [`Files written (${writtenFileNames.length}, source: ${filesWrittenSource}):`, ...writtenFileNames.map((f) => `  ${f}`)]
+            : [`Files written: 0 (source: ${filesWrittenSource})`];
         const claimBlock = getRunClaimLines(db, run.run_id);
         // Verification is stated in the same close-out block as migration
         // status, and separately from it: an artifact can be migrated and
@@ -661,6 +783,17 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
         const verificationBlock = verification
           ? [`Verification: ${formatVerificationCloseOut(verification)}`]
           : [];
+        const cleanupLine = cleanupResult.cleanupOutcome === "survivors"
+          ? `Process cleanup: FAILED — ${cleanupResult.survivorPids.length} survivor(s) (pid ${cleanupResult.survivorPids.join(", ")})`
+          : `Process cleanup: ${cleanupResult.cleanupOutcome} (0 survivors)`;
+        const outcomeBlock = outcomeLabel
+          ? [
+            `Outcome: ${outcomeLabel === "no-progress" ? "NO PROGRESS" : outcomeLabel}`,
+            `Artifact status: ${statusFrom ?? "?"} -> ${statusTo ?? "?"}${statusFrom === statusTo ? " (unchanged)" : ""}`,
+            cleanupLine,
+            `Provider budget: ${budgetConsumed ? "consumed — this spend is not recovered" : "not consumed"}`,
+          ]
+          : [cleanupLine];
         logStream.end(
           [
             "",
@@ -672,6 +805,7 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
             ...formatTokenUsageLines(tokenUsage),
             ...claimBlock,
             ...verificationBlock,
+            ...outcomeBlock,
             ...filesBlock,
             LOG_SEP,
             "",
@@ -683,47 +817,43 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
       }
     };
 
-    // TASK-07: liveliness limits. Resolve inactivity + ceiling windows:
-    //   - explicit per-call opts win, then env override, then config default.
-    //   - inactivityMs default 120s, ceilingMs default 1800s (config).
-    const inactivityMs =
-      opts.inactivityTimeoutMs ??
-      (process.env.GUILDCTL_INACTIVITY_TIMEOUT_SECONDS
-        ? Number(process.env.GUILDCTL_INACTIVITY_TIMEOUT_SECONDS) * 1000
-        : config.agent_limits.inactivity_timeout_seconds * 1000);
-    const ceilingMs =
-      opts.timeoutMs ??
-      (process.env.GUILDCTL_AGENT_CEILING_SECONDS
-        ? Number(process.env.GUILDCTL_AGENT_CEILING_SECONDS) * 1000
-        : config.agent_limits.ceiling_seconds * 1000);
+    // TASK-07/T045-T047: liveliness limits, resolved through the single
+    // EffectiveLimit descriptor. An explicit per-call opts.timeoutMs/
+    // inactivityTimeoutMs (used by callers such as tests and benchmarks that
+    // pass a raw ms value) is honoured as a synthetic "per-phase-setting"
+    // descriptor, so the termination message is always sourced from a real
+    // descriptor even on that legacy path — never a knob that does not govern.
+    const limitPhaseName = String(opts.limitPhase ?? opts.phase ?? "unknown");
+    const ceilingLimit: EffectiveLimit = opts.timeoutMs != null
+      ? { phase: limitPhaseName, kind: "ceiling", knob: "timeoutMs (explicit)", effectiveValueMs: opts.timeoutMs, requestedValueMs: opts.timeoutMs, source: "per-phase-setting", floorApplied: false, precedenceOrder: LIMIT_PRECEDENCE_ORDER }
+      : resolveEffectiveLimit(limitPhaseName, "ceiling", config, process.env);
+    const inactivityLimit: EffectiveLimit = opts.inactivityTimeoutMs != null
+      ? { phase: limitPhaseName, kind: "inactivity", knob: "inactivityTimeoutMs (explicit)", effectiveValueMs: opts.inactivityTimeoutMs, requestedValueMs: opts.inactivityTimeoutMs, source: "per-phase-setting", floorApplied: false, precedenceOrder: LIMIT_PRECEDENCE_ORDER }
+      : resolveEffectiveLimit(limitPhaseName, "inactivity", config, process.env);
+    const inactivityMs = inactivityLimit.effectiveValueMs;
+    const ceilingMs = ceilingLimit.effectiveValueMs;
+    const terminationGraceMs = resolveTerminationGraceMs(config, process.env);
     const heartbeatMs = process.env.GUILDCTL_HEARTBEAT_SECONDS
       ? Number(process.env.GUILDCTL_HEARTBEAT_SECONDS) * 1000
       : 30000;
 
     const killAgent = (flag: "inactivity" | "ceiling"): void => {
       if (settled) return;
+      const limit = flag === "inactivity" ? inactivityLimit : ceilingLimit;
       if (flag === "inactivity") inactivityKilled = true;
       else ceilingKilled = true;
+      firingLimit = limit;
       const label = flag === "inactivity" ? "INACTIVITY" : "CEILING";
-      const secs = Math.round((flag === "inactivity" ? inactivityMs : ceilingMs) / 1000);
-      const msg = `[guildctl] ${agent} killed: ${label} after ${secs}s${flag === "inactivity" ? " (no observed output; last activity " + Math.round((Date.now() - lastActivityMs) / 1000) + "s ago)" : " (still active — raise agent_limits.ceiling_seconds to allow longer runs)"};`;
+      const secs = Math.round(limit.effectiveValueMs / 1000);
+      const detail = flag === "inactivity"
+        ? " (no observed output; last activity " + Math.round((Date.now() - lastActivityMs) / 1000) + "s ago)"
+        : " (still active)";
+      const msg = `[guildctl] ${agent} killed: ${label} after ${secs}s${detail}; ${formatLimitTerminationNote(limit)}`;
       process.stderr.write(msg + "\n");
       writeLogLine(logStream, msg);
-      try {
-        proc.kill("SIGTERM");
-      } catch {
-        finalize(124);
-        return;
-      }
-      killHandle = setTimeout(() => {
-        if (settled) return;
-        try {
-          proc.kill("SIGKILL");
-        } catch {
-          finalize(124);
-        }
-      }, 5000);
-      killHandle.unref?.();
+      // R8/FR-035–FR-038: terminate the whole process group this attempt
+      // started (graceful → forced → confirm), not only the direct child.
+      terminationPromise = terminateProcessGroup(proc.pid, { graceMs: terminationGraceMs });
     };
 
     // Inactivity watcher: only when output is observable (piped). A silent agent
@@ -775,14 +905,10 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
 
     const clearLivelinessTimers = (): void => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
-      if (killHandle) clearTimeout(killHandle);
       if (inactivityHandle) clearInterval(inactivityHandle);
       if (heartbeatHandle) clearInterval(heartbeatHandle);
       if (claimWatchHandle) clearInterval(claimWatchHandle);
     };
-    // Replace finalize's timer cleanup with the broader one.
-    const origFinalize = finalize;
-    void origFinalize;
 
     proc.on("exit", (code) => {
       finalize(inactivityKilled || ceilingKilled || timedOut ? 124 : (code ?? 1));

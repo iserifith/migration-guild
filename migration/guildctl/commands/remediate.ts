@@ -7,8 +7,7 @@ import { getLogDir } from "../util";
 import { loadConfig, resolvePhaseModel, resolveWorkspaceRoot } from "../config";
 import { getStatusCounts } from "../monitoring";
 import { resolveAndReportRuntime } from "../runtime-report";
-
-const REMEDIATION_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["GUILDCTL_REMEDIATION_TIMEOUT_MINS"] ?? "15", 10));
+import { resolveEffectiveLimit } from "../limits";
 
 const SUMMARY_STATUSES = [
   "planned",
@@ -83,7 +82,10 @@ export async function runRemediate(
 ): Promise<void> {
   const cfg = loadConfig();
   const model = opts.model ?? resolvePhaseModel("review", cfg);
-  const timeoutMins = Math.max(1, opts.timeoutMins ?? REMEDIATION_TIMEOUT_MINUTES);
+  // T045: the "remediation" limit phase is distinct from the "review" run
+  // label below (which categorizes the run for dashboards/logging only).
+  const remediationLimit = resolveEffectiveLimit("remediation", "ceiling", cfg, process.env);
+  const timeoutMins = opts.timeoutMins ?? Math.round(remediationLimit.effectiveValueMs / 60_000);
   const prompt = makeRemediationPrompt(opts.id, opts.prompt);
   const runAgent = deps.spawnAgent ?? spawnAgent;
   const poll = deps.startPolling ?? startPolling;
@@ -111,7 +113,8 @@ export async function runRemediate(
       db,
       logDir,
       phase: "review",
-      timeoutMs: timeoutMins * 60_000,
+      limitPhase: "remediation",
+      timeoutMs: opts.timeoutMins ? timeoutMins * 60_000 : undefined,
       releaseClaimsOnFailure: true,
       resolution: runtime,
     });
