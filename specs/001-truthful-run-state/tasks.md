@@ -273,10 +273,10 @@ labelled as such, with no path-repair work left to the caller.
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T067 [P] Record the run-lifecycle and claim-semantics changes, the new `migration/test/` suites, and the maintainer checklist answers in `DEVELOPMENT.md`
-- [ ] T068 [P] Add the remaining feature entries (verification state, preflight, limit precedence, process-tree termination, portable context) under `Unreleased` in `CHANGELOGS.MD`, grouped by a human-readable date heading
-- [ ] T069 [P] Extend the foundational parity assertion from T004 in `migration/test/stack-pack-engine.test.ts` to cover every future stack id and run it as the Phase 9 release gate; the pre-existing Python difference was reconciled before implementation by the baseline patch to `package/stacks/python/stack.yaml`
-- [ ] T070 Run the full quality gate from the repository root — `npm test` then `npm run build`, driven by the scripts in `package.json` and `migration/package.json` — and compare the result against the T002 baseline
+- [x] T067 [P] Record the run-lifecycle and claim-semantics changes, the new `migration/test/` suites, and the maintainer checklist answers in `DEVELOPMENT.md`
+- [x] T068 [P] Add the remaining feature entries (verification state, preflight, limit precedence, process-tree termination, portable context) under `Unreleased` in `CHANGELOGS.MD`, grouped by a human-readable date heading
+- [x] T069 [P] Extend the foundational parity assertion from T004 in `migration/test/stack-pack-engine.test.ts` to cover every future stack id and run it as the Phase 9 release gate; the pre-existing Python difference was reconciled before implementation by the baseline patch to `package/stacks/python/stack.yaml`
+- [x] T070 Run the full quality gate from the repository root — `npm test` then `npm run build`, driven by the scripts in `package.json` and `migration/package.json` — and compare the result against the T002 baseline
 - [ ] T071 Walk all six acceptance checks in a fixture workspace **outside this repository** (using `package/mock/` for sample content, per the constitution's source-of-truth boundaries) following `specs/001-truthful-run-state/quickstart.md` § Acceptance checks
 - [ ] T072 Final constitution and scope guard against `specs/001-truthful-run-state/spec.md` § Out of Scope: confirm no migration status value or pipeline phase was added, no write authorization was broadened, `artifact_verifications` still has no foreign key to `acceptance_evidence` and cannot satisfy the arbiter gate, every secret is redacted in test output / reports / recorded evidence, and no work from #43, #48, #51, or closed #40 / #44 / #45 entered the branch
 
