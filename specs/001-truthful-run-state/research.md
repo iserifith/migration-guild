@@ -358,8 +358,8 @@ work out the rest themselves; FR-044 requires that guidance to change.
 
 ## R13. Making the effective limit inspectable and naming the right knob
 
-**Decision**: a single limit resolver returns a descriptor `{ knob, effectiveValueMs, requestedValueMs,
-source, floorApplied }` instead of a bare number. Termination messages quote `knob`,
+**Decision**: a single limit resolver returns a descriptor `{ phase, kind, knob, effectiveValueMs, requestedValueMs,
+source, floorApplied, precedenceOrder }` instead of a bare number. Termination messages quote `knob`,
 `effectiveValueMs`, and `source` from that descriptor. A new `guildctl limits [--phase <p>] [--json]`
 command prints, per phase, both limits with their descriptors and the precedence order.
 
@@ -367,7 +367,9 @@ Precedence, as it exists in the code today, is: per-phase option (set from
 `GUILDCTL_ANALYZE_TIMEOUT_MINS`, `GUILDCTL_TEST_TIMEOUT_MINS`, `GUILDCTL_CODE_TIMEOUT_MINS`,
 `GUILDCTL_REVIEW_TIMEOUT_MINS`, `GUILDCTL_REMEDIATION_TIMEOUT_MINS`,
 `GUILDCTL_INVENTORY_TIMEOUT_MINUTES`) → `GUILDCTL_AGENT_CEILING_SECONDS` →
-`config.agent_limits.ceiling_seconds`.
+`config.agent_limits.ceiling_seconds`. For inactivity, the environment override
+`GUILDCTL_INACTIVITY_TIMEOUT_SECONDS` is the governing environment tier because no phase currently
+supplies a per-phase inactivity option.
 
 **Rationale**: FR-028 ("the knob named MUST be one that changes the observed limit") is satisfied
 structurally, not by care: the message can only name the knob the resolver actually selected, so
@@ -375,8 +377,9 @@ message and behaviour cannot disagree. This feature does not change which knobs 
 Assumptions require that — only which one is named and whether the order is visible.
 
 `floorApplied` covers the spec's edge case "operator sets a per-phase knob below the enforced
-minimum": the phase constants are floored by `Math.max(5, …)`, so the report must state the value
-actually enforced (5 minutes) and that a floor was applied, not the value requested.
+minimum": floors are 5 minutes for analyze/test/code-writing/remediation and 1 minute for review/inventory.
+The report must state the value actually enforced and that a floor was applied, not the value
+requested. Unparseable inputs normalize to the built-in default rather than propagating `NaN`.
 
 **Current behaviour**: `migration/guildctl/runner.ts:658` always appends "raise
 agent_limits.ceiling_seconds to allow longer runs" — even when `opts.timeoutMs` from a per-phase

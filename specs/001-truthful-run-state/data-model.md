@@ -118,6 +118,7 @@ table is introduced.
 |-----------|-------|
 | exit 0, status advanced, warden clean | `succeeded` |
 | terminated at a limit, `files_written_count = 0`, `status_from = status_to` | `no-progress` |
+| terminated at a limit with `files_written_source = 'unavailable'` | `released-retryable` |
 | claim released for retry, some work or a recoverable failure | `released-retryable` |
 | non-zero exit with a warden violation or systemic error | `failed` |
 
@@ -259,7 +260,7 @@ EffectiveLimit {
   knob:             string   // the knob an operator changes, e.g. "GUILDCTL_CODE_TIMEOUT_MINS"
   effectiveValueMs: number   // what is enforced
   requestedValueMs: number   // what was asked for, before any floor
-  source:           "per-phase-setting" | "project-configuration" | "built-in-default"
+  source:           "per-phase-setting" | "env-override" | "project-configuration" | "built-in-default"
   floorApplied:     boolean
   precedenceOrder:  string[] // same order for every phase, for display
 }
@@ -270,9 +271,10 @@ EffectiveLimit {
 - The termination message reads `knob`, `effectiveValueMs`, and `source` from the same object the
   enforcement used, which is what makes FR-028 structural: the message cannot name a knob that does
   not govern.
-- `floorApplied = true` when `effectiveValueMs > requestedValueMs` because of an enforced minimum
-  (the `Math.max(5, …)` floor on phase timeouts); the report states the enforced value, not the
-  requested one (spec edge case).
+- `floorApplied = true` when `effectiveValueMs > requestedValueMs` because of the phase's enforced
+  minimum; floors are 5 minutes for analyze/test/code-writing/remediation and 1 minute for review/inventory.
+  The report states the enforced value, not the requested one (spec edge case). Unparseable values
+  normalize to the built-in default before floor application.
 - The record is display-only and never persisted.
 
 ---

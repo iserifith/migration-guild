@@ -188,9 +188,11 @@ migration/                          # runtime: registry + orchestrator (repo-onl
     ├── commands/
     │   ├── status.ts               # + verified/unverified/failed split, no-progress counts (FR-008)
     │   ├── migrate.ts              # phase dispatch; limit descriptors                 (FR-027/029)
+    │   ├── remediate.ts            # remediation phase limit defaults/floors           (FR-027/029)
+    │   ├── inventory.ts             # inventory phase limit defaults/floors             (FR-027/029)
     │   ├── auto.ts                 # per-artifact autonomous dispatch and agent spawn   (FR-011/030-039)
     │   ├── auto-run.ts             # queue-level preflight/runtime gate                (FR-011/018/024/025)
-    │   └── review.ts               # verification state visible to review              (FR-009)
+    │   └── review.ts               # verification state; review limit defaults/floors      (FR-009/027/029)
     └── supervisor/
         ├── loop.ts                 # autonomous claim close, verification, outcomes    (FR-001/030-039)
         └── queue.ts                # queue dispatch; per-queue control flow

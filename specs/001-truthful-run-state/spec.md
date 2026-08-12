@@ -155,6 +155,7 @@ After this feature, context retrieval always returns something usable when a rec
 - **Context record whose summary is empty rather than absent**: treated as no summary — the explicit no-context response applies.
 - **Limit fired is the inactivity limit rather than the ceiling**: the message names the inactivity knob and its source, under the same rule.
 - **Operator sets a per-phase knob below the enforced minimum**: the effective value actually applied is reported, not the requested one.
+- **Neither a warden snapshot nor a usable git diff is available**: the attempt records `files_written_source = unavailable` and an explicitly undetermined file count; it MUST NOT present a false zero as evidence that no files were written.
 
 ## Requirements *(mandatory)*
 
@@ -197,10 +198,10 @@ After this feature, context retrieval always returns something usable when a rec
 
 #### D. Accurate limits and honest run outcomes *(source: issue #49, slices a and d)*
 
-- **FR-027**: When an agent is terminated for exceeding a limit, the message MUST name the specific knob that governed the limit that fired, its effective value, and the source of that value (per-phase setting, project configuration, or built-in default).
+- **FR-027**: When an agent is terminated for exceeding a limit, the message MUST name the specific knob that governed the limit that fired, its effective value, and the source of that value (per-phase setting, environment override, project configuration, or built-in default). The environment override tier includes `GUILDCTL_AGENT_CEILING_SECONDS` for ceiling limits and `GUILDCTL_INACTIVITY_TIMEOUT_SECONDS` for inactivity limits.
 - **FR-028**: The knob named in a termination message MUST be one that changes the observed limit when the operator changes it. System MUST NOT direct an operator to a setting that resolution precedence overrides.
 - **FR-029**: Effective per-phase limits, their sources, and the precedence order between them MUST be inspectable before a run and documented in operator-facing documentation.
-- **FR-030**: The closing summary of every agent attempt MUST state in one place: how many files were written, the artifact status transition (from → to), the claim disposition, and whether provider budget was consumed.
+- **FR-030**: The closing summary of every agent attempt MUST state in one place: how many files were written, the artifact status transition (from → to), the claim disposition, and whether provider budget was consumed. When neither a warden snapshot nor a usable git diff is available, it MUST state that the file count is undetermined and record `files_written_source = unavailable`; a false zero count is non-conforming.
 - **FR-031**: An attempt terminated without producing files and without advancing status MUST NOT carry a success-equivalent outcome label. The summary MUST distinguish "the work was safely released and can be retried" from "the agent attempt succeeded".
 - **FR-032**: The summary of a terminated attempt MUST state explicitly that provider budget consumed by that attempt is not recovered.
 - **FR-033**: Claim and run records written during cleanup MUST reflect the terminal reason, whether outputs were produced, and the artifact's status after cleanup, such that those questions are answerable from recorded state without reading logs.
@@ -259,7 +260,7 @@ After this feature, context retrieval always returns something usable when a rec
 - Existing coordination machinery — recorded migration state, atomic claims with tokens and leases, evidence records, the arbitration gate, and the workspace boundary warden — remains in place. This feature adds recorded facts and corrects reporting; it does not replace those mechanisms.
 - Claim recoverability outranks cleanup completeness: a claim is still released when process cleanup fails, so that work never deadlocks; the cleanup failure is reported separately.
 - The bounded preflight budget default of 30 seconds is derived from the observed cost of an equivalent manual check (roughly 8 seconds) with margin for slow providers.
-- Existing per-phase limit knobs and the project-configuration ceiling setting both remain available. This feature fixes which one is named and makes the precedence discoverable; it does not change which knobs exist.
+- Existing per-phase limit knobs and the project-configuration ceiling setting both remain available. This feature fixes which one is named and makes the precedence discoverable; it does not change which knobs exist. The environment override tier uses `GUILDCTL_AGENT_CEILING_SECONDS` and `GUILDCTL_INACTIVITY_TIMEOUT_SECONDS`; malformed timeout input normalizes to the built-in default before enforcement rather than propagating `NaN`.
 - Any behaviour visible to agents in installed workspaces — context retrieval responses, close-out expectations, verification reporting — is shipped through the kit's packaged agent artifacts, so those artifacts are updated as part of delivering this feature.
 - Changes to claim, evidence, run-lifecycle, or phase control-flow semantics ship with regression tests in the kit's own test suite, per the constitution's development workflow.
 

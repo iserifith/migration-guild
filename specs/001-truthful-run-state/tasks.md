@@ -198,16 +198,16 @@ and spent budget.
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T043 [P] [US4] Write `migration/test/limit-knob-naming.test.ts`: the termination message reads `knob`, `effectiveValueMs`, and `source` from the same `EffectiveLimit` descriptor enforcement used, so it is structurally impossible to name a knob that does not govern; changing the named knob changes the observed limit; the inactivity limit firing names the inactivity knob under the same rule; `floorApplied` reports the enforced value rather than the requested one; `guildctl limits` prints each phase's effective limit, knob, source, and the identical precedence order
+- [ ] T043 [P] [US4] Write `migration/test/limit-knob-naming.test.ts`: the termination message reads `knob`, `effectiveValueMs`, and `source` from the same `EffectiveLimit` descriptor enforcement used, so it is structurally impossible to name a knob that does not govern; changing the named knob changes the observed limit; the inactivity limit firing names the inactivity knob under the same rule; environment overrides are named when they govern; when a phase-specific timeout env var is unset, tier 1 is unoccupied and resolution falls through to the global environment override, project configuration, or phase built-in default; the test pins `project-configuration` versus `built-in-default`; `floorApplied` reports the enforced `effectiveValueMs` rather than the requested `requestedValueMs` for the per-phase 5-minute or 1-minute floor; malformed timeout input normalizes to the built-in default; `guildctl limits` prints each phase's effective limit, knob, and the four-tier precedence order; autonomous worker-path mapping is `migrate`→`code-writing` and `repair`→`remediation`, with a limit rejection recorded through the worker-error per-artifact block; autonomous review-path mapping is `review`, with a limit rejection recorded through a review-error per-artifact block that leaves independent queue work runnable; both paths use the same `resolveEffectiveLimit()` as the manual runner, quote the same descriptor fields, and persist a `terminationReason` with the same enforced value
 - [ ] T044 [P] [US4] Write `migration/test/attempt-outcome.test.ts`: `outcome_label` is computed, never supplied by an agent; `no-progress` requires `files_written_count = 0` **and** `status_from = status_to`; a terminated attempt that wrote files is `released-retryable`, not `no-progress`; `succeeded` is rejected whenever `status_from = status_to`; `files_written_source` records `warden-snapshot` / `git-diff` / `unavailable` and a non-git workspace no longer reports a false "(none)"; the counted repeat-waste condition is derived from `runs ⋈ artifact_claims`, never a stored counter; terminal reason, outputs-produced, and post-cleanup status are answerable from recorded state without reading logs
 
 ### Implementation for User Story 4
 
-- [ ] T045 [US4] Create `migration/guildctl/limits.ts` returning the `EffectiveLimit` descriptor (`phase`, `kind`, `knob`, `effectiveValueMs`, `requestedValueMs`, `source`, `floorApplied`, `precedenceOrder`) for both the ceiling and inactivity kinds, implementing precedence per-phase setting → project configuration → built-in default without changing which knobs exist
-- [ ] T046 [US4] Register `guildctl limits [--phase <phase>] [--json]` in `migration/guildctl/cli.ts`, printing the precedence line and the per-phase table with the `floor` column stating the requested value when a minimum was applied
-- [ ] T047 [US4] Add autonomous limit enforcement around the per-artifact worker dispatch in `migration/guildctl/commands/auto.ts` / `migration/guildctl/commands/auto-run.ts`, and replace the current termination message in both manual and autonomous paths — which always names `agent_limits.ceiling_seconds` even when an overriding per-phase constant fired — with one that quotes `knob`, `effectiveValueMs`, and `source` from the enforcing descriptor
-- [ ] T048 [US4] Count files written from the warden snapshot diff, falling back to the existing git diff only when no warden snapshot exists, and record which mechanism produced the count in `files_written_source` in both `migration/guildctl/runner.ts` and `migration/guildctl/supervisor/loop.ts`
-- [ ] T049 [US4] Derive `outcome_label` and emit the single close-out summary block in both `migration/guildctl/runner.ts` and `migration/guildctl/supervisor/loop.ts` — files written with source, artifact status transition, **verification state with method/reason**, claim disposition, process-cleanup outcome, provider budget with the explicit statement that spend is not recovered, and terminal reason — so a no-progress termination can never carry a success-equivalent label and neither manual nor autonomous summaries present migration status without its verification state
+- [ ] T045 [US4] Create and export `migration/guildctl/limits.ts` with the single `resolveEffectiveLimit(phase, kind)` resolver returning the `EffectiveLimit` descriptor (`phase`, `kind`, `knob`, `effectiveValueMs`, `requestedValueMs`, `source`, `floorApplied`, `precedenceOrder`) for both ceiling and inactivity kinds. Implement precedence per-phase setting → environment override (`GUILDCTL_AGENT_CEILING_SECONDS`, `GUILDCTL_INACTIVITY_TIMEOUT_SECONDS`) → project configuration → built-in default; a phase-specific timeout env var participates in tier 1 only when explicitly set, otherwise tier 1 is unoccupied and resolution falls through; provide this resolver for T047 to replace the enforcement computation at `runner.ts:689-698`, rather than duplicating the logic. Source tier 1 knob/default/floor definitions from `migrate.ts:24-26`, `remediate.ts:11`, `review.ts:11`, and `inventory.ts:255-257`, then repoint those call sites so no second copy survives; the inactivity kind has no per-phase tier or floor today, so its resolution starts at the environment override. Distinguish an explicitly declared `agent_limits` project value from the deep-merged built-in config so an absent project setting reports `built-in-default`; apply each ceiling phase's documented minimum in minutes before converting to milliseconds (5 minutes for analyze/test/code-writing/remediation, 1 minute for review/inventory), set `floorApplied` only when the floor raised the value, and normalize unparseable input to the built-in default rather than propagating `NaN`
+- [ ] T046 [US4] Register `guildctl limits [--phase <phase>] [--json]` in `migration/guildctl/cli.ts` per `contracts/guildctl-cli.md` §C, printing the four-tier precedence line and the per-phase table with the `floor` column stating the requested value when a minimum was applied; make clear this reports time limits and is unrelated to `auto-run --limit <n>`, which limits artifact count
+- [ ] T047 [US4] Add ceiling and inactivity enforcement around the per-artifact worker dispatch, resolving through the T045 `resolveEffectiveLimit()` descriptor. The autonomous spawns are both in `migration/guildctl/commands/auto.ts` (worker `:278`, review `:132`); `auto-run.ts` delegates via `runAutoQueue` → `runAutoCommand`. Assign the autonomous review spawn a phase and enforce both limits so the directly launched process is bounded; descendant-process cleanup remains the separate US5 responsibility (T056–T057). Replace the enforcement computation at `migration/guildctl/runner.ts:689-698` with the resolver, and replace both manual limit message sites — the `killAgent` stderr message (`:709`) and persisted `terminationReason` (`:594-602`) — with text quoting `knob`, `effectiveValueMs`, and `source` from the single enforcing descriptor
+- [ ] T048 [US4] Count files written from the warden snapshot diff, falling back to the existing git diff only when no warden snapshot exists, and record which mechanism produced the count in `files_written_source` in both `migration/guildctl/runner.ts` and `migration/guildctl/supervisor/loop.ts`; for autonomous limit terminations, `auto.ts` surfaces the descriptor-derived limit error through the worker rejection into `supervisor/loop.ts`'s `workerError` per-artifact close-out path, which persists that reason; a review-spawn limit rejection from `guardedIndependentReview` must use a corresponding review-error per-artifact close-out path rather than the outer queue-halting catch, and must persist the descriptor-derived `terminationReason`. Do not rewrite unrelated autonomous `finishRun` reasons for drift, violations, rejection, or budget outcomes. If neither a warden snapshot nor a usable git diff is available, record `files_written_source = 'unavailable'` rather than reporting `git-diff` with a false zero count
+- [ ] T049 [US4] Derive `outcome_label` and emit the single close-out summary block in both `migration/guildctl/runner.ts` and `migration/guildctl/supervisor/loop.ts` for manual, worker-error, and review-error per-artifact paths — files written with source, artifact status transition, **verification state with method/reason**, claim disposition, process-cleanup outcome, provider budget with the explicit statement that spend is not recovered, and terminal reason. Limit terminations must carry the descriptor-derived `terminationReason`; an unavailable file count must carry `files_written_source = unavailable` and the `released-retryable` outcome rather than `no-progress`; a no-progress termination can never carry a success-equivalent label, and neither manual nor autonomous summaries present migration status without its verification state
 - [ ] T050 [US4] Validate the attempt-outcome value domains in `finishRun` in `migration/registry/commands/runs.ts` — `files_written_source`, `budget_consumed`, `cleanup_outcome`, `outcome_label`, `survivor_pids` non-empty iff `cleanup_outcome = 'survivors'` — and reject `succeeded` when `status_from` equals `status_to`
 - [ ] T051 [US4] Add the `show-no-progress-attempts [--min <n>] [--artifact <id>] [--json]` query over `runs ⋈ artifact_claims` grouped by artifact to `migration/registry/commands/runs.ts` and register it in `migration/registry/cli.ts`
 - [ ] T052 [US4] Add the `COUNT`-shaped repeat-waste line (`N artifact(s) with ≥2 no-progress attempts`) with the `registry show-no-progress-attempts --min 2` pointer to `migration/guildctl/commands/status.ts` (same file as T029; sequence after it)
@@ -292,29 +292,28 @@ Phase 1 Setup (T001-T003)
         ▼
 Phase 2 Foundational (T004-T013)   ◄── BLOCKS every user story
         │
-        ├──────────────┬──────────────┬──────────────┬──────────────┐
-        ▼              ▼              ▼              ▼              ▼
-   Phase 3 US1     Phase 6 US4    Phase 7 US5    Phase 8 US6    (independent after foundation)
-   T014-T031       T043-T054      T055-T059      T060-T066
-        │
-        ▼
-Shared foundation gate (T031a)      ◄── required only before US2/US3
-        ├──────────────┬──────────────┐
-        ▼              ▼              │
-   Phase 4 US2     Phase 5 US3       │
-   T032-T035       T036-T042         │
-        └──────────────┴──────────────┘
-                       │
-                       ▼
-           Phase 9 Polish (T067-T072)
+        ├──────────────┬──────────────────────────────┐
+        ▼              ▼                              ▼
+   Phase 3 US1   Shared foundation gate         Phase 7 US5 / Phase 8 US6
+   T014-T031     T031a                            T055-T066
+                       ├──────────────┬──────────────┐
+                       ▼              ▼              ▼
+                  Phase 4 US2    Phase 5 US3    Phase 6 US4
+                  T032-T035      T036-T042      T043-T054
+                       └──────────────┴──────────────┘
+                                      │
+                                      ▼
+                          Phase 9 Polish (T067-T072)
 ```
 
 - **Setup (Phase 1)**: no dependencies — start immediately.
 - **Foundational (Phase 2)**: depends on Setup. **Blocks all user stories.** T031a has only T012 as
   a technical prerequisite; it is a delivery-order gate before US2/US3, not a technical dependency
   of US4–US6.
-- **User Stories (Phases 3–8)**: US1 and US4–US6 depend only on Phase 2; US2 and US3 additionally
-  depend on T031a. They may then run in parallel if staffed, or sequentially in priority order P1 → P6.
+- **User Stories (Phases 3–8)**: US1 and US5–US6 depend only on Phase 2; US2 and US3 additionally
+  depend on T031a; US4's T047 autonomous half additionally depends on T031a, T035, and T039, while
+  its remaining limit/reporting work depends on Phase 2. They may then run in parallel where their
+  shared-file table permits, or sequentially in priority order P1 → P6.
 - **Polish (Phase 9)**: depends on all desired user stories being complete.
 
 ### Foundational task dependencies
@@ -327,13 +326,12 @@ Shared foundation gate (T031a)      ◄── required only before US2/US3
 
 ### User Story Dependencies
 
-All six stories depend on Phase 2; only US2 and US3 additionally depend on T031a. None depends on
-another story's completion:
+All six stories depend on Phase 2; US2 and US3 additionally depend on T031a, and US4's T047 autonomous half additionally depends on T035 and T039. None has a broader product-story dependency:
 
 - **US1 (P1)** — needs T005/T007 (schema), T008 (types), T009 (budget config), T013 (group kill).
 - **US2 (P2)** — needs T012 (`resolveAgentLaunch()`) and T031a (autonomous shared resolution). Independent of US1 and US3.
 - **US3 (P3)** — needs T012 for the run-start line and T031a for autonomous dispatch. Independent of US1 and US2.
-- **US4 (P4)** — needs T006/T007 (columns), T010/T011 (`finishRun` plumbing). Independent of US1–US3.
+- **US4 (P4)** — needs T006/T007 (columns), T010/T011 (`finishRun` plumbing), and the resolved runtime/queue seams from T031a, T035, and T039 for T047's autonomous enforcement and single runtime/termination descriptor. Independent of US1–US3 for the remaining limit/reporting work.
 - **US5 (P5)** — needs T013 (group kill) and T010/T011 (persisting `cleanup_outcome`). Independent of
   US4: US4 owns label derivation and the summary, US5 owns cleanup population.
 - **US6 (P6)** — needs T008 (`ContextResponse`) only. Fully independent of every other story.
@@ -350,7 +348,10 @@ These files are touched by two phases. Order them; do not parallelize across the
 | `migration/guildctl/runner.ts` | T027 (US1), T047–T049 (US4), T056–T059 (US5) | one story at a time |
 | `migration/guildctl/commands/auto.ts` | T031a (foundation), T047/T056/T057 (US4/US5) | T031a → T047/T056/T057 |
 | `migration/guildctl/commands/auto-run.ts` | T035 (US2), T039 (US3), T047/T057 (US4/US5) | T035/T039 → T047/T057 |
-| `migration/guildctl/commands/review.ts` | T030 (US1), T039 (US3) | T030 → T039 |
+| `migration/guildctl/commands/review.ts` | T030 (US1), T039 (US3), T045 (US4) | T030/T039 → T045 |
+| `migration/guildctl/commands/migrate.ts` | T045 (US4) | T045 |
+| `migration/guildctl/commands/remediate.ts` | T045 (US4) | T045 |
+| `migration/guildctl/commands/inventory.ts` | T045 (US4) | T045 |
 | `migration/guildctl/supervisor/loop.ts` | T027 (US1), T048/T049/T058/T059 (US4/US5) | one story at a time |
 | `migration/guildctl/cli.ts` | T034 (US2), T038 (US3), T046 (US4) | one story at a time |
 | `migration/registry/cli.ts` | T011 (Foundational), T020 (US1), T051 (US4), T062 (US6) | T011 first |
@@ -493,8 +494,8 @@ which is what makes stopping after any increment safe.
 2. Then, respecting the shared-file sequencing table:
    - **Developer A**: US1 (T014–T031) — the largest slice, and the MVP.
    - **Developer B**: T031a, then US2 (T032–T035), then US6 (T060–T066) — all self-contained after the shared foundation.
-   - **Developer C**: US3 (T036–T042) then US4 (T043–T054).
-   - **Developer D**: US5 (T055–T059), coordinating `runner.ts` edits with A and C.
+   - **Developer C**: US3 (T036–T042), then US4's limit/reporting slice (T043–T046).
+   - **Developer D**: T047–T048, coordinating the T035/T039 runtime handoff with Developer B/C before autonomous enforcement; then US5 (T055–T059), coordinating `runner.ts` edits with A and C.
 3. Land US1 first regardless of finish order, so the MVP is the first thing on the branch.
 
 ---
