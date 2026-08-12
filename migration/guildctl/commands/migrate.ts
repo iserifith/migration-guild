@@ -3,7 +3,8 @@ import { spawnAgent } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printWavePlan } from "../dashboard";
 import { getLogDir } from "../util";
-import { getConfigPath, loadConfig, resolvePhaseModel, resolveWorkspaceRoot } from "../config";
+import fs from "node:fs";
+import { getConfigPath, loadConfig, resolveProviderRoute, resolveWorkspaceRoot } from "../config";
 import { resolveAndReportRuntime } from "../runtime-report";
 import {
   getClaimabilityStats,
@@ -53,6 +54,30 @@ interface MigrateDeps {
   getLogDir?: typeof getLogDir;
   needsBootstrap?: typeof needsBootstrap;
   runBootstrap?: typeof runBootstrap;
+}
+
+function isProviderFailure(logFile: string): boolean {
+  try {
+    const log = fs.readFileSync(logFile, "utf8");
+    return /\b(?:401|403|404|429|5\d\d)\b|rate limit|quota|exhausted|api key|credential|provider error|model .+ not found/i.test(log);
+  } catch {
+    return false;
+  }
+}
+
+async function runWithProviderFallback(
+  models: string[],
+  runAgent: typeof spawnAgent,
+  options: Parameters<typeof spawnAgent>[0],
+) {
+  let lastResult: Awaited<ReturnType<typeof spawnAgent>> | undefined;
+  for (const model of models) {
+    const result = await runAgent({ ...options, model });
+    if (result.exitCode === 0 || !isProviderFailure(result.logFile ?? "")) return result;
+    lastResult = result;
+    console.warn(`  ↷ ${options.agent} provider failure on ${model}; retrying with the next configured model.`);
+  }
+  return lastResult ?? runAgent({ ...options, model: models[0] ?? options.model });
 }
 
 export function getMigrationFollowUp(
@@ -132,9 +157,12 @@ export async function runMigrate(
   const waveLabel = opts.wave != null ? ` (wave ${opts.wave})` : "";
   const cfg = loadConfig();
   const pack = loadActiveStack(cfg, cfg.guildRoot);
-  const analyzeModel = resolvePhaseModel("analysis", cfg);
-  const testModel = resolvePhaseModel("test-writing", cfg);
-  const codeModel = resolvePhaseModel("code-writing", cfg);
+  const analyzeModels = resolveProviderRoute(cfg, "census");
+  const testModels = resolveProviderRoute(cfg, "default");
+  const codeModels = resolveProviderRoute(cfg, "default");
+  const analyzeModel = analyzeModels[0] ?? cfg.model.model;
+  const testModel = testModels[0] ?? cfg.model.model;
+  const codeModel = codeModels[0] ?? cfg.model.model;
   const runAgent = deps.spawnAgent ?? spawnAgent;
   const poll = deps.startPolling ?? startPolling;
   const logDir = (deps.getLogDir ?? getLogDir)();
@@ -191,7 +219,7 @@ export async function runMigrate(
       const analyzeResults = analyzeQueueBefore.total === 0
         ? []
         : await Promise.all(Array.from({ length: analyzeParallel }, () =>
-            runAgent({
+            runWithProviderFallback(analyzeModels, runAgent, {
               agent: "analyze-agent",
               model: analyzeModel,
               prompt: analyzePrompt,
@@ -223,7 +251,7 @@ export async function runMigrate(
       const testResults = testQueueBefore.total === 0
         ? []
         : await Promise.all(Array.from({ length: testParallel }, () =>
-            runAgent({
+            runWithProviderFallback(testModels, runAgent, {
               agent: "test-writer-agent",
               model: testModel,
               prompt: testPrompt,
@@ -255,7 +283,7 @@ export async function runMigrate(
       const codeResults = codeQueueBefore.total === 0
         ? []
         : await Promise.all(Array.from({ length: codeParallel }, () =>
-            runAgent({
+            runWithProviderFallback(codeModels, runAgent, {
               agent: "code-writer-agent",
               model: codeModel,
               prompt: codePrompt,
