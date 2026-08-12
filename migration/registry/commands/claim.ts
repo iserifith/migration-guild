@@ -585,6 +585,7 @@ export function releaseClaim(
 export function reconcileStaleClaims(
   db: Database.Database,
   agent = "system",
+  wave?: number,
 ): Artifact[] {
   const { now } = db.prepare("SELECT datetime('now') AS now").get() as { now: string };
   const rows = db.prepare(`
@@ -593,13 +594,15 @@ export function reconcileStaleClaims(
       CASE WHEN c.lease_expires_at <= @now THEN 1 ELSE 0 END AS lease_expired
     FROM artifact_claims c
     LEFT JOIN runs r ON r.run_id = c.run_id
+    JOIN artifacts a ON a.id = c.artifact_id
     WHERE c.state = 'active'
+      AND (@wave IS NULL OR a.wave = @wave)
       AND (
         c.lease_expires_at <= @now
         OR (c.run_id IS NOT NULL AND (r.run_id IS NULL OR r.status != 'running'))
       )
     ORDER BY c.claimed_at ASC
-  `).all({ now }) as Array<ArtifactClaim & { lease_expired: number }>;
+  `).all({ now, wave: wave ?? null }) as Array<ArtifactClaim & { lease_expired: number }>;
 
   return rows.map((claim) => {
     const expired = claim.lease_expired === 1;

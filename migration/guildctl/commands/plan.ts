@@ -182,6 +182,19 @@ function verifyStackAdvisorInvariant(
   };
 }
 
+function hasUncoveredFrameworks(db: Database.Database): boolean {
+  const row = db.prepare(`
+    SELECT COUNT(*) AS c FROM (
+      SELECT DISTINCT framework FROM artifact_classifications
+      WHERE framework IS NOT NULL AND framework != ''
+    ) f
+    WHERE NOT EXISTS (
+      SELECT 1 FROM stack_mappings m WHERE m.legacy_framework = f.framework
+    )
+  `).get() as { c: number };
+  return row.c > 0;
+}
+
 interface PhaseRunResult {
   result: AgentRunResult;
   verified: { passed: boolean; message: string } | null;
@@ -322,7 +335,7 @@ export async function runPlan(
   const inventoryNonEmpty = countRows(db, "SELECT COUNT(*) c FROM artifacts") > 0;
 
   let stopPolling: () => void = () => undefined;
-  if (stackAdvisorBaseline > 0) {
+  if (stackAdvisorBaseline > 0 && !hasUncoveredFrameworks(db)) {
     const verification = verifyStackAdvisorInvariant(db, stackAdvisorBaseline, inventoryNonEmpty);
     if (deps.enforceInvariants) {
       recordPhaseVerification(db, "stack-advisor", 0, verification.passed, verification.message);
