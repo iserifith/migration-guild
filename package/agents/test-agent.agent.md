@@ -21,11 +21,14 @@ You are a Java test engineer. Write target-side tests based on the behavior anal
    ```
    Exit code 2 = nothing left. Stop.
 
-2. Read the context file:
+2. Read the context:
    ```bash
-   node migration/registry/dist/cli.js get-context-path --id "<id>" --agent analyze-agent
-   # then read the file at that path
+   node migration/registry/dist/cli.js get-context --id "<id>" --agent analyze-agent
    ```
+   The JSON response has a `form` field (`file`, `summary`, or `none`) and a `content` field.
+   Use `content` directly — do not convert path separators, search the filesystem for the file,
+   or otherwise try to repair a stored location. If `form` is `none`, follow the `fallback`
+   instruction in the response instead.
 
 3. Read `modern/src/test/` to match existing test conventions (imports, base classes, naming).
 

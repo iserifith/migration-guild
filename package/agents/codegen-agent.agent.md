@@ -22,11 +22,14 @@ You are a Java code generator. Translate legacy Java files to the target framewo
    ```
    Exit code 2 = nothing left. Stop.
 
-2. Read the context file:
+2. Read the context:
    ```bash
-   node migration/registry/dist/cli.js get-context-path --id "<id>" --agent analyze-agent
-   # then read the file at that path
+   node migration/registry/dist/cli.js get-context --id "<id>" --agent analyze-agent
    ```
+   The JSON response has a `form` field (`file`, `summary`, or `none`) and a `content` field.
+   Use `content` directly — do not convert path separators, search the filesystem for the file,
+   or otherwise try to repair a stored location. If `form` is `none`, follow the `fallback`
+   instruction in the response instead.
 
 3. Read the test file in `modern/src/test/` for this artifact.
 

@@ -53,7 +53,7 @@ import {
   listApprovedCompanionOutputs,
 } from "./commands/evidence";
 
-import { getContextPath, writeContext } from "./commands/context";
+import { getContext, getContextPath, writeContext } from "./commands/context";
 import { getVerification, listVerification, setVerification } from "./commands/verification";
 import { appendChangelog, getChangelogPath } from "./commands/changelog";
 import { addCompleted, getOperatorState, setFocus, setNext } from "./commands/operator";
@@ -324,8 +324,17 @@ program
   );
 
 program
+  .command("get-context")
+  .description("Always return usable context when a record exists, labelled by form: file | summary | none")
+  .requiredOption("--id <id>")
+  .requiredOption("--agent <agent>")
+  .action((opts) =>
+    run(() => getContext(db(), opts.id, opts.agent as Agent)),
+  );
+
+program
   .command("get-context-path")
-  .description("Get the path to an agent context file")
+  .description("Get the path to an agent context file (backward compatible; re-pointed at the get-context resolver)")
   .requiredOption("--id <id>")
   .requiredOption("--agent <agent>")
   .action((opts) =>

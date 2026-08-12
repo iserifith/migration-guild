@@ -256,16 +256,16 @@ labelled as such, with no path-repair work left to the caller.
 
 ### Tests for User Story 6 ⚠️
 
-- [ ] T060 [P] [US6] Write `migration/test/context-retrieval.test.ts`: an existing file returns `form: "file"` with a path that resolves as written on this host; a record written with foreign separators resolves without caller-side conversion; an unlocatable file with a stored summary returns `form: "summary"`; the canonical `migration/artifacts/<slug>/context/<agent>.md` layout rebuilt via `idToSlug` is tried before falling back; a whitespace-only summary counts as absent and yields `form: "none"` with `reason` and `fallback`; `reason` is `no-context-record` when no row exists and `no-locatable-file-or-summary` when a row yields nothing usable; all three forms exit `0` and only a missing artifact exits `2`; no filesystem search is performed at any step
+- [x] T060 [P] [US6] Write `migration/test/context-retrieval.test.ts`: an existing file returns `form: "file"` with a path that resolves as written on this host; a record written with foreign separators resolves without caller-side conversion; an unlocatable file with a stored summary returns `form: "summary"`; the canonical `migration/artifacts/<slug>/context/<agent>.md` layout rebuilt via `idToSlug` is tried before falling back; a whitespace-only summary counts as absent and yields `form: "none"` with `reason` and `fallback`; `reason` is `no-context-record` when no row exists and `no-locatable-file-or-summary` when a row yields nothing usable; all three forms exit `0` and only a missing artifact exits `2`; no filesystem search is performed at any step
 
 ### Implementation for User Story 6
 
-- [ ] T061 [US6] Implement the deterministic five-step resolver and the `ContextResponse` `form` discriminator in `migration/registry/commands/context.ts` — normalize stored separators, resolve relative paths against the workspace root, try the canonical layout, fall back to the stored summary, otherwise `none` — leaving the `agent_context` table itself unchanged
-- [ ] T062 [US6] Register `get-context --id <artifact-id> --agent <agent-name> [--json]` and re-point the existing `get-context-path` at the same resolver in `migration/registry/cli.ts`, keeping `get-context-path`'s bare-path stdout shape but exiting `2` with a message naming `get-context` when only a summary is available, so it never again prints a path that does not exist
-- [ ] T063 [P] [US6] Update `package/agents/code-writer-agent.agent.md` to call `get-context` and consume the returned `content` directly, with no instruction to convert separators, search for the file, or repair a stored location
-- [ ] T064 [P] [US6] Apply the same `get-context` guidance change to `package/agents/test-writer-agent.agent.md`
-- [ ] T065 [P] [US6] Apply the same `get-context` guidance change to `package/agents/codegen-agent.agent.md`
-- [ ] T066 [P] [US6] Apply the same `get-context` guidance change to `package/agents/test-agent.agent.md`
+- [x] T061 [US6] Implement the deterministic five-step resolver and the `ContextResponse` `form` discriminator in `migration/registry/commands/context.ts` — normalize stored separators, resolve relative paths against the workspace root, try the canonical layout, fall back to the stored summary, otherwise `none` — leaving the `agent_context` table itself unchanged
+- [x] T062 [US6] Register `get-context --id <artifact-id> --agent <agent-name> [--json]` and re-point the existing `get-context-path` at the same resolver in `migration/registry/cli.ts`, keeping `get-context-path`'s bare-path stdout shape but exiting `2` with a message naming `get-context` when only a summary is available, so it never again prints a path that does not exist
+- [x] T063 [P] [US6] Update `package/agents/code-writer-agent.agent.md` to call `get-context` and consume the returned `content` directly, with no instruction to convert separators, search for the file, or repair a stored location
+- [x] T064 [P] [US6] Apply the same `get-context` guidance change to `package/agents/test-writer-agent.agent.md`
+- [x] T065 [P] [US6] Apply the same `get-context` guidance change to `package/agents/codegen-agent.agent.md`
+- [x] T066 [P] [US6] Apply the same `get-context` guidance change to `package/agents/test-agent.agent.md`
 
 **Checkpoint**: all six user stories are independently functional.
 
