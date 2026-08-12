@@ -1,0 +1,3 @@
+## 2024-05-27 - Memoize expensive list filtering in views
+**Learning:** Components like `ArtifactList` and `RunsView` were computing expensive operations (e.g. `Array.from(new Set(...)).sort()`) and `.filter()` over large data arrays on EVERY render. Since these views contain local state for selecting rows (`selected` / `selectedRunId`), simply clicking a row triggers a full component re-render, causing perceptible UI jank as these heavy array operations run synchronously.
+**Action:** Wrap derived datasets that iterate over list props with `useMemo`. This ensures filtering and Set generation only run when the raw dataset or filter criteria change, not when local selection state is toggled.
