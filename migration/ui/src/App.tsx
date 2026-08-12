@@ -287,12 +287,21 @@ export default function App() {
         </div>
       </header>
 
-      <nav className="tabs">
+      <nav className="tabs" role="tablist" aria-label="Primary navigation">
         {TABS.map((t) => (
           <div
             key={t.id}
+            role="tab"
+            aria-selected={activeTabId === t.id}
+            tabIndex={0}
             className={`tab ${activeTabId === t.id ? "active" : ""}`}
             onClick={() => setActiveTabId(t.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setActiveTabId(t.id);
+              }
+            }}
           >
             {t.label}
           </div>
