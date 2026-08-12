@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import type { AttemptOutcome, CleanupOutcome, FilesWrittenSource, OutcomeLabel } from "../types";
+import { RegistryError } from "../types";
 import { reconcileStaleClaims } from "./claim";
 
 const STALE_RUN_MINUTES = Math.max(1, parseInt(process.env["GUILDCTL_STALE_RUN_MINS"] ?? "30", 10));
@@ -132,7 +133,56 @@ function normalizeBudgetConsumed(value: AttemptOutcomeInput["budgetConsumed"]): 
   return value ? 1 : 0;
 }
 
+const KNOWN_FILES_WRITTEN_SOURCES: FilesWrittenSource[] = ["warden-snapshot", "git-diff", "unavailable"];
+const KNOWN_CLEANUP_OUTCOMES: CleanupOutcome[] = ["clean", "survivors", "not-applicable"];
+const KNOWN_OUTCOME_LABELS: OutcomeLabel[] = ["succeeded", "released-retryable", "no-progress", "failed"];
+
+/**
+ * T050: attempt-outcome value-domain validation. `finishRun` writes through a
+ * `COALESCE` against the already-persisted row (so a caller may set fields
+ * incrementally across more than one call), so validation reads the row first
+ * and checks the values that will actually be in effect after this write.
+ */
+function validateAttemptOutcome(db: Database.Database, opts: FinishRunOptions): void {
+  if (opts.filesWrittenSource != null && !KNOWN_FILES_WRITTEN_SOURCES.includes(opts.filesWrittenSource)) {
+    throw new RegistryError(1, `Unknown files_written_source: "${opts.filesWrittenSource}". Valid values: ${KNOWN_FILES_WRITTEN_SOURCES.join(", ")}`);
+  }
+  if (opts.cleanupOutcome != null && !KNOWN_CLEANUP_OUTCOMES.includes(opts.cleanupOutcome)) {
+    throw new RegistryError(1, `Unknown cleanup_outcome: "${opts.cleanupOutcome}". Valid values: ${KNOWN_CLEANUP_OUTCOMES.join(", ")}`);
+  }
+  if (opts.outcomeLabel != null && !KNOWN_OUTCOME_LABELS.includes(opts.outcomeLabel)) {
+    throw new RegistryError(1, `Unknown outcome_label: "${opts.outcomeLabel}". Valid values: ${KNOWN_OUTCOME_LABELS.join(", ")}`);
+  }
+
+  const needsCurrent = opts.outcomeLabel != null || opts.cleanupOutcome != null || opts.survivorPids != null
+    || opts.statusFrom != null || opts.statusTo != null;
+  if (!needsCurrent) return;
+
+  const current = db.prepare(
+    `SELECT status_from, status_to, cleanup_outcome, survivor_pids FROM runs WHERE run_id = ?`,
+  ).get(opts.runId) as { status_from: string | null; status_to: string | null; cleanup_outcome: string | null; survivor_pids: string | null } | undefined;
+
+  const effectiveStatusFrom = opts.statusFrom ?? current?.status_from ?? null;
+  const effectiveStatusTo = opts.statusTo ?? current?.status_to ?? null;
+  const effectiveCleanupOutcome = opts.cleanupOutcome ?? current?.cleanup_outcome ?? null;
+  const effectiveSurvivorPids: number[] | null = opts.survivorPids !== undefined
+    ? opts.survivorPids
+    : current?.survivor_pids
+      ? (JSON.parse(current.survivor_pids) as number[])
+      : null;
+
+  // FR-031: `succeeded` is never assigned when status_from = status_to — this
+  // is what removes the success-equivalent label from a no-progress attempt.
+  if (opts.outcomeLabel === "succeeded" && effectiveStatusFrom != null && effectiveStatusFrom === effectiveStatusTo) {
+    throw new RegistryError(1, `outcome_label "succeeded" is rejected when status_from equals status_to ("${effectiveStatusFrom}")`);
+  }
+  if (effectiveCleanupOutcome === "survivors" && (!effectiveSurvivorPids || effectiveSurvivorPids.length === 0)) {
+    throw new RegistryError(1, `cleanup_outcome "survivors" requires a non-empty survivor_pids`);
+  }
+}
+
 export function finishRun(db: Database.Database, opts: FinishRunOptions): Run {
+  validateAttemptOutcome(db, opts);
   const status = opts.exitCode === 0 ? "completed" : "failed";
   const usage = opts.tokenUsage;
   // The attempt outcome is written in the same statement that closes the run, so
@@ -258,6 +308,57 @@ export function reapDeadRuns(db: Database.Database, agent?: string): Run[] {
   }
 
   return reaped;
+}
+
+export interface NoProgressAttemptsOptions {
+  min?: number;
+  artifactId?: string;
+}
+
+export interface NoProgressAttemptEntry {
+  artifact_id: string;
+  path: string | null;
+  no_progress_attempts: number;
+  last_terminal_reason: string | null;
+}
+
+export interface NoProgressAttemptsResult {
+  min: number;
+  artifacts: NoProgressAttemptEntry[];
+}
+
+/**
+ * FR-034's counted, queryable repeat-waste condition (data-model.md §5):
+ * `runs` joined to `artifact_claims`, grouped by artifact, counting
+ * `outcome_label = 'no-progress'`. A query, never a stored counter, so it
+ * cannot drift from the rows it summarizes.
+ */
+export function showNoProgressAttempts(
+  db: Database.Database,
+  opts: NoProgressAttemptsOptions = {},
+): NoProgressAttemptsResult {
+  const min = opts.min ?? 1;
+  const conditions = ["r.outcome_label = 'no-progress'"];
+  const params: Record<string, string | number> = { min };
+  if (opts.artifactId) {
+    conditions.push("c.artifact_id = @artifact_id");
+    params["artifact_id"] = opts.artifactId;
+  }
+  const rows = db.prepare(`
+    SELECT
+      c.artifact_id AS artifact_id,
+      a.path AS path,
+      COUNT(*) AS no_progress_attempts,
+      MAX(r.termination_reason) AS last_terminal_reason
+    FROM runs r
+    JOIN artifact_claims c ON c.run_id = r.run_id
+    LEFT JOIN artifacts a ON a.id = c.artifact_id
+    WHERE ${conditions.join(" AND ")}
+    GROUP BY c.artifact_id
+    HAVING COUNT(*) >= @min
+    ORDER BY no_progress_attempts DESC, c.artifact_id ASC
+  `).all(params) as NoProgressAttemptEntry[];
+  return { min, artifacts: rows };
 }
 
 export function listRuns(

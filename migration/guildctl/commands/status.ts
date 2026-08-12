@@ -99,10 +99,32 @@ export function printVerificationSplit(db: Database.Database): void {
   console.log(`                 (list with: registry list-verification --state <state>)`);
 }
 
+/**
+ * FR-034 / SC-005: the count of artifacts with >= 2 no-progress attempts,
+ * read through the same query `registry show-no-progress-attempts` uses —
+ * COUNT-shaped so it stays fast on ~3,000-artifact registries.
+ */
+export function printRepeatWaste(db: Database.Database): void {
+  const row = db.prepare(`
+    SELECT COUNT(*) AS n FROM (
+      SELECT c.artifact_id
+      FROM runs r
+      JOIN artifact_claims c ON c.run_id = r.run_id
+      WHERE r.outcome_label = 'no-progress'
+      GROUP BY c.artifact_id
+      HAVING COUNT(*) >= 2
+    )
+  `).get() as { n: number };
+  if (row.n === 0) return;
+  console.log(`  Repeat waste:  ${row.n} artifact(s) with ≥2 no-progress attempts`);
+  console.log(`                 (list with: registry show-no-progress-attempts --min 2)`);
+}
+
 export function runStatus(db: Database.Database): void {
   printPhaseHeader("Migration Status");
   printStatusSummary(db);
   printVerificationSplit(db);
+  printRepeatWaste(db);
   printWavePlan(db);
   printInProgress(db);
   console.log();
