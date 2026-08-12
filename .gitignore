@@ -15,3 +15,5 @@ migration/ui/node_modules
 .guild/
 temp/
 .test-workspace
+
+.hermes/
