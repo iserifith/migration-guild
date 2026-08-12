@@ -116,6 +116,55 @@ test("runAuto drives real stop repair reverify review arbitration for one explic
   }
 });
 
+test("runAuto: a review-spawn limit rejection closes this artifact out without halting the queue (T047/T048)", async () => {
+  const { AutonomousLimitError } = await import("../guildctl/limits");
+  const db = createDb();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-auto-review-limit-"));
+  try {
+    fs.mkdirSync(path.join(workspace, "legacy"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "legacy", "AutoCanary.js"), "module.exports = 0;\n");
+    const id = seed(db);
+
+    const result = await runAuto(db, {
+      artifactId: id,
+      workspaceRoot: workspace,
+      commands: ["node --check modern/AutoCanary.js"],
+      maxAttempts: 1,
+      worker: async ({ claim }) => {
+        fs.mkdirSync(path.join(workspace, "modern"), { recursive: true });
+        fs.writeFileSync(path.join(workspace, "modern", "AutoCanary.js"), "function ok() { return 1; }\n");
+        setArtifactStatus(db, claim.id, "migrated", {
+          agent: "code-writer-agent",
+          claimId: claim.claim_id,
+          claimToken: claim.claim_token,
+        });
+      },
+      review: async () => {
+        throw new AutonomousLimitError("review-agent killed: limit fired; knob: GUILDCTL_REVIEW_TIMEOUT_MINS = 2m (source: per-phase-setting)");
+      },
+    });
+
+    // Resolved, never rejected: the queue can move on to the next artifact
+    // instead of the whole batch aborting on one artifact's limit rejection.
+    assert.equal(result.status, "blocked");
+    const artifact = db.prepare("SELECT status FROM artifacts WHERE id = ?").get(id) as { status: string };
+    assert.equal(artifact.status, "blocked");
+    const runRow = db.prepare("SELECT termination_reason, outcome_label, files_written_source FROM runs WHERE run_id = ?").get(result.runId) as {
+      termination_reason: string;
+      outcome_label: string;
+      files_written_source: string;
+    };
+    assert.match(runRow.termination_reason, /GUILDCTL_REVIEW_TIMEOUT_MINS/);
+    assert.notEqual(runRow.outcome_label, "succeeded");
+    assert.equal(runRow.files_written_source, "warden-snapshot");
+    const activeClaims = db.prepare("SELECT COUNT(*) AS n FROM artifact_claims WHERE state = 'active'").get() as { n: number };
+    assert.equal(activeClaims.n, 0);
+  } finally {
+    db.close();
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 test("runAuto rejects workspace-local file registry before claims or worker mutation", async () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-auto-local-db-"));
   const dbPath = path.join(workspace, ".guild", "registry.db");

@@ -1,10 +1,85 @@
+import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
-import { resolveGuildConfig, resolveProviderRoute, resolveWorkspaceRoot } from "../config";
+import { resolveGuildConfig, resolveProviderRoute, resolveTerminationGraceMs, resolveWorkspaceRoot } from "../config";
 import { resolveAgentLaunch, type HarnessResolution } from "../harness";
+import { AutonomousLimitError, formatLimitTerminationNote, limitPhaseForAutoWorker, resolveEffectiveLimit, type EffectiveLimit } from "../limits";
+import { terminateProcessGroup, type ProcessGroupTerminationResult } from "../util";
 import { runAuto, type AutoResult, type AutoReviewDecision, type AutoReviewInput, type AutoWorkerInput } from "../supervisor/loop";
+
+/**
+ * T047: ceiling/inactivity enforcement around an autonomous spawn, resolved
+ * through the same `resolveEffectiveLimit()` the manual runner uses so the
+ * knob a rejection names is always the one that actually governed. Detached
+ * process-group spawning (US5) means termination reaches the whole tree the
+ * spawn started, not only its direct child.
+ */
+interface LimitEnforcedOutcome {
+  exitCode: number | null;
+  spawnError?: string;
+  firingLimit: EffectiveLimit | null;
+  cleanupResult: ProcessGroupTerminationResult;
+}
+
+function enforceSpawnLimits(
+  child: ChildProcess,
+  limitPhase: string,
+  cfg: ReturnType<typeof resolveGuildConfig>,
+): Promise<LimitEnforcedOutcome> {
+  const ceilingLimit = resolveEffectiveLimit(limitPhase, "ceiling", cfg, process.env);
+  const inactivityLimit = resolveEffectiveLimit(limitPhase, "inactivity", cfg, process.env);
+  const graceMs = resolveTerminationGraceMs(cfg, process.env);
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let lastActivityMs = Date.now();
+    let firingLimit: EffectiveLimit | null = null;
+    let cleanupResult: ProcessGroupTerminationResult = { cleanupOutcome: "not-applicable", survivorPids: [], escalated: false };
+
+    const bump = (): void => { lastActivityMs = Date.now(); };
+    child.stdout?.on("data", bump);
+    child.stderr?.on("data", bump);
+
+    const finish = (exitCode: number | null, spawnError?: string): void => {
+      if (settled) return;
+      settled = true;
+      if (inactivityHandle) clearInterval(inactivityHandle);
+      if (ceilingHandle) clearTimeout(ceilingHandle);
+      resolve({ exitCode, spawnError, firingLimit, cleanupResult });
+    };
+
+    const kill = (limit: EffectiveLimit): void => {
+      if (settled || firingLimit) return;
+      firingLimit = limit;
+      void terminateProcessGroup(child.pid, { graceMs }).then((result) => {
+        cleanupResult = result;
+        finish(null);
+      });
+    };
+
+    const inactivityHandle = inactivityLimit.effectiveValueMs > 0
+      ? setInterval(() => {
+        if (settled) return;
+        if (Date.now() - lastActivityMs > inactivityLimit.effectiveValueMs) kill(inactivityLimit);
+      }, Math.max(200, Math.min(1000, Math.round(inactivityLimit.effectiveValueMs / 10))))
+      : undefined;
+    inactivityHandle?.unref?.();
+
+    const ceilingHandle = ceilingLimit.effectiveValueMs > 0
+      ? setTimeout(() => kill(ceilingLimit), ceilingLimit.effectiveValueMs)
+      : undefined;
+    ceilingHandle?.unref?.();
+
+    child.on("error", (err) => finish(null, err.message));
+    child.on("exit", (code) => finish(code));
+  });
+}
+
+function limitTerminationMessage(label: string, limit: EffectiveLimit): string {
+  return `${label} killed: limit fired; ${formatLimitTerminationNote(limit)}`;
+}
 
 export interface AutoCliOptions {
   artifact: string;
@@ -23,7 +98,10 @@ interface ReviewInvocationResult {
   ok: boolean;
   output: string;
   error?: string;
+  /** T047/T048: this failure was a descriptor-derived limit termination. */
+  limitFired?: boolean;
 }
+
 
 interface RegistryCliCommand {
   command: string;
@@ -116,45 +194,50 @@ function scrubbedReviewEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return env;
 }
 
-function spawnHarnessInvocation(
+async function spawnHarnessInvocation(
   workspaceRoot: string,
   harness: HarnessResolution,
   agent: string,
   model: string,
   prompt: string,
   env: NodeJS.ProcessEnv,
+  cfg: ReturnType<typeof resolveGuildConfig>,
 ): Promise<ReviewInvocationResult> {
-  return new Promise((resolve) => {
-    const args = ["--agent", agent, "--model", model, "--read-only", "-p", prompt];
-    const isNodeScript = /\.(mjs|cjs|js)$/i.test(harness.command);
-    const command = isNodeScript ? process.execPath : harness.command;
-    const commandArgs = isNodeScript ? [harness.command, ...args] : args;
-    const child = spawn(command, commandArgs, {
-      cwd: workspaceRoot,
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-      shell: !isNodeScript && process.platform === "win32",
-    });
-    let output = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => {
-      const text = chunk.toString();
-      output += text;
-      process.stdout.write(text);
-    });
-    child.stderr.on("data", (chunk) => {
-      const text = chunk.toString();
-      stderr += text;
-      process.stderr.write(text);
-    });
-    child.on("error", (error) => {
-      resolve({ ok: false, output, error: error.message });
-    });
-    child.on("exit", (code) => {
-      if (code === 0) resolve({ ok: true, output });
-      else resolve({ ok: false, output, error: stderr.trim() || `reviewer exited with code ${code ?? 1}` });
-    });
+  const args = ["--agent", agent, "--model", model, "--read-only", "-p", prompt];
+  const isNodeScript = /\.(mjs|cjs|js)$/i.test(harness.command);
+  const command = isNodeScript ? process.execPath : harness.command;
+  const commandArgs = isNodeScript ? [harness.command, ...args] : args;
+  // R8/FR-035: process-group leader, same as the producing worker, so a
+  // limit termination reaches the whole reviewer tree.
+  const child = spawn(command, commandArgs, {
+    cwd: workspaceRoot,
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+    shell: !isNodeScript && process.platform === "win32",
+    detached: true,
   });
+  let output = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => {
+    const text = chunk.toString();
+    output += text;
+    process.stdout.write(text);
+  });
+  child.stderr.on("data", (chunk) => {
+    const text = chunk.toString();
+    stderr += text;
+    process.stderr.write(text);
+  });
+
+  const outcome = await enforceSpawnLimits(child, "review", cfg);
+  if (outcome.firingLimit) {
+    return { ok: false, output, error: limitTerminationMessage("review-agent", outcome.firingLimit), limitFired: true };
+  }
+  if (outcome.spawnError) {
+    return { ok: false, output, error: outcome.spawnError };
+  }
+  if (outcome.exitCode === 0) return { ok: true, output };
+  return { ok: false, output, error: stderr.trim() || `reviewer exited with code ${outcome.exitCode ?? 1}` };
 }
 
 export function parseReviewMarker(output: string): Pick<AutoReviewDecision, "approved" | "reason"> {
@@ -193,6 +276,7 @@ export function harnessReviewer(
     const routeLength = resolveProviderRoute(cfg, "review").length;
     const attempted = new Set<string>();
     let lastError = "";
+    let lastWasLimit = false;
     for (let attempt = 0; attempt < routeLength; attempt++) {
       // FR-011: the reviewer launches through the same resolver as the runner
       // and the scripted worker, on the review route.
@@ -213,9 +297,10 @@ export function harnessReviewer(
         GUILDCTL_ARTIFACT_ID: input.artifactId,
         GUILDCTL_AGENT_MODEL: model,
       };
-      const invocation = await spawnHarnessInvocation(workspaceRoot, launch.harness, "review-agent", model, prompt, env);
+      const invocation = await spawnHarnessInvocation(workspaceRoot, launch.harness, "review-agent", model, prompt, env, cfg);
       if (!invocation.ok) {
         lastError = invocation.error ?? "reviewer invocation failed";
+        lastWasLimit = Boolean(invocation.limitFired);
         continue;
       }
       try {
@@ -223,13 +308,18 @@ export function harnessReviewer(
         return { ...verdict, reviewerAgent: "review-agent", reviewerModel: model };
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
+        lastWasLimit = false;
         continue;
       }
     }
     if (attempted.size === 0) {
       throw new Error("review route has no model distinct from the producing attempt");
     }
-    throw new Error(`independent review failed closed: ${lastError || "review chain exhausted"}`);
+    const message = `independent review failed closed: ${lastError || "review chain exhausted"}`;
+    // T047/T048: only a descriptor-derived limit termination routes through
+    // the non-throwing review-error close-out; every other reviewer failure
+    // still fails closed by propagating out of runAuto.
+    throw lastWasLimit ? new AutonomousLimitError(message) : new Error(message);
   };
 }
 
@@ -242,7 +332,7 @@ function scriptedWorker(
   let invocation = 0;
   const exactRegistryDbPath = path.resolve(registryDbPath);
   const registryCli = registryCliCommand(exactRegistryDbPath);
-  return ({ phase, claim, runId, reviewReason }) => new Promise((resolve, reject) => {
+  return async ({ phase, claim, runId, reviewReason }) => {
     // FR-011: the producing worker resolves its harness, model, provider, and
     // environment through the shared resolver on the default route; this
     // attempt's index walks that route.
@@ -296,15 +386,29 @@ function scriptedWorker(
         PYTHONDONTWRITEBYTECODE: process.env.PYTHONDONTWRITEBYTECODE ?? "1",
         PYTEST_ADDOPTS: process.env.PYTEST_ADDOPTS ?? "-p no:cacheprovider",
       },
-      stdio: "inherit",
+      // R8/FR-035: process-group leader so a limit termination reaches the
+      // whole tree this worker started. Piped (not "inherit") so ceiling/
+      // inactivity enforcement can observe activity; both streams are still
+      // forwarded live to the operator's terminal.
+      stdio: ["ignore", "pipe", "pipe"],
       shell: !isNodeScript && process.platform === "win32",
+      detached: true,
     });
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`${phase} worker exited with code ${code ?? 1}`));
-    });
-  });
+    child.stdout?.pipe(process.stdout);
+    child.stderr?.pipe(process.stderr);
+
+    const producerAgent = phase === "repair" ? "remediation-agent" : "code-writer-agent";
+    const outcome = await enforceSpawnLimits(child, limitPhaseForAutoWorker(phase), cfg);
+    if (outcome.firingLimit) {
+      throw new AutonomousLimitError(limitTerminationMessage(`${producerAgent} (${phase})`, outcome.firingLimit));
+    }
+    if (outcome.spawnError) {
+      throw new Error(`${phase} worker failed to start: ${outcome.spawnError}`);
+    }
+    if (outcome.exitCode !== 0) {
+      throw new Error(`${phase} worker exited with code ${outcome.exitCode ?? 1}`);
+    }
+  };
 }
 
 export async function runAutoCommand(db: Database.Database, opts: AutoCliOptions): Promise<AutoResult> {

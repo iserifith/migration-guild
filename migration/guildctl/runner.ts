@@ -9,7 +9,7 @@ import type { PhaseKey } from "./config";
 import { resolveGuildConfig, resolveTerminationGraceMs, resolveWorkspaceRoot } from "./config";
 import { resolveAgentLaunch, type ResolvedRuntimeConfig } from "./harness";
 import { formatLimitTerminationNote, resolveEffectiveLimit, LIMIT_PRECEDENCE_ORDER, type EffectiveLimit } from "./limits";
-import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions, transientWardenExclusions, type WardenFileSnapshot, type WardenSnapshot } from "./warden";
+import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions, transientWardenExclusions, wardenSnapshotDiff, type WardenSnapshot } from "./warden";
 import { formatVerificationCloseOut, verifyAtClaimClose } from "./verify";
 import { signalProcessGroup, terminateProcessGroup, type ProcessGroupTerminationResult } from "./util";
 import { releaseClaimedArtifactsForOwner } from "../registry/commands/artifacts";
@@ -164,21 +164,6 @@ export function snapshotChangedFiles(root: string): Set<string> {
 function getNewlyWrittenFiles(root: string, before: Set<string>): string[] {
   const after = snapshotChangedFiles(root);
   return [...after].filter((f) => !before.has(f)).sort();
-}
-
-/**
- * Files created or modified between two warden snapshots (research R10). More
- * accurate than a git diff and already paid for by every pre-claimed run —
- * unlike `snapshotChangedFiles`, it does not silently report zero in a
- * non-git workspace.
- */
-function wardenWrittenFiles(before: WardenSnapshot, after: WardenSnapshot): string[] {
-  const written: string[] = [];
-  for (const [file, current] of after.files as Map<string, WardenFileSnapshot>) {
-    const prior = before.files.get(file);
-    if (!prior || prior.sha256 !== current.sha256) written.push(file);
-  }
-  return written.sort();
 }
 
 /**
@@ -710,7 +695,7 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
       let writtenFileNames: string[] = [];
       if (preClaimedArtifactId && wardenSnapshot) {
         const afterSnapshot = snapshotWorkspaceForWardenWithExclusions(projectRoot, wardenExcludedPaths);
-        writtenFileNames = wardenWrittenFiles(wardenSnapshot, afterSnapshot);
+        writtenFileNames = wardenSnapshotDiff(wardenSnapshot, afterSnapshot);
         filesWrittenCount = writtenFileNames.length;
         filesWrittenSource = "warden-snapshot";
       } else if (isGitWorktree(projectRoot)) {

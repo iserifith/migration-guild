@@ -173,3 +173,13 @@ export function formatLimitTerminationNote(limit: EffectiveLimit): string {
 export function limitPhaseForAutoWorker(workerPhase: "migrate" | "repair"): string {
   return workerPhase === "repair" ? "remediation" : "code-writing";
 }
+
+/**
+ * Distinguishes a descriptor-derived limit termination from every other
+ * independent-review failure (a malformed marker, an identity-assertion
+ * failure, a plain invocation error). Only this class routes an autonomous
+ * review rejection through the non-throwing review-error close-out path in
+ * `supervisor/loop.ts`; every other review failure still fails closed by
+ * propagating out of `runAuto` (T047, T048).
+ */
+export class AutonomousLimitError extends Error {}

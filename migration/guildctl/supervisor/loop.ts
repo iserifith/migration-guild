@@ -7,12 +7,14 @@ import { claimArtifactById, createRunOperatorCredential, releaseClaimsForRun } f
 import { setArtifactStatus } from "../../registry/commands/artifacts";
 import { addAcceptanceEvidence, approveArtifactWithEvidence, checkEvidenceFreshness, rejectArtifactWithEvidence } from "../../registry/commands/evidence";
 import { finishRun, startRun } from "../../registry/commands/runs";
-import type { AcceptanceEvidence, ClaimedArtifact } from "../../registry/types";
+import type { AcceptanceEvidence, ClaimedArtifact, FilesWrittenSource, OutcomeLabel } from "../../registry/types";
+import { deriveOutcomeLabel } from "../runner";
 import { isPathInside } from "../config";
+import { AutonomousLimitError } from "../limits";
 import { contentSha256, diffSignatures, signatureDigest, type DeltaKind, type SignatureDelta } from "../signature";
 import { formatVerificationCloseOut, runVerify, verifyAtClaimClose, type VerifyResult } from "../verify";
 import { resolveGuildConfig } from "../config";
-import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions, transientWardenExclusions } from "../warden";
+import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions, transientWardenExclusions, wardenSnapshotDiff, type WardenSnapshot } from "../warden";
 import { classifyFailure, FailureBudget } from "./failures";
 
 export interface AutoWorkerInput {
@@ -280,13 +282,20 @@ function scheduleReviewRejectionRepair(
   return true;
 }
 
+/**
+ * T048: a review-spawn rejection (including a descriptor-derived limit
+ * termination) is reported through `reviewError` rather than thrown, so a
+ * caller can close this artifact out through its own per-artifact block
+ * instead of the outer queue-halting catch — leaving independent queue work
+ * runnable (spec: US4 independent test).
+ */
 async function guardedIndependentReview(
   db: Database.Database,
   opts: AutoOptions,
   review: NonNullable<AutoOptions["review"]>,
   input: AutoReviewInput,
   excludedPaths: string[],
-): Promise<{ decision?: AutoReviewDecision; violation: boolean }> {
+): Promise<{ decision?: AutoReviewDecision; violation: boolean; reviewError?: unknown }> {
   const snapshot = snapshotWorkspaceForWardenWithExclusions(opts.workspaceRoot, excludedPaths);
   let decision: AutoReviewDecision | undefined;
   let reviewError: unknown;
@@ -313,8 +322,72 @@ async function guardedIndependentReview(
     });
     return { violation: true };
   }
+  // Only a descriptor-derived limit termination (AutonomousLimitError) routes
+  // through the non-throwing review-error close-out. Every other reviewer
+  // failure — a malformed marker, an identity-assertion failure, a plain
+  // invocation error — keeps failing closed by propagating out of runAuto.
+  if (reviewError instanceof AutonomousLimitError) return { violation: false, reviewError };
   if (reviewError) throw reviewError;
   return { decision, violation: false };
+}
+
+/**
+ * The review-error per-artifact close-out (T048): a review-spawn rejection
+ * (including a descriptor-derived limit termination — T047) blocks this
+ * artifact and persists the termination reason, exactly as the worker-error
+ * path already does, instead of throwing out of `runAuto` and halting every
+ * other artifact in the queue.
+ */
+function closeOutReviewError(
+  db: Database.Database,
+  opts: AutoOptions,
+  operatorToken: string,
+  runId: string,
+  attempts: number,
+  error: unknown,
+  statusFrom: string | null = "migrated",
+): AutoResult {
+  const message = error instanceof Error ? error.message : String(error);
+  appendEvent(db, {
+    id: opts.artifactId,
+    type: "blocked",
+    agent: "guildctl-auto",
+    summary: `Independent review failed: ${message}`,
+    data: JSON.stringify({ error: message }),
+  });
+  setArtifactStatus(db, opts.artifactId, "blocked", {
+    agent: "guildctl",
+    runId,
+    operatorToken,
+    reason: `Independent review failed: ${message}`,
+  });
+  // T048/T049: same close-out shape as the worker-error path. The reviewer is
+  // enforced read-only (its own warden pass runs with an empty allow-list), so
+  // it never legitimately writes files; a limit-fired rejection here never
+  // carries a success-equivalent label.
+  const statusToRow = db.prepare("SELECT status FROM artifacts WHERE id = ?").get(opts.artifactId) as { status: string } | undefined;
+  const filesWrittenSource: FilesWrittenSource = "warden-snapshot";
+  const outcomeLabel: OutcomeLabel = deriveOutcomeLabel({
+    exitCode: 1,
+    limitKilled: error instanceof AutonomousLimitError,
+    statusFrom,
+    statusTo: statusToRow?.status ?? statusFrom,
+    filesWrittenCount: 0,
+    filesWrittenSource,
+    wardenClean: true,
+  });
+  finishRun(db, {
+    runId,
+    exitCode: 1,
+    reason: message,
+    filesWrittenCount: 0,
+    filesWrittenSource,
+    statusFrom,
+    statusTo: statusToRow?.status ?? statusFrom,
+    cleanupOutcome: "not-applicable",
+    outcomeLabel,
+  });
+  return { status: "blocked", runId, attempts };
 }
 
 export async function runAuto(
@@ -431,6 +504,9 @@ export async function runAuto(
             finishRun(db, { runId, exitCode: 1, reason: "review filesystem violation" });
             return { status: "blocked", runId, attempts };
           }
+          if (reviewResult.reviewError) {
+            return closeOutReviewError(db, opts, operator.token, runId, attempts, reviewResult.reviewError);
+          }
           const reviewed = reviewResult.decision!;
           if (reviewed.approved) {
             approveArtifactWithEvidence(db, {
@@ -531,7 +607,34 @@ export async function runAuto(
           operatorToken: operator.token,
           reason: `Autonomous ${phase} worker failed: ${message}`,
         });
-        finishRun(db, { runId, exitCode: 1, reason: message });
+        // T048/T049: the worker-error close-out states files written (from the
+        // same warden snapshot diff the manual runner uses), the status
+        // transition, and a computed outcome_label — never a stored counter,
+        // never a success-equivalent label for a limit termination.
+        const afterSnapshot = snapshotWorkspaceForWardenWithExclusions(opts.workspaceRoot, wardenExcludedPaths);
+        const writtenFiles = wardenSnapshotDiff(snapshot, afterSnapshot);
+        const statusToRow = db.prepare("SELECT status FROM artifacts WHERE id = ?").get(opts.artifactId) as { status: string } | undefined;
+        const limitKilled = workerError instanceof AutonomousLimitError;
+        const outcomeLabel: OutcomeLabel = deriveOutcomeLabel({
+          exitCode: 1,
+          limitKilled,
+          statusFrom: fromStatus,
+          statusTo: statusToRow?.status ?? fromStatus,
+          filesWrittenCount: writtenFiles.length,
+          filesWrittenSource: "warden-snapshot",
+          wardenClean: true,
+        });
+        finishRun(db, {
+          runId,
+          exitCode: 1,
+          reason: message,
+          filesWrittenCount: writtenFiles.length,
+          filesWrittenSource: "warden-snapshot",
+          statusFrom: fromStatus,
+          statusTo: statusToRow?.status ?? fromStatus,
+          cleanupOutcome: "not-applicable",
+          outcomeLabel,
+        });
         return { status: "blocked", runId, attempts };
       }
       releaseClaimsForRun(db, runId, "guildctl", `auto cleanup after ${phase}`);
@@ -624,6 +727,9 @@ export async function runAuto(
           });
           finishRun(db, { runId, exitCode: 1, reason: "review filesystem violation" });
           return { status: "blocked", runId, attempts };
+        }
+        if (reviewResult.reviewError) {
+          return closeOutReviewError(db, opts, operator.token, runId, attempts, reviewResult.reviewError);
         }
         const reviewed = reviewResult.decision!;
         if (!reviewed.approved) {
