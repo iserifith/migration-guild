@@ -112,28 +112,40 @@ function registeredExpectedOutputPaths(db: Database.Database | undefined, exclud
   try {
     const paths = new Set<string>();
 
-    // Derive expected output paths from ALL registered artifacts, not just
+    const currentRow = db.prepare(`SELECT wave FROM artifacts WHERE id = ?`).get(excludeArtifactId) as
+      | { wave: number | null }
+      | undefined;
+    const currentWave = currentRow?.wave ?? null;
+
+    // Derive expected output paths from same-wave registered artifacts, not just
     // those with active claims. This prevents the warden from reverting
     // legitimate shared dependency stubs (e.g. SystemGlobals.java, DAO
     // interfaces) that same-wave workers create as side effects before the
     // owning artifact has been claimed. The real migration overwrites the
     // stub; the stub surviving until then avoids wasted re-derivation.
+    // Scoped to the current artifact's own wave: sanctioning every artifact
+    // registry-wide (including unclaimed, future-wave artifacts) would dilute
+    // the review-phase fail-closed guarantee (see enforceWardenSnapshot) far
+    // beyond the same-wave collisions this is meant to tolerate.
     const artifactRows = db.prepare(`
-      SELECT id, path FROM artifacts WHERE id != ?
-    `).all(excludeArtifactId) as Array<{ id: string; path: string }>;
+      SELECT id, path FROM artifacts WHERE id != ? AND wave IS ?
+    `).all(excludeArtifactId, currentWave) as Array<{ id: string; path: string }>;
     for (const row of artifactRows) {
       const derived = deriveExpectedOutputPaths({ path: row.path } as Artifact);
       for (const p of derived) paths.add(p);
     }
 
     // Also include paths explicitly recorded in claims (covers edge cases
-    // where claim expected_output_paths differ from derived).
+    // where claim expected_output_paths differ from derived), scoped to the
+    // same wave for the same reason.
     const claimRows = db.prepare(`
-      SELECT expected_output_paths
-      FROM artifact_claims
-      WHERE expected_output_paths IS NOT NULL
-        AND artifact_id != ?
-    `).all(excludeArtifactId) as Array<{ expected_output_paths: string }>;
+      SELECT c.expected_output_paths
+      FROM artifact_claims c
+      JOIN artifacts a ON a.id = c.artifact_id
+      WHERE c.expected_output_paths IS NOT NULL
+        AND c.artifact_id != ?
+        AND a.wave IS ?
+    `).all(excludeArtifactId, currentWave) as Array<{ expected_output_paths: string }>;
     for (const row of claimRows) {
       try {
         const parsed = JSON.parse(row.expected_output_paths) as unknown;
