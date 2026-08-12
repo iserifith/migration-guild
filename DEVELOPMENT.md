@@ -53,6 +53,13 @@ Important consequence:
 - `DEVELOPMENT.md` — maintainer workflow and packaging rules
 - `CHANGELOGS.MD` — repository-level change log for ongoing development
 
+### Branching policy
+
+- `dev` is the default and integration branch. All new PRs and fixes target `dev` first; direct commits to `dev` are allowed (ungated).
+- `main` is release-only. Nothing lands on `main` except promotion merges from `dev` (PR) or an emergency quickfix PR that must then be back-merged into `dev` immediately so `main` never drifts ahead.
+- `main` is protected by a GitHub ruleset (`protect-main-pr-only`): PR required, no force-push, no deletion, no bypass actors.
+- A pre-commit hook ships in `.githooks/` (enable with `git config core.hooksPath .githooks`): staged-diff secret scan, direct-commit guard on `main`/`master`, and the repo build+test gate.
+
 ### Runtime and packaging paths
 
 - `migration/` — canonical source for the registry and guildctl CLIs, test suite, and runtime code
