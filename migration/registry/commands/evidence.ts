@@ -1,7 +1,9 @@
 import type Database from "better-sqlite3";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { resolveWorkspaceRoot } from "../../guildctl/config";
 import { signRuntimeEvidence } from "../../guildctl/verify";
 import { RegistryError, validateId } from "../types";
 import type {
@@ -13,7 +15,7 @@ import type {
   EvidenceType,
 } from "../types";
 import { setArtifactStatus } from "./artifacts";
-import { validateRunOperatorCredential } from "./claim";
+import { deriveExpectedOutputPaths, validateRunOperatorCredential } from "./claim";
 import { appendEvent } from "./events";
 
 export interface AddAcceptanceEvidenceOptions {
@@ -55,6 +57,8 @@ export interface ApproveArtifactWithEvidenceOptions {
   evidenceIds?: string[];
   runId?: string | null;
   operatorToken?: string | null;
+  /** Workspace root to commit the promoted artifact in; defaults to resolveWorkspaceRoot(). */
+  workspaceRoot?: string;
 }
 
 export interface RejectArtifactWithEvidenceOptions {
@@ -459,7 +463,74 @@ export function approveArtifactWithEvidence(
     return decision;
   });
 
-  return tx();
+  const decision = tx();
+  commitPromotedArtifact(db, opts.artifactId, decision, opts.workspaceRoot);
+  return decision;
+}
+
+// Git sets GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE in the environment while
+// running a hook so the hook's own git invocations target the right repo.
+// A caller running inside such a hook (e.g. this project's own pre-commit
+// running its test suite) would otherwise leak those vars into the commands
+// below and silently redirect them at the *outer* repo instead of `root`.
+const GIT_SCOPE_ENV: NodeJS.ProcessEnv = { ...process.env };
+for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_CEILING_DIRECTORIES", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR"]) {
+  delete GIT_SCOPE_ENV[key];
+}
+
+function isInsideGitWorkTree(root: string): boolean {
+  try {
+    return execFileSync("git", ["-C", root, "rev-parse", "--is-inside-work-tree"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      env: GIT_SCOPE_ENV,
+    }).trim() === "true";
+  } catch {
+    return false;
+  }
+}
+
+function runGit(root: string, args: string[]): { status: number | null } {
+  const res = spawnSync("git", args, { cwd: root, stdio: "ignore", env: GIT_SCOPE_ENV });
+  return { status: res.status };
+}
+
+/**
+ * Commit an approved artifact's own output path(s) plus any approved
+ * companion outputs into git, giving free rollback of an agent's own
+ * claimed-path damage (issue #48). This is a report, not a gate: any
+ * failure here (no git, no repo, nothing to commit) must not turn a
+ * successful arbitration approval into a crash.
+ */
+function commitPromotedArtifact(
+  db: Database.Database,
+  artifactId: string,
+  decision: ArbitrationDecision,
+  workspaceRoot: string | undefined,
+): void {
+  try {
+    const root = workspaceRoot ?? resolveWorkspaceRoot();
+    if (!isInsideGitWorkTree(root)) return;
+
+    const artifact = getArtifact(db, artifactId);
+    if (!artifact) return;
+
+    const ownPaths = deriveExpectedOutputPaths(artifact);
+    const companionPaths = listApprovedCompanionOutputs(db, artifactId).map((row) => row.output_path);
+    const paths = [...new Set([...ownPaths, ...companionPaths])];
+
+    const existing = paths.filter((p) => fs.existsSync(path.resolve(root, p)));
+    if (existing.length === 0) return;
+
+    for (const p of existing) {
+      runGit(root, ["add", "--", p]);
+    }
+    if (runGit(root, ["diff", "--cached", "--quiet"]).status === 0) return;
+
+    runGit(root, ["commit", "-m", `promote: ${artifactId} (arbiter decision ${decision.decision_id})`]);
+  } catch {
+    // fail open: see doc comment above
+  }
 }
 
 function sha256File(file: string): string {
