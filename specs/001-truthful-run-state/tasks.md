@@ -211,8 +211,8 @@ and spent budget.
 - [x] T050 [US4] Validate the attempt-outcome value domains in `finishRun` in `migration/registry/commands/runs.ts` — `files_written_source`, `budget_consumed`, `cleanup_outcome`, `outcome_label`, `survivor_pids` non-empty iff `cleanup_outcome = 'survivors'` — and reject `succeeded` when `status_from` equals `status_to`
 - [x] T051 [US4] Add the `show-no-progress-attempts [--min <n>] [--artifact <id>] [--json]` query over `runs ⋈ artifact_claims` grouped by artifact to `migration/registry/commands/runs.ts` and register it in `migration/registry/cli.ts`
 - [x] T052 [US4] Add the `COUNT`-shaped repeat-waste line (`N artifact(s) with ≥2 no-progress attempts`) with the `registry show-no-progress-attempts --min 2` pointer to `migration/guildctl/commands/status.ts` (same file as T029; sequence after it)
-- [ ] T053 [P] [US4] Document the effective per-phase limits, their sources, and the precedence order in `README.md` and `GETTING-STARTED.md` (same files as T040/T041; sequence after them if US3 and US4 are worked concurrently)
-- [ ] T054 [US4] Add the attempt close-out expectations — the five facts an attempt must state together, and that a released claim is never reported as proof the attempt succeeded — to `package/agent-instructions.md` (same file as T031; do not run the two in parallel)
+- [x] T053 [P] [US4] Document the effective per-phase limits, their sources, and the precedence order in `README.md` and `GETTING-STARTED.md` (same files as T040/T041; sequence after them if US3 and US4 are worked concurrently)
+- [x] T054 [US4] Add the attempt close-out expectations — the five facts an attempt must state together, and that a released claim is never reported as proof the attempt succeeded — to `package/agent-instructions.md` (same file as T031; do not run the two in parallel)
 
 **Checkpoint**: User Stories 1–4 all work independently.
 

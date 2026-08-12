@@ -97,6 +97,23 @@ The CLI reports provider/model configuration divergences and environment diverge
 credential values are redacted. A workspace `.env` value for `AGENT_CMD` now wins over an exported
 ambient `AGENT_CMD`, so review that file when changing harness selection.
 
+## Effective time limits
+
+Every phase enforces two time limits — a wall-clock ceiling and an inactivity timeout — resolved
+through one four-tier precedence, first match wins:
+
+```
+per-phase setting  →  environment override  →  project configuration  →  built-in default
+```
+
+Run `guildctl limits` before a run to see, per phase, which knob is actually governing, its
+effective value, and whether a floor was applied (5 minutes for analyze/test/code-writing/
+remediation, 1 minute for review/inventory — a per-phase setting below the floor is raised, and
+the report says so). A termination message always names the knob that fired — never a setting
+that has no effect, such as `agent_limits.ceiling_seconds` when a per-phase env var overrode it.
+`guildctl limits` reports time limits only; it is unrelated to `guildctl auto-run --limit <n>`,
+which bounds the number of artifacts processed.
+
 ## Roadmap
 
 - **Runtime evidence tier (environment-in-the-loop).** Today the evidence gates are fed by static and registry evidence. Next: an environment agent that builds and executes migrated modules in an isolated sandbox, files build/test/runtime logs as first-class evidence, and routes failures by class (config → env self-repair, semantic → codegen, behavioral → test agent). This follows the direction argued in [*Environment-in-the-Loop: Rethinking Code Migration with LLM-based Agents*](https://arxiv.org/abs/2602.09944) — Migration Guild already provides the coordination substrate (registry, claims, arbiter) that paradigm needs.
