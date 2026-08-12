@@ -7,6 +7,7 @@
   },
   "scripts": {
     "build": "tsup setup.ts --format cjs --out-dir dist",
+    "build:ui": "npm --prefix migration/ui run build",
     "dev": "tsx setup.ts",
     "test": "npm --prefix migration test && npm --prefix migration/ui test",
     "build:dist": "node ./scripts/build-dist.mjs",
@@ -15,6 +16,6 @@
   "devDependencies": {
     "tsup": "^8.0.2",
     "tsx": "^4.7.0",
-    "typescript": "^5.3.3"
+    "typescript": "^6.0.3"
   }
 }

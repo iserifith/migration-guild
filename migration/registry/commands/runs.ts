@@ -134,7 +134,7 @@ export function finishRun(db: Database.Database, opts: FinishRunOptions): Run {
   return db.prepare(`SELECT * FROM runs WHERE run_id = ?`).get(opts.runId) as Run;
 }
 
-function isProcessAlive(pid: number): boolean {
+export function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
