@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRunLog } from "../hooks";
 import type { RunEntry, RunFilters, RunQuery, TimeDisplayMode } from "../types";
 import { formatDuration, formatTimestamp } from "../format";
@@ -44,13 +44,15 @@ export default function RunsView({
     reload: reloadLog,
   } = useRunLog(selectedRunId);
 
-  const statuses =
-    availableFilters?.statuses ?? Array.from(new Set(runs.map((run) => run.status))).sort();
-  const agents =
-    availableFilters?.agents ?? Array.from(new Set(runs.map((run) => run.agent))).sort();
-  const models =
+  // ⚡ Bolt: memoize expensive set operations to prevent recalculating
+  // on every selection change/render.
+  const statuses = useMemo(() =>
+    availableFilters?.statuses ?? Array.from(new Set(runs.map((run) => run.status))).sort(), [runs, availableFilters?.statuses]);
+  const agents = useMemo(() =>
+    availableFilters?.agents ?? Array.from(new Set(runs.map((run) => run.agent))).sort(), [runs, availableFilters?.agents]);
+  const models = useMemo(() =>
     availableFilters?.models ??
-    Array.from(new Set(runs.map((run) => run.model).filter(Boolean) as string[])).sort();
+    Array.from(new Set(runs.map((run) => run.model).filter(Boolean) as string[])).sort(), [runs, availableFilters?.models]);
   const statusFilter = query.status ?? "";
   const agentFilter = query.agent ?? "";
   const modelFilter = query.model ?? "";

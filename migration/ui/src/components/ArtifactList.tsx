@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Artifact, TimeDisplayMode } from "../types";
 import { STATUS_FILTER_OPTIONS, KIND_FILTER_OPTIONS } from "../constants";
 import ArtifactDetail from "./ArtifactDetail";
@@ -41,16 +41,19 @@ export default function ArtifactList({
     );
   }
 
-  const modules = [
+  // ⚡ Bolt: memoize expensive set operations to prevent recalculating
+  // on every selection change/render.
+  const modules = useMemo(() => [
     "",
     ...(Array.from(new Set(artifacts.map((a) => a.module).filter(Boolean))) as string[]),
-  ];
+  ], [artifacts]);
 
-  const filtered = artifacts.filter((a) =>
+  // ⚡ Bolt: memoize list filtering to prevent dropping frames when user selects an artifact.
+  const filtered = useMemo(() => artifacts.filter((a) =>
     (!filterStatus || a.status === filterStatus) &&
     (!filterModule || a.module === filterModule) &&
     (!filterKind || a.kind === filterKind),
-  );
+  ), [artifacts, filterStatus, filterModule, filterKind]);
 
   return (
     <>
