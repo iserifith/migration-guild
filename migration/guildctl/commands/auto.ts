@@ -23,7 +23,7 @@ interface LimitEnforcedOutcome {
   cleanupResult: ProcessGroupTerminationResult;
 }
 
-function enforceSpawnLimits(
+export function enforceSpawnLimits(
   child: ChildProcess,
   limitPhase: string,
   cfg: ReturnType<typeof resolveGuildConfig>,
@@ -53,6 +53,13 @@ function enforceSpawnLimits(
     const kill = (limit: EffectiveLimit): void => {
       if (settled || firingLimit) return;
       firingLimit = limit;
+      // Once a kill is initiated, the process's own "exit" event races the
+      // termination promise's confirm-wait poll — a graceful/forced signal
+      // sent by `terminateProcessGroup` itself can make the direct child exit
+      // before that promise resolves. `finish` must not settle on that raw
+      // "exit" event once `firingLimit` is set: only the termination result
+      // (below) may report the cleanup outcome, or a real "clean" escalation
+      // could read back as the default "not-applicable".
       void terminateProcessGroup(child.pid, { graceMs }).then((result) => {
         cleanupResult = result;
         finish(null);
@@ -72,8 +79,14 @@ function enforceSpawnLimits(
       : undefined;
     ceilingHandle?.unref?.();
 
-    child.on("error", (err) => finish(null, err.message));
-    child.on("exit", (code) => finish(code));
+    child.on("error", (err) => {
+      if (firingLimit) return;
+      finish(null, err.message);
+    });
+    child.on("exit", (code) => {
+      if (firingLimit) return;
+      finish(code);
+    });
   });
 }
 
@@ -100,6 +113,9 @@ interface ReviewInvocationResult {
   error?: string;
   /** T047/T048: this failure was a descriptor-derived limit termination. */
   limitFired?: boolean;
+  /** T058: the process-cleanup outcome, when limitFired. */
+  cleanupOutcome?: "clean" | "survivors" | "not-applicable";
+  survivorPids?: number[];
 }
 
 
@@ -231,7 +247,14 @@ async function spawnHarnessInvocation(
 
   const outcome = await enforceSpawnLimits(child, "review", cfg);
   if (outcome.firingLimit) {
-    return { ok: false, output, error: limitTerminationMessage("review-agent", outcome.firingLimit), limitFired: true };
+    return {
+      ok: false,
+      output,
+      error: limitTerminationMessage("review-agent", outcome.firingLimit),
+      limitFired: true,
+      cleanupOutcome: outcome.cleanupResult.cleanupOutcome,
+      survivorPids: outcome.cleanupResult.survivorPids,
+    };
   }
   if (outcome.spawnError) {
     return { ok: false, output, error: outcome.spawnError };
@@ -277,6 +300,8 @@ export function harnessReviewer(
     const attempted = new Set<string>();
     let lastError = "";
     let lastWasLimit = false;
+    let lastCleanupOutcome: "clean" | "survivors" | "not-applicable" = "not-applicable";
+    let lastSurvivorPids: number[] = [];
     for (let attempt = 0; attempt < routeLength; attempt++) {
       // FR-011: the reviewer launches through the same resolver as the runner
       // and the scripted worker, on the review route.
@@ -301,6 +326,8 @@ export function harnessReviewer(
       if (!invocation.ok) {
         lastError = invocation.error ?? "reviewer invocation failed";
         lastWasLimit = Boolean(invocation.limitFired);
+        lastCleanupOutcome = invocation.cleanupOutcome ?? "not-applicable";
+        lastSurvivorPids = invocation.survivorPids ?? [];
         continue;
       }
       try {
@@ -319,7 +346,7 @@ export function harnessReviewer(
     // T047/T048: only a descriptor-derived limit termination routes through
     // the non-throwing review-error close-out; every other reviewer failure
     // still fails closed by propagating out of runAuto.
-    throw lastWasLimit ? new AutonomousLimitError(message) : new Error(message);
+    throw lastWasLimit ? new AutonomousLimitError(message, lastCleanupOutcome, lastSurvivorPids) : new Error(message);
   };
 }
 
@@ -400,7 +427,11 @@ function scriptedWorker(
     const producerAgent = phase === "repair" ? "remediation-agent" : "code-writer-agent";
     const outcome = await enforceSpawnLimits(child, limitPhaseForAutoWorker(phase), cfg);
     if (outcome.firingLimit) {
-      throw new AutonomousLimitError(limitTerminationMessage(`${producerAgent} (${phase})`, outcome.firingLimit));
+      throw new AutonomousLimitError(
+        limitTerminationMessage(`${producerAgent} (${phase})`, outcome.firingLimit),
+        outcome.cleanupResult.cleanupOutcome,
+        outcome.cleanupResult.survivorPids,
+      );
     }
     if (outcome.spawnError) {
       throw new Error(`${phase} worker failed to start: ${outcome.spawnError}`);

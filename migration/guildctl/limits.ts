@@ -181,5 +181,18 @@ export function limitPhaseForAutoWorker(workerPhase: "migrate" | "repair"): stri
  * review rejection through the non-throwing review-error close-out path in
  * `supervisor/loop.ts`; every other review failure still fails closed by
  * propagating out of `runAuto` (T047, T048).
+ *
+ * Carries the process-cleanup outcome (T058) so the worker-error/review-error
+ * close-out can persist `cleanup_outcome`/`survivor_pids` from the same
+ * termination the descriptor enforced, instead of reporting "not-applicable"
+ * for a limit that actually fired.
  */
-export class AutonomousLimitError extends Error {}
+export class AutonomousLimitError extends Error {
+  constructor(
+    message: string,
+    public readonly cleanupOutcome: "clean" | "survivors" | "not-applicable" = "not-applicable",
+    public readonly survivorPids: number[] = [],
+  ) {
+    super(message);
+  }
+}

@@ -367,24 +367,35 @@ function closeOutReviewError(
   // carries a success-equivalent label.
   const statusToRow = db.prepare("SELECT status FROM artifacts WHERE id = ?").get(opts.artifactId) as { status: string } | undefined;
   const filesWrittenSource: FilesWrittenSource = "warden-snapshot";
+  const isLimitError = error instanceof AutonomousLimitError;
   const outcomeLabel: OutcomeLabel = deriveOutcomeLabel({
     exitCode: 1,
-    limitKilled: error instanceof AutonomousLimitError,
+    limitKilled: isLimitError,
     statusFrom,
     statusTo: statusToRow?.status ?? statusFrom,
     filesWrittenCount: 0,
     filesWrittenSource,
     wardenClean: true,
   });
+  const cleanupOutcome = isLimitError ? error.cleanupOutcome : "not-applicable";
+  const survivorPids = isLimitError ? error.survivorPids : [];
+  // FR-039: the claim disposition and process-cleanup outcome are printed
+  // together — a released claim is never printed alone.
+  process.stderr.write(
+    `[guildctl] ${opts.artifactId} review attempt closed — claim: released, retryable; process cleanup: ${
+      cleanupOutcome === "survivors" ? `FAILED — ${survivorPids.length} survivor(s) (pid ${survivorPids.join(", ")})` : `${cleanupOutcome} (0 survivors)`
+    }\n`,
+  );
   finishRun(db, {
     runId,
     exitCode: 1,
     reason: message,
     filesWrittenCount: 0,
     filesWrittenSource,
+    cleanupOutcome,
+    survivorPids: survivorPids.length > 0 ? survivorPids : null,
     statusFrom,
     statusTo: statusToRow?.status ?? statusFrom,
-    cleanupOutcome: "not-applicable",
     outcomeLabel,
   });
   return { status: "blocked", runId, attempts };
@@ -624,6 +635,17 @@ export async function runAuto(
           filesWrittenSource: "warden-snapshot",
           wardenClean: true,
         });
+        const workerCleanupOutcome = limitKilled ? (workerError as InstanceType<typeof AutonomousLimitError>).cleanupOutcome : "not-applicable";
+        const workerSurvivorPids = limitKilled ? (workerError as InstanceType<typeof AutonomousLimitError>).survivorPids : [];
+        // FR-039: the claim disposition and process-cleanup outcome are
+        // printed together — a released claim is never printed alone.
+        process.stderr.write(
+          `[guildctl] ${opts.artifactId} ${phase} attempt closed — claim: released, retryable; process cleanup: ${
+            workerCleanupOutcome === "survivors"
+              ? `FAILED — ${workerSurvivorPids.length} survivor(s) (pid ${workerSurvivorPids.join(", ")})`
+              : `${workerCleanupOutcome} (0 survivors)`
+          }\n`,
+        );
         finishRun(db, {
           runId,
           exitCode: 1,
@@ -632,7 +654,8 @@ export async function runAuto(
           filesWrittenSource: "warden-snapshot",
           statusFrom: fromStatus,
           statusTo: statusToRow?.status ?? fromStatus,
-          cleanupOutcome: "not-applicable",
+          cleanupOutcome: workerCleanupOutcome,
+          survivorPids: workerSurvivorPids.length > 0 ? workerSurvivorPids : null,
           outcomeLabel,
         });
         return { status: "blocked", runId, attempts };
