@@ -316,7 +316,7 @@ test("runAuto repairs a structured reviewer rejection with bounded same-owner re
     const result = await runAuto(db, {
       artifactId: id,
       workspaceRoot: workspace,
-      commands: ["python -m py_compile modern/AutoCanary.py"],
+      commands: ["python3 -m py_compile modern/AutoCanary.py"],
       maxAttempts: 2,
       worker: async ({ phase, claim, reviewReason: receivedReviewReason }) => {
         phases.push(phase);
