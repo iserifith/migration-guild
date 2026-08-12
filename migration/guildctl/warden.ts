@@ -236,6 +236,21 @@ export function enforceWardenSnapshot(
   return { clean: violations.length === 0, violations };
 }
 
+/**
+ * Files created or modified between two warden snapshots (research R10),
+ * shared by the manual runner and the autonomous supervisor for
+ * `files_written_count` / `files_written_source = "warden-snapshot"`. More
+ * accurate than a git diff, and already paid for by every pre-claimed run.
+ */
+export function wardenSnapshotDiff(before: WardenSnapshot, after: WardenSnapshot): string[] {
+  const written: string[] = [];
+  for (const [file, current] of after.files) {
+    const prior = before.files.get(file);
+    if (!prior || prior.sha256 !== current.sha256) written.push(file);
+  }
+  return written.sort();
+}
+
 export function transientWardenExclusions(workspaceRoot: string, extraPaths: string[] = []): string[] {
   return [
     path.join(workspaceRoot, ".guild", "evidence"),
