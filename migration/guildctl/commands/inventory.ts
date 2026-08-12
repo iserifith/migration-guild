@@ -251,12 +251,6 @@ interface InventoryDeps {
   scanAndRegister?: typeof scanAndRegister;
 }
 
-function inventoryTimeoutMs(): number {
-  const raw = process.env["GUILDCTL_INVENTORY_TIMEOUT_MINUTES"];
-  const minutes = raw ? Number(raw) : 30;
-  return Math.max(1, Number.isFinite(minutes) ? minutes : 30) * 60_000;
-}
-
 // TASK-02: default batch size (artifacts per agent call). Override via env or
 // config key inventory.classificationBatchSize.
 function classificationBatchSize(cwd?: string): number {
@@ -374,7 +368,6 @@ export async function runInventory(db: Database.Database, workspaceRoot = resolv
           db,
           logDir: (deps.getLogDir ?? getLogDir)(),
           phase: "inventory",
-          timeoutMs: inventoryTimeoutMs(),
           resolution: runtime,
         });
         if (result.exitCode === 0) break;

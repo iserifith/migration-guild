@@ -57,6 +57,7 @@ import { collectInitEvidence, createRunLedger, renderPrompt, scaffoldDefaultProm
 import { preflightJson, renderPreflightReport, runPreflight } from "./preflight";
 import { runPipelineStateChecks } from "./doctor";
 import { detectStack, loadStackPack } from "./stack";
+import { formatLimitDuration, KNOWN_LIMIT_PHASES, resolveEffectiveLimit, type EffectiveLimit } from "./limits";
 
 const program = new Command();
 
@@ -228,6 +229,37 @@ program
     }
 
     if (checks.some(([ok]) => !ok) || preflight.verdict === "fail" || stateFailed) process.exit(1);
+  });
+
+// ─── limits ───────────────────────────────────────────────────────────────────
+
+program
+  .command("limits")
+  .description("Report each phase's effective time limits, their sources, and the precedence order — before a run (unrelated to auto-run --limit, which bounds artifact count)")
+  .option("--phase <phase>", "Only report this phase")
+  .option("--json", "Print as JSON")
+  .action((opts) => {
+    const cfg = resolveGuildConfig({ cwd: workspaceRoot(), profile: program.opts()["profile"] as string | undefined });
+    const phases = opts.phase ? [String(opts.phase)] : KNOWN_LIMIT_PHASES;
+    const rows: EffectiveLimit[] = [];
+    for (const phase of phases) {
+      rows.push(resolveEffectiveLimit(phase, "ceiling", cfg, process.env));
+      rows.push(resolveEffectiveLimit(phase, "inactivity", cfg, process.env));
+    }
+    if (opts.json) {
+      process.stdout.write(`${JSON.stringify({ precedenceOrder: rows[0]?.precedenceOrder ?? [], limits: rows }, null, 2)}\n`);
+      return;
+    }
+    process.stdout.write(
+      `Precedence (first match wins): ${(rows[0]?.precedenceOrder ?? []).join(" → ")}\n\n`,
+    );
+    process.stdout.write(`${"phase".padEnd(14)} ${"kind".padEnd(12)} ${"effective".padEnd(10)} ${"knob".padEnd(30)} ${"source".padEnd(19)} floor\n`);
+    for (const row of rows) {
+      const floor = row.floorApplied ? `applied (requested ${formatLimitDuration(row.requestedValueMs)})` : "—";
+      process.stdout.write(
+        `${row.phase.padEnd(14)} ${row.kind.padEnd(12)} ${formatLimitDuration(row.effectiveValueMs).padEnd(10)} ${row.knob.padEnd(30)} ${row.source.padEnd(19)} ${floor}\n`,
+      );
+    }
   });
 
 const dbPath = () => resolveRegistryDbPath({ explicitPath: program.opts()["db"] as string | undefined, workspaceRoot: workspaceRoot() });

@@ -21,10 +21,6 @@ import { needsBootstrap, runBootstrap } from "./bootstrap";
 import { loadActiveStack, readStackInstruction } from "../stack";
 import { evaluateMigrationReadiness, formatMigrationBlockMessage, requireNonEmptyRegistry } from "../readiness";
 
-const ANALYZE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["GUILDCTL_ANALYZE_TIMEOUT_MINS"] ?? "10", 10));
-const TEST_WRITE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["GUILDCTL_TEST_TIMEOUT_MINS"] ?? "15", 10));
-const CODE_WRITE_TIMEOUT_MINUTES = Math.max(5, parseInt(process.env["GUILDCTL_CODE_TIMEOUT_MINS"] ?? "20", 10));
-
 function statusCountsChanged(before: Record<string, number>, after: Record<string, number>): boolean {
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
   for (const key of keys) {
@@ -202,7 +198,6 @@ export async function runMigrate(
               db,
               logDir,
               phase: "analysis",
-              timeoutMs: ANALYZE_TIMEOUT_MINUTES * 60_000,
               releaseClaimsOnFailure: true,
               preClaim: { fromStatus: "planned", tier: "first-class", wave: opts.wave },
               resolution: runtime,
@@ -235,7 +230,6 @@ export async function runMigrate(
               db,
               logDir,
               phase: "test-writing",
-              timeoutMs: TEST_WRITE_TIMEOUT_MINUTES * 60_000,
               releaseClaimsOnFailure: true,
               preClaim: { fromStatus: "analyzed", tier: "first-class", wave: opts.wave },
               resolution: runtime,
@@ -268,7 +262,6 @@ export async function runMigrate(
               db,
               logDir,
               phase: "code-writing",
-              timeoutMs: CODE_WRITE_TIMEOUT_MINUTES * 60_000,
               releaseClaimsOnFailure: true,
               preClaim: { fromStatus: "tests-written", tier: "first-class", wave: opts.wave },
               resolution: runtime,
