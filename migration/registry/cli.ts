@@ -26,7 +26,7 @@ import {
 } from "./commands/dependencies";
 import { appendEvent } from "./commands/events";
 import { startServer } from "./commands/serve";
-import { startRun, finishRun, listRuns, setRunPid } from "./commands/runs";
+import { startRun, finishRun, listRuns, setRunPid, showNoProgressAttempts } from "./commands/runs";
 import {
   addManualDependency,
   findCycles,
@@ -742,6 +742,13 @@ program
   .option("--agent <agent>", "Filter by agent name")
   .option("--limit <n>", "Max results (default 20)", parseInt)
   .action((opts) => run(() => listRuns(db(), opts.agent, opts.limit ?? 20)));
+
+program
+  .command("show-no-progress-attempts")
+  .description("FR-034: artifacts with repeated no-progress attempts (runs joined to claims, never a stored counter)")
+  .option("--min <n>", "Minimum no-progress attempt count (default 1)", parseInt)
+  .option("--artifact <id>", "Only this artifact")
+  .action((opts) => run(() => showNoProgressAttempts(db(), { min: opts.min, artifactId: opts.artifact })));
 
 program
   .command("release")
