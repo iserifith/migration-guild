@@ -140,16 +140,22 @@ an operator never has to trigger a termination to learn which knob governs.
 
 ```text
 $ guildctl limits
-Precedence (first match wins): per-phase setting → project configuration → built-in default
+Precedence (first match wins): per-phase setting → environment override → project configuration → built-in default
 
 phase          kind         effective  knob                          source              floor
 code-writing   ceiling      20m        GUILDCTL_CODE_TIMEOUT_MINS    per-phase-setting   —
-code-writing   inactivity   120s       agent_limits.inactivity_…     project-config      —
-review         ceiling      5m         GUILDCTL_REVIEW_TIMEOUT_MINS  per-phase-setting   applied (requested 2m)
+code-writing   inactivity   120s       agent_limits.inactivity_…     built-in-default      —
+review         ceiling      2m         GUILDCTL_REVIEW_TIMEOUT_MINS  per-phase-setting   —
 ```
 
 **Rules**:
 
+- The environment tier includes `GUILDCTL_AGENT_CEILING_SECONDS` for ceiling limits and
+  `GUILDCTL_INACTIVITY_TIMEOUT_SECONDS` for inactivity limits. A phase-specific timeout variable
+  occupies tier 1 only when explicitly set; when it is unset, resolution falls through to the global
+  environment override, project configuration, or the phase built-in default. When either environment
+  tier governs, the descriptor names the environment variable and reports `env-override`; the project
+  setting is not the governing knob.
 - `effective` is what will actually be enforced. When an enforced minimum raised the requested value,
   `floor` reads `applied` and states the requested value (spec edge case: "the effective value
   actually applied is reported, not the requested one").
