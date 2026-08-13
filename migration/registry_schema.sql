@@ -478,6 +478,19 @@ CREATE TABLE IF NOT EXISTS dependency_strategies (
 
 CREATE INDEX IF NOT EXISTS idx_dependency_strategies_approved_by ON dependency_strategies(approved_by);
 
+-- ISSUE-68: scope gate — one keep/drop decision per module, recorded between
+-- Inventory and Plan. `drop` bulk-transitions that module's pre-migration
+-- artifacts to status='skipped' (see recordScopeDecision); this table is the
+-- audit trail (who/when/why) that the status flip alone wouldn't preserve.
+CREATE TABLE IF NOT EXISTS scope_decisions (
+    module       TEXT PRIMARY KEY,
+    decision     TEXT NOT NULL CHECK (decision IN ('keep', 'drop')),
+    reason       TEXT NOT NULL,
+    decided_by   TEXT NOT NULL,
+    decided_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- TASK-11: audit finding dismiss/reopen (no-delete acknowledge path) + python-compat labels.
 CREATE TABLE IF NOT EXISTS audit_overrides (
     override_id   TEXT PRIMARY KEY,

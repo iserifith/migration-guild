@@ -40,6 +40,11 @@ import {
   listMappings,
 } from "./commands/mappings";
 import {
+  getModuleScopeSummary,
+  listScopeDecisions,
+  recordScopeDecision,
+} from "./commands/scope";
+import {
   approveDependencyStrategy,
   dismissFinding,
   listAuditOverrides,
@@ -974,6 +979,30 @@ program
     agent: opts.agent,
     model: opts.model,
   })));
+
+program
+  .command("record-scope-decision")
+  .description("Record a keep/drop scope decision for a module (ISSUE-68). Dropping bulk-skips its pre-migration artifacts.")
+  .requiredOption("--module <module>", "Module name (matches artifacts.module)")
+  .requiredOption("--decision <decision>", "keep | drop")
+  .requiredOption("--reason <text>", "Why this module is being kept or dropped")
+  .requiredOption("--decided-by <name>", "Operator recording the decision")
+  .action((opts) => run(() => recordScopeDecision(db(), {
+    module: opts.module,
+    decision: opts.decision,
+    reason: opts.reason,
+    decidedBy: opts.decidedBy,
+  })));
+
+program
+  .command("list-scope-decisions")
+  .description("List all recorded module scope decisions")
+  .action(() => run(() => listScopeDecisions(db())));
+
+program
+  .command("scope-summary")
+  .description("Show every module with artifact counts, decision status, and cross-module dependents")
+  .action(() => run(() => getModuleScopeSummary(db())));
 
 program
   .command("show-modernization-gates")

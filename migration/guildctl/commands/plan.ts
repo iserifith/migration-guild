@@ -3,12 +3,13 @@ import type Database from "better-sqlite3";
 import { spawnAgent } from "../runner";
 import type { AgentRunResult } from "../runner";
 import { startPolling } from "../poller";
-import { printPhaseHeader, printEvent, printWavePlan } from "../dashboard";
+import { printPhaseHeader, printEvent, printScopeMap, printWavePlan } from "../dashboard";
 import { getLogDir } from "../util";
 import { resolveGuildConfig, resolvePhaseModel, resolveWorkspaceRoot } from "../config";
 import { setNext } from "../../registry/commands/operator";
 import { setOperatorState } from "../../registry/commands/operator";
 import { approveDependencyStrategy } from "../../registry/commands/modernization";
+import { getUndecidedModules, recordScopeDecision } from "../../registry/commands/scope";
 import { refreshCompatibilityAudits } from "../audit";
 import { loadActiveStack, readStackInstruction } from "../stack";
 import { evaluatePlanningReadiness, formatPlanningBlockMessage, requireNonEmptyRegistry } from "../readiness";
@@ -290,10 +291,32 @@ export async function runPlan(
   // reused by both the stack-advisor and planner runs.
   const runtime = resolveAndReportRuntime({ config: cfg, root: projectRoot, model: planningModel });
   const auditSummary = refreshAudits(db, projectRoot);
+
+  // Benchmark/non-interactive auto-keep of undecided module scope, mirroring
+  // GUILDCTL_AUTO_CONFIRM_MAPPINGS / GUILDCTL_AUTO_APPROVE_DEPENDENCIES.
+  if (process.env["GUILDCTL_AUTO_KEEP_SCOPE"] === "1") {
+    const undecidedModules = getUndecidedModules(db);
+    for (const m of undecidedModules) {
+      recordScopeDecision(db, {
+        module: m.module,
+        decision: "keep",
+        reason: "Auto-kept for benchmark run",
+        decidedBy: "benchmark-runner",
+      });
+    }
+    if (undecidedModules.length) process.stdout.write(`  ✓ Auto-kept ${undecidedModules.length} module(s) in scope for benchmark\n`);
+  }
+
   const initialReadiness = evaluatePlanningReadiness(db);
+  const scopeBlock = formatPlanningBlockMessage({
+    ...initialReadiness,
+    blockingJvmFindings: [],
+    unresolvedDependencyFindings: [],
+  });
   const jvmBlock = formatPlanningBlockMessage({
     ...initialReadiness,
     unresolvedDependencyFindings: [],
+    unresolvedScopeModules: [],
   });
   console.log(`  Pre-plan audit refreshed for ${auditSummary.artifact_count} artifact(s)`);
   console.log(`  JVM findings: critical=${auditSummary.jvm.critical}  warning=${auditSummary.jvm.warnings}`);
@@ -308,6 +331,24 @@ export async function runPlan(
       recommendedCommand: "node migration/registry/dist/cli.js batch-classify --file <json> --dry-run",
     });
     throw new Error(`Inventory quality gate blocked planning: ${inventoryReport.errors.join("; ")}`);
+  }
+
+  // ── Scope gate (ISSUE-68) ───────────────────────────────────────────────────
+  // Every module needs an explicit keep/drop decision before planning — no
+  // silent "keep by default." No --override flag: unlike the audit gates,
+  // there's no sanctioned bypass, since a skipped decision here means an
+  // artifact nobody reviewed flows straight into a migration wave.
+  if (scopeBlock) {
+    printScopeMap(db);
+    setNext(db, {
+      summary: scopeBlock.summary,
+      reason: scopeBlock.reason,
+      recommendedCommand: scopeBlock.command,
+    });
+    process.stderr.write(`\n  ✗ ${scopeBlock.summary}\n`);
+    process.stderr.write(`    ${scopeBlock.reason}\n`);
+    process.stderr.write(`    Run: ${scopeBlock.command}\n\n`);
+    process.exit(1);
   }
 
   if (jvmBlock) {
@@ -416,6 +457,7 @@ export async function runPlan(
   const dependencyBlock = formatPlanningBlockMessage({
     ...readiness,
     blockingJvmFindings: [],
+    unresolvedScopeModules: [],
   });
   if (dependencyBlock) {
     setNext(db, {
