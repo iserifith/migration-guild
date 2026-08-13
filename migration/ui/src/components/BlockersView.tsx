@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type {
   BlockerEntry,
   BlockerQuery,
@@ -61,12 +62,21 @@ export default function BlockersView({
   const issueSeverity = issueQuery.severity ?? "";
   const issueCategory = issueQuery.category ?? "";
   const issueSort = issueQuery.sort ?? "severity";
-  const severityOptions =
+
+  // ⚡ Bolt: memoize expensive set operations to prevent recalculating
+  const severityOptions = useMemo(() =>
     issueFilters?.severities ??
-    Array.from(new Set(issues.map((issue) => issue.severity).filter(Boolean) as string[])).sort();
-  const categoryOptions =
+    Array.from(new Set(issues.map((issue) => issue.severity).filter(Boolean) as string[])).sort(),
+    [issues, issueFilters?.severities]
+  );
+
+  // ⚡ Bolt: memoize expensive set operations to prevent recalculating
+  const categoryOptions = useMemo(() =>
     issueFilters?.categories ??
-    Array.from(new Set(issues.map((issue) => issue.category).filter(Boolean) as string[])).sort();
+    Array.from(new Set(issues.map((issue) => issue.category).filter(Boolean) as string[])).sort(),
+    [issues, issueFilters?.categories]
+  );
+
   const blockerRangeStart =
     blockersTotal && blockersTotal > 0 ? (blockersPage - 1) * blockersPageSize + 1 : 0;
   const blockerRangeEnd =
