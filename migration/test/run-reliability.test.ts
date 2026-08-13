@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 import Database from "better-sqlite3";
 import { isGitWorktree, snapshotChangedFiles, spawnAgent } from "../guildctl/runner";
@@ -402,5 +403,44 @@ test("git change snapshots stay quiet outside git worktrees", () => {
     assert.deepEqual([...snapshotChangedFiles(workDir)], []);
   } finally {
     rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test("git env vars from an outer hook do not leak into nested git calls", () => {
+  // Simulate the environment git sets when running a hook: GIT_DIR and
+  // GIT_WORK_TREE point at the *outer* repo. A nested call targeting a
+  // plain directory must still see that directory, not the outer repo.
+  const outerRepo = mkdtempSync(path.join(tmpdir(), "guildctl-outer-repo-"));
+  const plainDir = mkdtempSync(path.join(tmpdir(), "guildctl-plain-"));
+
+  try {
+    // Initialise a real git repo to stand in as the outer hook's repo.
+    const init = spawnSync("git", ["init", "--initial-branch=main"], { cwd: outerRepo, encoding: "utf8" });
+    assert.equal(init.status, 0, `git init failed: ${init.stderr}`);
+
+    const originalGitDir = process.env["GIT_DIR"];
+    const originalGitWorkTree = process.env["GIT_WORK_TREE"];
+    const originalGitIndexFile = process.env["GIT_INDEX_FILE"];
+
+    try {
+      process.env["GIT_DIR"] = path.join(outerRepo, ".git");
+      process.env["GIT_WORK_TREE"] = outerRepo;
+      process.env["GIT_INDEX_FILE"] = path.join(outerRepo, ".git", "index");
+
+      // Without the fix, isGitWorktree(plainDir) would return true because
+      // GIT_DIR takes precedence over cwd.
+      assert.equal(isGitWorktree(plainDir), false);
+      assert.deepEqual([...snapshotChangedFiles(plainDir)], []);
+    } finally {
+      if (originalGitDir == null) delete process.env["GIT_DIR"];
+      else process.env["GIT_DIR"] = originalGitDir;
+      if (originalGitWorkTree == null) delete process.env["GIT_WORK_TREE"];
+      else process.env["GIT_WORK_TREE"] = originalGitWorkTree;
+      if (originalGitIndexFile == null) delete process.env["GIT_INDEX_FILE"];
+      else process.env["GIT_INDEX_FILE"] = originalGitIndexFile;
+    }
+  } finally {
+    rmSync(outerRepo, { recursive: true, force: true });
+    rmSync(plainDir, { recursive: true, force: true });
   }
 });
