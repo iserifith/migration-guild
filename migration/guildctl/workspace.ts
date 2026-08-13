@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { execFileSync, spawnSync } from "child_process";
 import { ResolvedGuildConfig, sanitizedConfigSnapshot, stringifySimpleYaml } from "./config";
+import { gitEnv } from "./util";
 
 const DEFAULT_PROMPTS: Record<string, string> = {
   init: `You are Migration Guild in init mode. Map the repository from evidence before proposing migration intent. Separate observed facts from inferred risks. Do not edit source files.`,
@@ -58,7 +59,7 @@ export function renderPrompt(args: { cfg: ResolvedGuildConfig; mode: string; rep
 }
 
 function runGit(root: string, args: string[]): string {
-  const res = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  const res = spawnSync("git", args, { cwd: root, encoding: "utf8", env: gitEnv() });
   if (res.status !== 0) return (res.stderr || res.stdout || "").trim();
   return res.stdout.trim();
 }

@@ -23,7 +23,7 @@ loadGuildEnvironment({
 
 import { Command } from "commander";
 import { getDb } from "../registry/db/connection";
-import { assertDbExists } from "./util";
+import { assertDbExists, gitEnv } from "./util";
 import { runInventory } from "./commands/inventory";
 import { runPlan } from "./commands/plan";
 import { PlanInvariantError } from "./commands/plan";
@@ -66,6 +66,7 @@ function isInsideGitWorkTree(root: string): boolean {
     return execFileSync("git", ["-C", root, "rev-parse", "--is-inside-work-tree"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
+      env: gitEnv(),
     }).trim() === "true";
   } catch {
     return false;

@@ -11,7 +11,7 @@ import { resolveAgentLaunch, type ResolvedRuntimeConfig } from "./harness";
 import { formatLimitTerminationNote, resolveEffectiveLimit, LIMIT_PRECEDENCE_ORDER, type EffectiveLimit } from "./limits";
 import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions, transientWardenExclusions, wardenSnapshotDiff, type WardenSnapshot } from "./warden";
 import { formatVerificationCloseOut, verifyAtClaimClose } from "./verify";
-import { signalProcessGroup, terminateProcessGroup, type ProcessGroupTerminationResult } from "./util";
+import { signalProcessGroup, terminateProcessGroup, gitEnv, type ProcessGroupTerminationResult } from "./util";
 import { releaseClaimedArtifactsForOwner } from "../registry/commands/artifacts";
 import { createRunOperatorCredential, releaseClaimsForRun } from "../registry/commands/claim";
 import { startRun, finishRun, setRunPid, type RunTokenUsage } from "../registry/commands/runs";
@@ -150,6 +150,7 @@ export function isGitWorktree(root: string): boolean {
       cwd: root,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
+      env: gitEnv(),
     }).trim();
     return result === "true";
   } catch {
@@ -168,11 +169,13 @@ export function snapshotChangedFiles(root: string): Set<string> {
       cwd: root,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
+      env: gitEnv(),
     }).trim();
     const untracked = execFileSync("git", ["ls-files", "--others", "--exclude-standard"], {
       cwd: root,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
+      env: gitEnv(),
     }).trim();
     return new Set([...(modified ? modified.split("\n") : []), ...(untracked ? untracked.split("\n") : [])].filter(Boolean));
   } catch {
