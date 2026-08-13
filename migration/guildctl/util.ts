@@ -3,6 +3,30 @@ import * as fs from "fs";
 import * as path from "path";
 import { resolveRegistryDbPath } from "./config";
 
+// Git sets GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE in the environment while
+// running a hook so the hook's own git invocations target the right repo.
+// A caller running inside such a hook (e.g. this project's own pre-commit
+// running its test suite) would otherwise leak those vars into any nested
+// git subprocess — including ones explicitly pointed at an unrelated
+// directory via `cwd` — and silently redirect them at the *outer* repo.
+// Scrub them from every git invocation this module spawns.
+const GIT_SCOPE_ENV: NodeJS.ProcessEnv = { ...process.env };
+for (const key of [
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_CEILING_DIRECTORIES",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_COMMON_DIR",
+]) {
+  delete GIT_SCOPE_ENV[key];
+}
+
+/** Environment to pass to every git subprocess: current env minus hook-scope vars. */
+export function gitEnv(): NodeJS.ProcessEnv {
+  return GIT_SCOPE_ENV;
+}
+
 export function assertDbExists(dbPath?: string): void {
   const resolved = resolveRegistryDbPath({ explicitPath: dbPath });
   if (!fs.existsSync(resolved)) {
