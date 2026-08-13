@@ -6,6 +6,16 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### August 14, 2026
+
+- Updated agent guidance so a missing JDK/Gradle toolchain no longer triggers filesystem-search
+  thrash (#64): `code-writer-agent`, `test-writer-agent`, and `review-agent` now probe once for
+  `javac`/`mvn`/`gradle` and, when absent, record
+  `set-verification --state unverified --method none --reason agent-reported-unverifiable`
+  instead of hunting for a compiler (`find /` and similar scans are explicitly forbidden).
+  `package/agent-instructions.md` states the same rule kit-wide: an absent toolchain is an
+  expected environment state and verification stays optional and bounded, never a gate.
+
 ### August 12, 2026
 
 - Added artifact verification as a fact separate from migration status: a new `artifact_verifications`
