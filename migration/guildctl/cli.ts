@@ -25,6 +25,7 @@ import { Command } from "commander";
 import { getDb } from "../registry/db/connection";
 import { assertDbExists, gitEnv } from "./util";
 import { runInventory } from "./commands/inventory";
+import { runScope } from "./commands/scope";
 import { runPlan } from "./commands/plan";
 import { PlanInvariantError } from "./commands/plan";
 import { runBootstrap } from "./commands/bootstrap";
@@ -623,7 +624,7 @@ benchmark
 
 program
   .command("run [phase]")
-  .description("Run a phase: init | inventory | plan | bootstrap | migrate | review | remediate | repair. init performs evidence mapping; legacy phases use registry.")
+  .description("Run a phase: init | inventory | scope | plan | bootstrap | migrate | review | remediate | repair. init performs evidence mapping; legacy phases use registry.")
   .option("-p, --parallel <n>", "Number of parallel sessions (migrate / review)", parseInt)
   .option("-w, --wave <n>", "Only migrate artifacts in this wave number (migrate only)", parseInt)
   .action(async (phase: string | undefined, opts) => {
@@ -640,6 +641,10 @@ program
       }
       case "inventory":
         await runInventory(db());
+        break;
+      case "scope":
+        assertDbExists(dbPath());
+        await runScope(db());
         break;
       case "plan":
         assertDbExists(dbPath());
@@ -669,7 +674,7 @@ program
         printNextSteps(db());
         break;
       default:
-        process.stderr.write(`\n  ✗ Unknown phase: "${phase}". Valid: init, inventory, plan, bootstrap, migrate, review, remediate, repair\n\n`);
+        process.stderr.write(`\n  ✗ Unknown phase: "${phase}". Valid: init, inventory, scope, plan, bootstrap, migrate, review, remediate, repair\n\n`);
         process.exit(1);
     }
   });

@@ -4,6 +4,8 @@ import {
   listJvmAuditFindings,
 } from "../registry/commands/modernization";
 import type { DependencyFindingWithStrategy } from "../registry/commands/modernization";
+import { getUndecidedModules } from "../registry/commands/scope";
+import type { ModuleScopeSummary } from "../registry/commands/scope";
 import type { JvmAuditFinding } from "../registry/types";
 
 // TASK-03: downstream phases must fast-fail (no agent spawn) on an empty registry.
@@ -24,6 +26,9 @@ export interface PlanningReadiness {
   warningJvmFindings: JvmAuditFinding[];
   unresolvedDependencyFindings: DependencyFindingWithStrategy[];
   approvedDependencyFindings: DependencyFindingWithStrategy[];
+  // ISSUE-68: modules with first-class artifacts and no recorded keep/drop
+  // scope decision. Planning is blocked until every module has one.
+  unresolvedScopeModules: ModuleScopeSummary[];
 }
 
 function summarizeArtifacts(findings: Array<{ artifact_id: string }>): string {
@@ -42,6 +47,7 @@ export function evaluatePlanningReadiness(db: Database.Database): PlanningReadin
     warningJvmFindings,
     unresolvedDependencyFindings: openDependencies.filter((finding) => finding.strategy == null),
     approvedDependencyFindings: openDependencies.filter((finding) => finding.strategy != null),
+    unresolvedScopeModules: getUndecidedModules(db),
   };
 }
 
@@ -72,6 +78,15 @@ export function formatPlanningBlockMessage(readiness: PlanningReadiness): {
   reason: string;
   command: string;
 } | null {
+  if (readiness.unresolvedScopeModules.length > 0) {
+    const modules = readiness.unresolvedScopeModules.map((m) => m.module).slice(0, 5).join(", ");
+    return {
+      summary: "Planning blocked by undecided module scope.",
+      reason: `${readiness.unresolvedScopeModules.length} module(s) have no keep/drop scope decision yet${modules ? ` (${modules}${readiness.unresolvedScopeModules.length > 5 ? ", …" : ""})` : ""}. Every module needs a decision before planning proceeds.`,
+      command: "node migration/guildctl/dist/cli.js scope",
+    };
+  }
+
   if (readiness.blockingJvmFindings.length > 0) {
     const sampleArtifacts = summarizeArtifacts(readiness.blockingJvmFindings);
     return {

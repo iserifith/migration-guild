@@ -1,6 +1,7 @@
 import * as path from "path";
 import type Database from "better-sqlite3";
 import type { RegistryEvent } from "./poller";
+import { getModuleScopeSummary } from "../registry/commands/scope";
 
 // ─── ANSI helpers ─────────────────────────────────────────────────────────────
 const R = "\x1b[0m";
@@ -68,6 +69,34 @@ export function printWavePlan(db: Database.Database): void {
     const counts = `${GREEN}${row.done}${R}/${row.total}`;
     const active = row.active > 0 ? `  ${YELLOW}${row.active} active${R}` : "";
     console.log(`  ${label}  ${bar}  ${counts}${active}`);
+  }
+}
+
+// ISSUE-68: scope gate — one row per module, decision status, and inbound
+// cross-module dependency edges so dropping a module doesn't blindside
+// something in a kept module that imports from it.
+export function printScopeMap(db: Database.Database): void {
+  const modules = getModuleScopeSummary(db);
+  if (modules.length === 0) return;
+
+  console.log(`\n${BOLD}Scope Map${R}`);
+  const moduleWidth = Math.max(8, ...modules.map((m) => m.module.length));
+  for (const m of modules) {
+    const counts = `${m.artifact_count} artifacts`.padEnd(16);
+    const tierBreakdown = `${DIM}(${m.first_class_count} first-class · ${m.second_class_count} second-class)${R}`;
+
+    let decisionLabel: string;
+    if (m.decision === "keep") decisionLabel = `${GREEN}✓ KEEP${R}`;
+    else if (m.decision === "drop") decisionLabel = `${RED}✗ DROP${R}`;
+    else decisionLabel = `${YELLOW}? undecided${R}`;
+
+    const reason = m.reason ? `  ${DIM}"${m.reason}"${R}` : "";
+    console.log(`  ${m.module.padEnd(moduleWidth)}  ${counts}  ${tierBreakdown}  ${decisionLabel}${reason}`);
+
+    if (m.depended_on_by.length > 0) {
+      const dependents = m.depended_on_by.map((d) => `${d.module} (${d.edge_count})`).join(", ");
+      console.log(`  ${" ".repeat(moduleWidth)}  ${DIM}↳ depended on by: ${dependents}${R}`);
+    }
   }
 }
 
