@@ -445,6 +445,17 @@ export interface DependencyStrategyDecision {
   updated_at: string;
 }
 
+export type ScopeDecisionKind = "keep" | "drop";
+
+export interface ScopeDecision {
+  module: string;
+  decision: ScopeDecisionKind;
+  reason: string;
+  decided_by: string;
+  decided_at: string;
+  updated_at: string;
+}
+
 export const EXIT_CODES = {
   SUCCESS: 0,
   VALIDATION_ERROR: 1,

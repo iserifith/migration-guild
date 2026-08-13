@@ -16,6 +16,8 @@ const repoRoot = path.resolve(__dirname, "..", "..");
 // confirmMappings() prompt reads from stdin, which would hang the runner.
 // Auto-confirm (no stdin) so the phase proceeds to the planner.
 process.env["GUILDCTL_AUTO_CONFIRM_MAPPINGS"] = "1";
+// ISSUE-68 scope gate: auto-keep every module for the same reason.
+process.env["GUILDCTL_AUTO_KEEP_SCOPE"] = "1";
 
 function createDb(): Database.Database {
   const db = new Database(":memory:");

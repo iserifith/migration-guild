@@ -14,6 +14,10 @@ import { applySchema } from "../registry/db/schema";
 
 const repoRoot = path.resolve(__dirname, "..", "..");
 
+// ISSUE-68 scope gate: auto-keep every module so the runPlan() call below
+// isn't blocked on an unrelated scope decision (no stdin available in tests).
+process.env["GUILDCTL_AUTO_KEEP_SCOPE"] = "1";
+
 function createDb(): Database.Database {
   const db = new Database(":memory:");
   applySchema(db);
