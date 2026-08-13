@@ -36,7 +36,7 @@ export default function ArtifactDetail({
 
   return (
     <div className="detail">
-      <button className="close-btn" onClick={onClose}>×</button>
+      <button aria-label="Close details" className="close-btn" onClick={onClose}>×</button>
       <h2>{artifact.id}</h2>
 
       <div className="detail-grid">
