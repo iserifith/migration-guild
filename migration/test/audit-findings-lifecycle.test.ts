@@ -7,6 +7,7 @@ import Database from "better-sqlite3";
 import { dismissFinding, listAuditOverrides, listJvmAuditFindings, reopenFinding, replaceJvmAuditFindings } from "../registry/commands/modernization";
 import { applySchema } from "../registry/db/schema";
 import { registerArtifact } from "../registry/commands/artifacts";
+import { recordScopeDecision } from "../registry/commands/scope";
 import { evaluatePlanningReadiness, formatPlanningBlockMessage } from "../guildctl/readiness";
 
 function createDb(): Database.Database {
@@ -26,6 +27,9 @@ function registerFirstClassArtifact(db: Database.Database, id: string): void {
     role: "service",
     framework: "plain-java",
   });
+  // ISSUE-68 scope gate: keep the module so these JVM-audit-focused tests
+  // aren't blocked on an unrelated scope decision.
+  recordScopeDecision(db, { module: moduleName, decision: "keep", reason: "test fixture", decidedBy: "test" });
 }
 
 function criticalJvmFinding(artifactId: string, symbol: string) {

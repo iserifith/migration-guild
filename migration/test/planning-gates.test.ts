@@ -12,6 +12,10 @@ import {
 } from "../registry/commands/modernization";
 import { applySchema } from "../registry/db/schema";
 
+// ISSUE-68 scope gate: auto-keep every module so these dependency/JVM-gate
+// tests aren't blocked on an unrelated scope decision (no stdin available).
+process.env["GUILDCTL_AUTO_KEEP_SCOPE"] = "1";
+
 function createDb(): Database.Database {
   const db = new Database(":memory:");
   applySchema(db);
