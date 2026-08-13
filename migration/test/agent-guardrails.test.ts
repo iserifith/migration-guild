@@ -41,3 +41,19 @@ test("remediation agent stays registry-only", () => {
   assert.match(instructions, /Remediation is registry-only/);
   assert.match(instructions, /If `legacy\/` was edited accidentally, restore it from version control or a fresh copy before running more migration steps/);
 });
+
+// Issue #64: a missing JDK/Gradle toolchain must never trigger filesystem-search
+// thrash. Agents probe once, record unverified, and move on.
+test("build-tool agents forbid hunting for a missing toolchain", () => {
+  const noHunt = /do not search the filesystem for one|Never run `find \/`/;
+
+  for (const file of ["code-writer-agent.agent.md", "test-writer-agent.agent.md", "review-agent.agent.md"]) {
+    const text = readRepoFile("package", "agents", file);
+    assert.match(text, noHunt, `${file} must forbid filesystem searches for a missing toolchain`);
+    assert.match(text, /agent-reported-unverifiable|note it in your verdict/, `${file} must state the fallback when no toolchain is present`);
+  }
+
+  const instructions = readRepoFile("package", "agent-instructions.md");
+  assert.match(instructions, /Do not hunt for a missing toolchain/);
+  assert.match(instructions, /agent-reported-unverifiable/);
+});

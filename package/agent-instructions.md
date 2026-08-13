@@ -64,6 +64,13 @@ actually know:
     --state unverified --method none --reason agent-reported-unverifiable
   ```
 
+- **Do not hunt for a missing toolchain.** When `javac`/`mvn`/`gradle` are not on
+  `PATH`, the correct response is the unverified record above — not a filesystem
+  search. Never run `find /` or scan install directories looking for a compiler;
+  that burns the attempt budget and finds nothing useful. Verification is
+  optional and bounded; an absent toolchain is an expected environment state,
+  not a problem to fix mid-attempt.
+
 - **Never close silently.** An artifact with no verification record reads as
   `unverified` / `not-attempted`, which is honest but tells the operator nothing about
   why. Saying `agent-reported-unverifiable` is always better than saying nothing.
