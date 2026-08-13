@@ -1,3 +1,4 @@
+<!-- Sandbox container reuse check: 2026-08-14 -->
 # Migration Guild
 
 **Evidence-gated, multi-agent legacy modernization.** Migration Guild orchestrates a society of AI agents that migrate legacy codebases (Java/Spring today, Python next) file-by-file — but no agent is allowed to *claim* progress. Every status transition must be backed by evidence in a shared SQLite registry, and a Builder → Critic → Arbiter gate decides what actually counts as "migrated."
