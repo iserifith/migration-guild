@@ -1,5 +1,7 @@
 # Migration Guild repository changelog
 
+<!-- sandbox-reuse-check: no /workspace/marker.txt found (issue #92) -->
+
 This file tracks **development changes to the kit repository itself**.
 
 It is intended for maintainers, not migration-workspace users. User-facing setup and behavior docs belong in `README.md` and `GETTING-STARTED.md`. Date headings inside `Unreleased` group development batches; they are not release dates.
