@@ -82,3 +82,39 @@
   remediation: Approve the Jakarta or Spring Web replacement strategy before planning can continue.
   details_template: 'Modern Spring Boot targets should not carry forward javax.ws.rs APIs without an explicit modernization plan. Evidence: L{line}: {text}'
   coordinate_hints: [javax.ws.rs:javax.ws.rs-api]
+- id: view-regeneration-jsp
+  finding: jvm
+  category: view-regeneration
+  severity: critical
+  match: '<%@|<jsp:|<%[!=]'
+  flags: g
+  summary_template: 'JSP view artifact detected: {symbol}'
+  remediation: Replace with the pack-declared API contract output (see stack.yaml view_contract). Extract routing, validation, and business logic; drop layout, markup, and styling.
+  details_template: 'Legacy view-layer UI must not be regenerated in modern/. Evidence: L{line}: {text}'
+- id: view-regeneration-jsf
+  finding: jvm
+  category: view-regeneration
+  severity: critical
+  match: '\b(?:javax\.faces|jakarta\.faces)\b|<[hf]:[A-Za-z]'
+  flags: g
+  summary_template: 'JSF/Facelets view artifact detected: {symbol}'
+  remediation: Replace with the pack-declared API contract output. Extract behavior; drop the component tree and presentation.
+  details_template: 'Legacy view-layer UI must not be regenerated in modern/. Evidence: L{line}: {text}'
+- id: view-regeneration-legacy-view-imports
+  finding: jvm
+  category: view-regeneration
+  severity: critical
+  match: '\b(?:javax\.servlet\.jsp|JspException|PageContext|TagSupport|org\.apache\.struts\.taglib)\b'
+  flags: g
+  summary_template: 'Legacy view-framework usage in migrated code: {symbol}'
+  remediation: Remove the view-framework dependency; the module must expose an API contract backed by behavior-preserving handlers.
+  details_template: 'View-framework imports indicate regenerated view-layer UI. Evidence: L{line}: {text}'
+- id: view-regeneration-template-engine
+  finding: jvm
+  category: view-regeneration
+  severity: warning
+  match: '\b(?:TemplateEngine|thymeleaf|freemarker|velocity)\b.*(?:process|render)'
+  flags: g
+  summary_template: 'Server-side template rendering of a possibly legacy-derived view: {symbol}'
+  remediation: Confirm this is a target-native, reviewable exception and not regenerated legacy UI; otherwise replace with the API contract output.
+  details_template: 'Target-side server rendering is an explicit exception, not a default. Evidence: L{line}: {text}'
