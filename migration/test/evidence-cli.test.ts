@@ -245,6 +245,51 @@ test("verify --json exits nonzero when runtime verification fails", () => {
   });
 });
 
+test("capture-fixture --json records a characterization-fixture evidence row for a passing seam", () => {
+  withFixture((fixture) => {
+    const result = runCli(fixture, [
+      "capture-fixture",
+      "--artifact",
+      ARTIFACT_ID,
+      "--seam",
+      "UserServiceTest#testCreateUser",
+      "--command",
+      "node -e \"console.log(JSON.stringify({greeting: 'hello'}))\"",
+      "--json",
+    ]);
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout) as { captured: boolean; evidence: { evidence_type: string; pass: number } };
+    assert.equal(payload.captured, true);
+    assert.equal(payload.evidence.evidence_type, "characterization-fixture");
+    assert.equal(payload.evidence.pass, 1);
+  });
+});
+
+test("capture-fixture --json exits nonzero and records nothing when the seam command fails", () => {
+  withFixture((fixture) => {
+    const result = runCli(fixture, [
+      "capture-fixture",
+      "--artifact",
+      ARTIFACT_ID,
+      "--seam",
+      "IntegrationTest#testCheckout",
+      "--command",
+      "node -e \"process.exit(1)\"",
+      "--json",
+    ]);
+
+    assert.equal(result.status, 1);
+    const payload = JSON.parse(result.stdout) as { captured: boolean; reason: string };
+    assert.equal(payload.captured, false);
+    assert.ok(payload.reason.length > 0);
+
+    const listResult = runCli(fixture, ["evidence", "list", "--artifact", ARTIFACT_ID, "--json"]);
+    const rows = JSON.parse(listResult.stdout) as Array<{ evidence_type: string }>;
+    assert.ok(!rows.some((row) => row.evidence_type === "characterization-fixture"));
+  });
+});
+
 test("arbitrate --reject moves artifact to needs-rework", () => {
   withFixture((fixture) => {
     const addResult = runCli(fixture, [
