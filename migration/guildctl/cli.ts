@@ -38,6 +38,7 @@ import { runRepair } from "./commands/repair";
 import { runAuditCoverage, formatCoverageReport } from "./commands/audit";
 import { runEvidenceAdd, runEvidenceList } from "./commands/evidence";
 import { runVerifyCommand } from "./commands/verify";
+import { runCaptureFixtureCommand } from "./commands/capture-fixture";
 import { runAutoCommand } from "./commands/auto";
 import { PreflightGateError, runAutoRunCommand } from "./commands/auto-run";
 import { runArbitrate } from "./commands/arbitrate";
@@ -453,7 +454,7 @@ evidence
   .command("add")
   .description("Record acceptance evidence for an artifact")
   .requiredOption("--artifact <id>", "Artifact ID")
-  .requiredOption("--type <type>", "Evidence type: test-command | build-command | static-check | review-verdict | benchmark-result")
+  .requiredOption("--type <type>", "Evidence type: test-command | build-command | static-check | review-verdict | benchmark-result (for characterization-fixture, use `guildctl capture-fixture` instead)")
   .requiredOption("--produced-by <agent>", "Agent or role that produced the evidence")
   .option("--command <cmd>", "Command that produced this evidence")
   .option("--exit-code <n>", "Command exit code", parseInt)
@@ -488,6 +489,18 @@ program
   .action(async (opts) => {
     assertDbExists(dbPath());
     await runVerifyCommand(db(), opts);
+  });
+
+program
+  .command("capture-fixture")
+  .description("Run an already-passing legacy test seam and record its input/output as characterization-fixture evidence")
+  .requiredOption("--artifact <id>", "Artifact ID")
+  .requiredOption("--seam <name>", "Identifier for the test seam being invoked")
+  .requiredOption("--command <cmd>", "The already-passing unit/invocation-level test command to run")
+  .option("--json", "Print the captured fixture (or skip reason) as JSON")
+  .action(async (opts) => {
+    assertDbExists(dbPath());
+    await runCaptureFixtureCommand(db(), opts);
   });
 
 program

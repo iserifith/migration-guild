@@ -17,6 +17,7 @@ import type {
 import { setArtifactStatus } from "./artifacts";
 import { deriveExpectedOutputPaths, validateRunOperatorCredential } from "./claim";
 import { appendEvent } from "./events";
+import { readFixtureFile, sha256Json } from "./fixture-file";
 
 export interface AddAcceptanceEvidenceOptions {
   artifactId: string;
@@ -79,12 +80,18 @@ function assertArtifactExists(db: Database.Database, artifactId: string): void {
   }
 }
 
+const TOOL_OWNED_EVIDENCE_TYPES: ReadonlySet<EvidenceType> = new Set(["runtime", "characterization-fixture"]);
+const TOOL_OWNED_EVIDENCE_COMMANDS: Readonly<Record<string, string>> = {
+  runtime: "guildctl verify",
+  "characterization-fixture": "guildctl capture-fixture",
+};
+
 export function addAcceptanceEvidence(
   db: Database.Database,
   opts: AddAcceptanceEvidenceOptions,
 ): AcceptanceEvidence {
-  if (opts.evidenceType === "runtime") {
-    throw new RegistryError(3, "runtime evidence must be recorded by guildctl verify");
+  if (TOOL_OWNED_EVIDENCE_TYPES.has(opts.evidenceType)) {
+    throw new RegistryError(3, `${opts.evidenceType} evidence must be recorded by ${TOOL_OWNED_EVIDENCE_COMMANDS[opts.evidenceType]}`);
   }
   return insertAcceptanceEvidence(db, opts);
 }
@@ -186,6 +193,63 @@ export function addVerifierRuntimeEvidence(
     evidenceType: "runtime",
     producedBy: opts.producedBy ?? "guildctl-verify",
   });
+}
+
+export function addCharacterizationFixtureEvidence(
+  db: Database.Database,
+  opts: Omit<AddAcceptanceEvidenceOptions, "evidenceType" | "producedBy"> & { producedBy?: string },
+): AcceptanceEvidence {
+  return insertAcceptanceEvidence(db, {
+    ...opts,
+    evidenceType: "characterization-fixture",
+    producedBy: opts.producedBy ?? "guildctl-capture-fixture",
+  });
+}
+
+function getLatestCharacterizationFixture(
+  db: Database.Database,
+  artifactId: string,
+): AcceptanceEvidence | null {
+  const evidence = db.prepare(
+    `SELECT *
+     FROM acceptance_evidence
+     WHERE artifact_id = @artifact_id
+       AND evidence_type = 'characterization-fixture'
+       AND pass = 1
+     ORDER BY created_at DESC, rowid DESC
+     LIMIT 1`,
+  ).get({ artifact_id: artifactId }) as AcceptanceEvidence | undefined;
+  return evidence ?? null;
+}
+
+export type FixtureComparisonResult = { match: true } | { match: false; diff: string };
+
+function describeDiff(expected: unknown, actual: unknown): string {
+  const expectedJson = JSON.stringify(expected);
+  const actualJson = JSON.stringify(actual);
+  return `expected ${expectedJson ?? "undefined"}, got ${actualJson ?? "undefined"}`;
+}
+
+/**
+ * Compare Migrate-phase candidate output against the latest captured
+ * characterization fixture for an artifact (spec FR-006). Throws when no
+ * fixture exists so callers can distinguish "no target to compare against"
+ * (non-blocking, FR-007) from "compared and mismatched".
+ */
+export function compareToFixture(
+  db: Database.Database,
+  artifactId: string,
+  candidateOutput: unknown,
+): FixtureComparisonResult {
+  assertArtifactExists(db, artifactId);
+  const latestFixture = getLatestCharacterizationFixture(db, artifactId);
+  if (!latestFixture || !latestFixture.output_path) {
+    throw new RegistryError(2, `No characterization-fixture evidence found for artifact: "${artifactId}"`);
+  }
+  const fixture = readFixtureFile(latestFixture.output_path);
+  const match = JSON.stringify(fixture.output) === JSON.stringify(candidateOutput);
+  if (match) return { match: true };
+  return { match: false, diff: describeDiff(fixture.output, candidateOutput) };
 }
 
 export function listAcceptanceEvidence(
@@ -600,6 +664,21 @@ export function checkEvidenceFreshness(
     }
     if (!safeEqual(sha256File(latestStatic.output_path), latestStatic.content_sha256)) {
       return { ok: false, reason: "Stale evidence: output content changed after the static-check gate" };
+    }
+  }
+
+  // Characterization-fixture evidence is captured against legacy code, typically
+  // in an earlier, unrelated run to the runtime evidence checked above — unlike
+  // static-check it is never expected to share a run_id with runtime evidence,
+  // so only its own content-hash integrity is checked here (FR-009).
+  const latestFixture = getLatestCharacterizationFixture(db, artifactId);
+  if (latestFixture) {
+    if (!latestFixture.content_sha256 || !latestFixture.output_path || !fs.existsSync(latestFixture.output_path)) {
+      return { ok: false, reason: "Stale evidence: characterization-fixture output or content hash is missing" };
+    }
+    const fixture = readFixtureFile(latestFixture.output_path);
+    if (!safeEqual(sha256Json(fixture.output), latestFixture.content_sha256)) {
+      return { ok: false, reason: "Stale evidence: characterization-fixture output changed after capture" };
     }
   }
 
