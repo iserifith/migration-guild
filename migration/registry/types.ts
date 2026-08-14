@@ -172,7 +172,8 @@ export type EvidenceType =
   | "build-command"
   | "static-check"
   | "review-verdict"
-  | "benchmark-result";
+  | "benchmark-result"
+  | "characterization-fixture";
 
 export interface AcceptanceEvidence {
   evidence_id: string;

@@ -275,7 +275,8 @@ CREATE TABLE IF NOT EXISTS acceptance_evidence (
                        'build-command',
                        'static-check',
                        'review-verdict',
-                       'benchmark-result'
+                       'benchmark-result',
+                       'characterization-fixture'
                      )),
     command         TEXT,
     exit_code       INTEGER,

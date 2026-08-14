@@ -71,6 +71,57 @@ export function applySchema(db: Database.Database): void {
 
   // The index depends on a column the guards above may have just added.
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_outcome_label ON runs(outcome_label)");
+
+  ensureCharacterizationFixtureEvidenceType(db);
+}
+
+/**
+ * `evidence_type` is a CHECK-constrained column, which SQLite cannot widen via
+ * ALTER TABLE — the only way to add 'characterization-fixture' to an existing
+ * database is to rebuild the table with the new constraint. No other table
+ * references acceptance_evidence by foreign key, so this is a same-shape copy.
+ */
+function ensureCharacterizationFixtureEvidenceType(db: Database.Database): void {
+  const row = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'acceptance_evidence'`)
+    .get() as { sql: string } | undefined;
+  if (!row || row.sql.includes("characterization-fixture")) return;
+
+  db.exec(`
+    CREATE TABLE acceptance_evidence_new (
+        evidence_id     TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+        artifact_id     TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+        run_id          TEXT REFERENCES runs(run_id) ON DELETE SET NULL,
+        produced_by     TEXT NOT NULL,
+        evidence_type   TEXT NOT NULL CHECK (evidence_type IN (
+                           'runtime',
+                           'test-command',
+                           'build-command',
+                           'static-check',
+                           'review-verdict',
+                           'benchmark-result',
+                           'characterization-fixture'
+                         )),
+        command         TEXT,
+        exit_code       INTEGER,
+        pass            INTEGER NOT NULL CHECK (pass IN (0, 1)),
+        summary         TEXT NOT NULL,
+        output_path     TEXT,
+        output_excerpt  TEXT,
+        log_sha256      TEXT,
+        duration_ms     INTEGER,
+        authenticity    TEXT,
+        content_sha256  TEXT,
+        signature_json  TEXT,
+        created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    INSERT INTO acceptance_evidence_new SELECT * FROM acceptance_evidence;
+    DROP TABLE acceptance_evidence;
+    ALTER TABLE acceptance_evidence_new RENAME TO acceptance_evidence;
+    CREATE INDEX IF NOT EXISTS idx_acceptance_evidence_artifact ON acceptance_evidence(artifact_id);
+    CREATE INDEX IF NOT EXISTS idx_acceptance_evidence_pass ON acceptance_evidence(artifact_id, pass);
+    CREATE INDEX IF NOT EXISTS idx_acceptance_evidence_type ON acceptance_evidence(evidence_type);
+  `);
 }
 
 function ensureColumn(

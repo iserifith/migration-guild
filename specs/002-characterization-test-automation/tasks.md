@@ -47,8 +47,8 @@ foundation from issue #54, which this feature consumes but does not modify).
 **Purpose**: establish the pre-feature baseline so later failures are attributable to this
 feature, not pre-existing state.
 
-- [ ] T001 Install workspace dependencies and build the runtime from the repository root per quickstart.md conventions: `npm --prefix migration install`
-- [ ] T002 Record the pre-feature `npm test` baseline (`cd migration && npm test`) before any source change, and note any pre-existing failure so it is never attributed to this feature
+- [X] T001 Install workspace dependencies and build the runtime from the repository root per quickstart.md conventions: `npm --prefix migration install`
+- [X] T002 Record the pre-feature `npm test` baseline (`cd migration && npm test`) before any source change, and note any pre-existing failure so it is never attributed to this feature
 
 ---
 
@@ -59,10 +59,10 @@ consumes. Placing them here is what keeps US1–US3 independently deliverable.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T003 Write the failing foundational regression test first: `migration/test/evidence-characterization.test.ts` asserting `"characterization-fixture"` is accepted as an `EvidenceType`, is present in `EXECUTABLE_EVIDENCE_TYPES`, and that `addAcceptanceEvidence()` rejects a caller-asserted `"characterization-fixture"` row the same way it already rejects a caller-asserted `"runtime"` row (data-model.md, research.md Decision 1)
-- [ ] T004 Add `"characterization-fixture"` to the `EvidenceType` union in `migration/registry/types.ts` (data-model.md § New enum member)
-- [ ] T005 Add `"characterization-fixture"` to `EXECUTABLE_EVIDENCE_TYPES` in `migration/registry/commands/evidence.ts`, and extend the existing `evidenceType === "runtime"` guard in `addAcceptanceEvidence()` to also reject a caller-asserted `"characterization-fixture"` type (data-model.md § call sites; research.md Decision 1)
-- [ ] T006 [P] Create the shared fixture-file I/O helper module `migration/registry/commands/fixture-file.ts` exporting `writeFixtureFile()` (writes `{seam, input, output, capturedAt, contentSha256}` JSON per data-model.md § Non-persisted shape: Fixture file, computing `contentSha256` as SHA-256 of the serialized `output`) and `readFixtureFile()`, under `<evidence.output_dir>/characterization/<evidence_id>.json` (research.md Decision 2)
+- [X] T003 Write the failing foundational regression test first: `migration/test/evidence-characterization.test.ts` asserting `"characterization-fixture"` is accepted as an `EvidenceType`, is present in `EXECUTABLE_EVIDENCE_TYPES`, and that `addAcceptanceEvidence()` rejects a caller-asserted `"characterization-fixture"` row the same way it already rejects a caller-asserted `"runtime"` row (data-model.md, research.md Decision 1)
+- [X] T004 Add `"characterization-fixture"` to the `EvidenceType` union in `migration/registry/types.ts` (data-model.md § New enum member)
+- [X] T005 Add `"characterization-fixture"` to `EXECUTABLE_EVIDENCE_TYPES` in `migration/registry/commands/evidence.ts`, and extend the existing `evidenceType === "runtime"` guard in `addAcceptanceEvidence()` to also reject a caller-asserted `"characterization-fixture"` type (data-model.md § call sites; research.md Decision 1)
+- [X] T006 [P] Create the shared fixture-file I/O helper module `migration/registry/commands/fixture-file.ts` exporting `writeFixtureFile()` (writes `{seam, input, output, capturedAt, contentSha256}` JSON per data-model.md § Non-persisted shape: Fixture file, computing `contentSha256` as SHA-256 of the serialized `output`) and `readFixtureFile()`, under `<evidence.output_dir>/characterization/<evidence_id>.json` (research.md Decision 2)
 
 **Checkpoint**: evidence-type plumbing and fixture-file I/O exist. User story implementation can now begin.
 
@@ -82,16 +82,16 @@ with the expected fields. Run it again against a seam that requires a live runti
 
 ### Tests for User Story 1
 
-- [ ] T007 [P] [US1] Write failing test in `migration/test/evidence-characterization.test.ts` (or split into `migration/test/capture-fixture-cli.test.ts` if the shared file grows large) for `runCaptureFixtureCommand()` success path: given an artifact and a passing seam command, asserts a `characterization-fixture` evidence row is recorded with `pass: 1`, `command` set to the seam invocation, `output_path` pointing at a readable fixture file, and `content_sha256` populated
-- [ ] T008 [P] [US1] Write failing test for the skip path: given a seam command that exits non-zero (simulating a runtime-dependent seam that can't run), asserts no `characterization-fixture` evidence row is added and a skip result with a `reason` is returned (spec FR-005, Edge Cases)
-- [ ] T009 [P] [US1] Write failing test for re-capture: running capture twice against the same artifact/seam produces two independent evidence rows, neither overwritten (spec FR-010, Story 1 Scenario 4)
+- [X] T007 [P] [US1] Write failing test in `migration/test/evidence-characterization.test.ts` (or split into `migration/test/capture-fixture-cli.test.ts` if the shared file grows large) for `runCaptureFixtureCommand()` success path: given an artifact and a passing seam command, asserts a `characterization-fixture` evidence row is recorded with `pass: 1`, `command` set to the seam invocation, `output_path` pointing at a readable fixture file, and `content_sha256` populated
+- [X] T008 [P] [US1] Write failing test for the skip path: given a seam command that exits non-zero (simulating a runtime-dependent seam that can't run), asserts no `characterization-fixture` evidence row is added and a skip result with a `reason` is returned (spec FR-005, Edge Cases)
+- [X] T009 [P] [US1] Write failing test for re-capture: running capture twice against the same artifact/seam produces two independent evidence rows, neither overwritten (spec FR-010, Story 1 Scenario 4)
 
 ### Implementation for User Story 1
 
-- [ ] T010 [US1] Implement `runCaptureFixture()` in new file `migration/guildctl/commands/capture-fixture.ts`, modeled on `migration/guildctl/commands/verify.ts`: resolve workspace root/config, `startRun` (phase `"capture-fixture"`), create a run operator credential, execute the seam `--command`, and on success write the fixture file via `writeFixtureFile()` (T006) and call `addAcceptanceEvidence()`-equivalent tool-owned recording path with `evidence_type: "characterization-fixture"`, `pass: 1`; on failure, skip recording and return `{captured: false, reason}`; `finishRun` in both cases (contracts/cli-capture-fixture.md § Behavior)
-- [ ] T011 [US1] Register the `guildctl capture-fixture` command in `migration/guildctl/cli.ts` with `--artifact`, `--seam`, `--command`, `--json` options, following the existing `verify` command's registration pattern (contracts/cli-capture-fixture.md § Invocation)
-- [ ] T012 [US1] Implement human-readable and `--json` output formatting for both the captured and skipped cases in `migration/guildctl/commands/capture-fixture.ts` (contracts/cli-capture-fixture.md § Output)
-- [ ] T013 [US1] Add `--artifact`/db-existence error handling consistent with other `guildctl` commands (`assertDbExists`, `assertArtifactExists`) to `runCaptureFixture()`
+- [X] T010 [US1] Implement `runCaptureFixture()` in new file `migration/guildctl/commands/capture-fixture.ts`, modeled on `migration/guildctl/commands/verify.ts`: resolve workspace root/config, `startRun` (phase `"capture-fixture"`), create a run operator credential, execute the seam `--command`, and on success write the fixture file via `writeFixtureFile()` (T006) and call `addAcceptanceEvidence()`-equivalent tool-owned recording path with `evidence_type: "characterization-fixture"`, `pass: 1`; on failure, skip recording and return `{captured: false, reason}`; `finishRun` in both cases (contracts/cli-capture-fixture.md § Behavior)
+- [X] T011 [US1] Register the `guildctl capture-fixture` command in `migration/guildctl/cli.ts` with `--artifact`, `--seam`, `--command`, `--json` options, following the existing `verify` command's registration pattern (contracts/cli-capture-fixture.md § Invocation)
+- [X] T012 [US1] Implement human-readable and `--json` output formatting for both the captured and skipped cases in `migration/guildctl/commands/capture-fixture.ts` (contracts/cli-capture-fixture.md § Output)
+- [X] T013 [US1] Add `--artifact`/db-existence error handling consistent with other `guildctl` commands (`assertDbExists`, `assertArtifactExists`) to `runCaptureFixture()`
 
 **Checkpoint**: User Story 1 is fully functional and testable independently — `guildctl capture-fixture` produces real, inspectable evidence rows for capturable seams and skips cleanly for non-capturable ones.
 
@@ -110,13 +110,13 @@ fixture and confirm the resulting error is distinguishable and treated as non-bl
 
 ### Tests for User Story 2
 
-- [ ] T014 [P] [US2] Write failing test in `migration/test/evidence-characterization.test.ts` for `compareToFixture()`: matching candidate output returns `{match: true}`; differing output returns `{match: false, diff}` with a non-empty diff description (contracts/lib-compare-to-fixture.md § Behavior)
-- [ ] T015 [P] [US2] Write failing test for the no-fixture case: `compareToFixture()` against an artifact with no `characterization-fixture` evidence throws a typed, distinguishable error (not a generic error) that a caller can branch on to proceed non-blocked (spec FR-007; contracts/lib-compare-to-fixture.md § Behavior step 2)
+- [X] T014 [P] [US2] Write failing test in `migration/test/evidence-characterization.test.ts` for `compareToFixture()`: matching candidate output returns `{match: true}`; differing output returns `{match: false, diff}` with a non-empty diff description (contracts/lib-compare-to-fixture.md § Behavior)
+- [X] T015 [P] [US2] Write failing test for the no-fixture case: `compareToFixture()` against an artifact with no `characterization-fixture` evidence throws a typed, distinguishable error (not a generic error) that a caller can branch on to proceed non-blocked (spec FR-007; contracts/lib-compare-to-fixture.md § Behavior step 2)
 
 ### Implementation for User Story 2
 
-- [ ] T016 [US2] Implement `compareToFixture(db, artifactId, candidateOutput)` in `migration/registry/commands/evidence.ts`: look up the latest `characterization-fixture` evidence row for the artifact (reusing the same "latest executable evidence" query shape `checkEvidenceFreshness()` uses), load its fixture file via `readFixtureFile()` (T006), deep-equal compare against `candidateOutput`, and return `{match: true}` or `{match: false, diff}` (contracts/lib-compare-to-fixture.md § Signature, § Behavior)
-- [ ] T017 [US2] Throw a typed `RegistryError` from `compareToFixture()` when no `characterization-fixture` evidence exists for the artifact, distinct from a mismatch result, per contracts/lib-compare-to-fixture.md § Behavior step 2
+- [X] T016 [US2] Implement `compareToFixture(db, artifactId, candidateOutput)` in `migration/registry/commands/evidence.ts`: look up the latest `characterization-fixture` evidence row for the artifact (reusing the same "latest executable evidence" query shape `checkEvidenceFreshness()` uses), load its fixture file via `readFixtureFile()` (T006), deep-equal compare against `candidateOutput`, and return `{match: true}` or `{match: false, diff}` (contracts/lib-compare-to-fixture.md § Signature, § Behavior)
+- [X] T017 [US2] Throw a typed `RegistryError` from `compareToFixture()` when no `characterization-fixture` evidence exists for the artifact, distinct from a mismatch result, per contracts/lib-compare-to-fixture.md § Behavior step 2
 
 **Checkpoint**: User Stories 1 AND 2 both work independently — captured fixtures can be compared against candidate Migrate output, and absence of a fixture never blocks Migrate.
 
@@ -136,14 +136,14 @@ Scenario 4), confirm it appears in `guildctl evidence list` and is visible going
 
 ### Tests for User Story 3
 
-- [ ] T018 [P] [US3] Write failing test asserting that recording a `compareToFixture()` result as a new `characterization-fixture` evidence row (with `pass` set from `match`, `output_excerpt` set from `diff` when present) makes it visible via `listAcceptanceEvidence()`/`guildctl evidence list` alongside other evidence types (spec FR-008; research.md Decision 4)
-- [ ] T019 [P] [US3] Write failing test asserting `checkEvidenceFreshness()` correctly identifies a `characterization-fixture` evidence row as stale when the underlying captured output's content hash no longer matches, using the existing content-hash/same-run rule already exercised for `runtime`/`static-check` evidence — no new freshness code path (spec FR-009; quickstart.md Scenario 5)
-- [ ] T020 [P] [US3] Write failing test asserting a failing (`pass: 0`) characterization-fixture comparison is visible in the evidence set an arbitration decision reads, and does not silently pass (spec Story 3 Scenario 2)
+- [X] T018 [P] [US3] Write failing test asserting that recording a `compareToFixture()` result as a new `characterization-fixture` evidence row (with `pass` set from `match`, `output_excerpt` set from `diff` when present) makes it visible via `listAcceptanceEvidence()`/`guildctl evidence list` alongside other evidence types (spec FR-008; research.md Decision 4)
+- [X] T019 [P] [US3] Write failing test asserting `checkEvidenceFreshness()` correctly identifies a `characterization-fixture` evidence row as stale when the underlying captured output's content hash no longer matches, using the existing content-hash/same-run rule already exercised for `runtime`/`static-check` evidence — no new freshness code path (spec FR-009; quickstart.md Scenario 5)
+- [X] T020 [P] [US3] Write failing test asserting a failing (`pass: 0`) characterization-fixture comparison is visible in the evidence set an arbitration decision reads, and does not silently pass (spec Story 3 Scenario 2)
 
 ### Implementation for User Story 3
 
-- [ ] T021 [US3] Implement the comparison-recording path (e.g. `recordFixtureComparison()` in `migration/registry/commands/evidence.ts` or as part of the Migrate-phase caller in `migration/guildctl/commands/migrate.ts`, per research.md Decision 4): after calling `compareToFixture()` (T016), record its result as a new `characterization-fixture` evidence row via the tool-owned recording path (same as T010), with `pass` set from `match` and `output_excerpt` set from `diff` when present
-- [ ] T022 [US3] Verify (add regression coverage if not already implied by existing arbitration tests) that `migration/registry/commands/evidence.ts`'s arbitration evidence-reading path requires no new branch to include `characterization-fixture` rows — confirm `checkEvidenceFreshness()` and the evidence-listing functions it composes are already generic over `evidence_type` and need no code change beyond T004/T005
+- [X] T021 [US3] Implement the comparison-recording path (e.g. `recordFixtureComparison()` in `migration/registry/commands/evidence.ts` or as part of the Migrate-phase caller in `migration/guildctl/commands/migrate.ts`, per research.md Decision 4): after calling `compareToFixture()` (T016), record its result as a new `characterization-fixture` evidence row via the tool-owned recording path (same as T010), with `pass` set from `match` and `output_excerpt` set from `diff` when present
+- [X] T022 [US3] Verify (add regression coverage if not already implied by existing arbitration tests) that `migration/registry/commands/evidence.ts`'s arbitration evidence-reading path requires no new branch to include `characterization-fixture` rows — confirm `checkEvidenceFreshness()` and the evidence-listing functions it composes are already generic over `evidence_type` and need no code change beyond T004/T005
 
 **Checkpoint**: all three user stories are independently functional — capture, Migrate-phase comparison, and Arbiter-visible evidence with correct freshness behavior.
 
@@ -153,9 +153,9 @@ Scenario 4), confirm it appears in `guildctl evidence list` and is visible going
 
 **Purpose**: close out constitution and quickstart obligations that span all three stories.
 
-- [ ] T023 [P] Update `guildctl capture-fixture --help` / evidence-type CLI help text listing (e.g. in `migration/guildctl/cli.ts`) to mention `characterization-fixture` for discoverability, without adding it to the `evidence add` `VALID_EVIDENCE_TYPES` allowlist (data-model.md § call sites; research.md Decision 1 — must remain rejected by `evidence add`)
-- [ ] T024 Run the full `migration/test` suite (`cd migration && npm test`) and confirm zero regressions against the T002 baseline
-- [ ] T025 Execute every scenario in `specs/002-characterization-test-automation/quickstart.md` end-to-end against a real (non-mocked) test workspace and confirm expected outputs match
+- [X] T023 [P] Update `guildctl capture-fixture --help` / evidence-type CLI help text listing (e.g. in `migration/guildctl/cli.ts`) to mention `characterization-fixture` for discoverability, without adding it to the `evidence add` `VALID_EVIDENCE_TYPES` allowlist (data-model.md § call sites; research.md Decision 1 — must remain rejected by `evidence add`)
+- [X] T024 Run the full `migration/test` suite (`cd migration && npm test`) and confirm zero regressions against the T002 baseline
+- [X] T025 Execute every scenario in `specs/002-characterization-test-automation/quickstart.md` end-to-end against a real (non-mocked) test workspace and confirm expected outputs match
 
 ---
 
@@ -219,6 +219,39 @@ Task: "Write failing test for re-capture producing independent rows in migration
 5. Polish → full regression pass + quickstart validation.
 
 ---
+
+## Implementation Notes (deviations discovered while coding)
+
+Two things the design docs got wrong or under-specified, corrected during implementation
+rather than by going back and rewriting research.md/data-model.md after the fact:
+
+1. **`evidence_type` is also CHECK-constrained at the SQL level**, not just in the TypeScript
+   union — `registry_schema.sql`'s `acceptance_evidence` table has
+   `CHECK (evidence_type IN (...))`. data-model.md's "no schema migration needed" claim (based
+   on inspecting only `registry/db/schema.ts`, not `registry_schema.sql`) was itself an
+   instance of the same kind of inaccuracy the owner's review comments corrected in the original
+   proposal. SQLite cannot widen a CHECK constraint via `ALTER TABLE`, so
+   `migration/registry/db/schema.ts` gained `ensureCharacterizationFixtureEvidenceType()`, which
+   rebuilds `acceptance_evidence` (same columns and indexes, widened CHECK list) for any
+   pre-existing database, guarded by inspecting `sqlite_master` so it's a no-op once applied.
+   Covered by a dedicated regression test simulating an old-schema database.
+2. **`characterization-fixture` was deliberately *not* added to `EXECUTABLE_EVIDENCE_TYPES`.**
+   `getLatestExecutableEvidence()` (the function `canApproveArtifact` uses to find the evidence
+   an approval is actually gated on) is hardcoded to `evidence_type = 'runtime'` in SQL, so
+   adding a second type to that constant would not have changed arbitration eligibility — but it
+   *would* have made `characterization-fixture` evidence usable as an explicit `--evidence` ID
+   in `guildctl arbitrate --approve`, requiring it to carry `log_sha256` and HMAC `authenticity`
+   the same way runtime evidence does. The constitution requires approval to gate specifically
+   on verifier-generated *runtime* evidence; letting a second evidence type substitute for that
+   would have been a bigger change than this feature's scope. Instead, characterization-fixture
+   behaves like `static-check`: it is recorded, visible via `evidence list`/arbitration's
+   evidence set (FR-008), and participates in `checkEvidenceFreshness()` (FR-009), but is not
+   itself sufficient to satisfy approval eligibility. Also unlike `static-check`, the new
+   freshness block does **not** require `run_id` to match the latest runtime evidence's
+   `run_id` — a fixture is captured once against legacy code, typically in an earlier, unrelated
+   run to when the migrated artifact is later verified, so same-run binding would make every
+   fixture stale by construction. Only the content-hash check applies. This is documented inline
+   in `evidence.ts` at the point it matters.
 
 ## Notes
 
