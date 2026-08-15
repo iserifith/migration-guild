@@ -85,10 +85,9 @@ describe("ArtifactList", () => {
 
   it("renders a table row for each artifact", () => {
     renderList();
-    // Use container.querySelectorAll since the table rows now have role="button"
-    const tbody = document.querySelector("tbody");
-    const rows = tbody?.querySelectorAll("tr");
-    expect(rows).toHaveLength(ARTIFACTS.length);
+    const rows = screen.getAllByRole("row");
+    // +1 for the header row
+    expect(rows).toHaveLength(ARTIFACTS.length + 1);
   });
 
   it("shows artifact paths in the table", () => {
@@ -142,30 +141,27 @@ describe("ArtifactList", () => {
   it("opens the detail panel when a row is clicked", () => {
     renderList();
     // Click the first data row
-    const tbody = document.querySelector("tbody");
-    const rows = tbody?.querySelectorAll("tr");
-    fireEvent.click(rows![0]);
+    const rows = screen.getAllByRole("row");
+    fireEvent.click(rows[1]); // rows[0] is the header
     // Detail panel should now contain the artifact id
     expect(screen.getByRole("heading", { name: /alpha/i })).toBeInTheDocument();
   });
 
   it("closes the detail panel when the same row is clicked again", () => {
     renderList();
-    const tbody = document.querySelector("tbody");
-    const rows = tbody?.querySelectorAll("tr");
-    fireEvent.click(rows![0]);
+    const rows = screen.getAllByRole("row");
+    fireEvent.click(rows[1]);
     // Panel should be open
     expect(screen.getByRole("heading", { name: /alpha/i })).toBeInTheDocument();
     // Click again to close
-    fireEvent.click(rows![0]);
+    fireEvent.click(rows[1]);
     expect(screen.queryByRole("heading", { name: /alpha/i })).not.toBeInTheDocument();
   });
 
   it("closes the detail panel via the close button", () => {
     renderList();
-    const tbody = document.querySelector("tbody");
-    const rows = tbody?.querySelectorAll("tr");
-    fireEvent.click(rows![0]);
+    const rows = screen.getAllByRole("row");
+    fireEvent.click(rows[1]);
     const detail = screen.getByRole("heading", { name: /alpha/i }).closest("div.detail") as HTMLElement;
     const closeBtn = within(detail).getByRole("button");
     fireEvent.click(closeBtn);

@@ -207,7 +207,6 @@ export default function RunsView({
                     }
                   }}
                   tabIndex={0}
-                  role="button"
                 >
                   <td className="mono">{run.run_id}</td>
                   <td>{run.agent}</td>

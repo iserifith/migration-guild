@@ -131,7 +131,6 @@ export default function ArtifactList({
                   }
                 }}
                 tabIndex={0}
-                role="button"
               >
                 <td style={{ fontFamily: "monospace", fontSize: 12 }}>{a.id}</td>
                 <td>
