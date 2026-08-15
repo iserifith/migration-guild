@@ -198,6 +198,16 @@ export default function RunsView({
                       current === run.run_id ? null : run.run_id,
                     )
                   }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelectedRunId((current) =>
+                        current === run.run_id ? null : run.run_id,
+                      );
+                    }
+                  }}
+                  tabIndex={0}
+                  role="button"
                 >
                   <td className="mono">{run.run_id}</td>
                   <td>{run.agent}</td>

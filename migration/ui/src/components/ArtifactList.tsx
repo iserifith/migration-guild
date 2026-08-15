@@ -124,6 +124,14 @@ export default function ArtifactList({
                 key={a.id}
                 className="clickable"
                 onClick={() => setSelected(a === selected ? null : a)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSelected(a === selected ? null : a);
+                  }
+                }}
+                tabIndex={0}
+                role="button"
               >
                 <td style={{ fontFamily: "monospace", fontSize: 12 }}>{a.id}</td>
                 <td>
