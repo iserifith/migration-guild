@@ -65,10 +65,21 @@ CREATE INDEX IF NOT EXISTS idx_dependency_disposition_history_library
 ## Commands-module API (`migration/registry/commands/dispositions.ts`, NEW)
 
 All write functions follow the repository's existing conventions: throw
-`RegistryError` on validation failure (exit-code carrying), run multi-statement
-changes inside `db.transaction(...)`, and emit an `events` row for every
-decision-affecting mutation (mirroring `approveDependencyStrategy`'s
-`dependency-strategy-set` event at modernization.ts:330-349).
+`RegistryError` on validation failure (exit-code carrying) and run
+multi-statement changes inside `db.transaction(...)`.
+
+**Decision-evidence trail**: `dependency_disposition_history` is the sole
+evidence trail for disposition mutations — every mutation writes a history row
+(`change_kind`, prior-state snapshot, actor) in the same transaction as the
+mutation itself. Disposition mutations do **not** emit `events` rows: the
+`events` table requires `artifact_id NOT NULL REFERENCES artifacts(id)`, while
+dispositions are deliberately workspace-wide per-library records with no
+artifact FK (data-model.md Relationships) — a declared-but-unused library has
+no artifact to reference, so an events-row obligation would be unenforceable
+(spec edge case #1). This diverges from `approveDependencyStrategy`'s
+`dependency-strategy-set` event (modernization.ts:330-349), which works only
+because `dependency_findings` rows carry an `artifact_id`. The
+`dependency-strategy-set` precedent does not apply here.
 
 ```text
 upsertProposedDisposition(db, opts): DependencyDisposition
@@ -146,5 +157,8 @@ dispositionContextForArtifact(db, artifactId): string | null
 
 - No change to `claimNextTask` / `claimArtifactById` — dispositions gate
   planning sign-off, not artifact claimability (research.md §7).
-- All mutations emit `events` rows (type `dependency-disposition-set`), keeping
-  the dashboard/poller event stream consistent with existing decision events.
+- No `events` rows are emitted for disposition mutations (see "Decision-evidence
+  trail" above): the append-only audit trail for dispositions lives in
+  `dependency_disposition_history`. Dashboard/poller consumers that need
+  disposition decisions read the history table; the existing
+  artifact-scoped event stream is unchanged.
