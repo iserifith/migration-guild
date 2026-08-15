@@ -51,6 +51,29 @@ You are a Java migration reviewer. Your job is to review migrated code and its t
    Any failure is **Critical** — record as a view-regeneration finding, set the artifact
    to `needs-rework`, and append an event describing what was found and the required fix
    (replace with API contract, mark skipped, or block for human decision).
+8. **View-logic placement (dedicated Service/Validator modules)** — amends priority 7 (issue
+   #100): applies to every migrated view-handling module, even ones that pass priority 7 clean.
+   Extracted validation/business logic must consolidate into **dedicated, named**
+   `*Service`/`*Validator` modules, never inline in the handler, never duplicated per-endpoint.
+   Apply the `/migration-review` "View-logic placement" checklist item — this reinforces the
+   `view-logic-placement-*` audit rules (Warning severity) with the critic's final call:
+   - Validation lands in a dedicated `*Validator`; business logic in a dedicated `*Service`
+     (suffixes from `logic_extraction.validator_suffix` / `.service_suffix`).
+   - The handler only binds and delegates — routing, parameter binding, invoking the
+     service/validator, response shaping; no non-trivial logic inline.
+   - No rule duplicated across endpoints — one shared module, not copies.
+   - Trivial pass-through views need no empty `*Service`/`*Validator` shell.
+   - Quick scan:
+     ```bash
+     grep -rEn '\b(Controller|Resource|Endpoint)\b' modern/src --include="*.java" -l | while read -r f; do
+       grep -Hn -E '\.(isEmpty|hasErrors)\(\)|== *null|\.matches\("' "$f" | grep -v -E '\b(Validator|Service)\b'
+       grep -Hn -E '\}\s*else\s+if\s*\(' "$f" | grep -v -E '\b(Validator|Service)\b'
+     done
+     ```
+   Any failure is **Critical** — record as a view-logic-placement finding, set the artifact to
+   `needs-rework`, and append an event describing the required extraction (not an approval, per
+   Constitution Principle IV — the audit rule stays Warning precisely so this critic pass makes
+   the final borderline call).
 
 ## Procedure
 
