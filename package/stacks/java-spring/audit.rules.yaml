@@ -118,3 +118,35 @@
   summary_template: 'Server-side template rendering of a possibly legacy-derived view: {symbol}'
   remediation: Confirm this is a target-native, reviewable exception and not regenerated legacy UI; otherwise replace with the API contract output.
   details_template: 'Target-side server rendering is an explicit exception, not a default. Evidence: L{line}: {text}'
+# view-logic-placement-* (issue #100, amends #59): complements the
+# view-regeneration-* presence/absence rules above with a placement check —
+# is extracted validation/business logic in a dedicated *Validator/*Service,
+# or still inline in the handler? Line-scoped regex matching (no
+# class-name/file-role awareness in the audit engine, no cross-line
+# correlation), so these are a coarse heuristic like the template-engine
+# rule above, not a precise "handler class" detector: the negative lookahead
+# only rules out a Service/Validator reference on the SAME line as the
+# signal, and a properly consolidated handler simply has no inline
+# signal lines left to match (the logic lives in the separate module).
+# Warning severity is deliberate (plan.md Constraints; spec Edge Cases) —
+# the reviewer resolves borderline/false-positive cases, same convention as
+# view-regeneration-template-engine's "confirm this is a reviewable
+# exception" framing.
+- id: view-logic-placement-inline-validation
+  finding: jvm
+  category: view-logic-placement
+  severity: warning
+  match: '(?:if\s*\(.*(?:==\s*null|\.isEmpty\(\)).*\)|\.hasErrors\(\)|\.matches\("[^"]*"\))(?!.*\b(?:Validator|Service)\b)'
+  flags: g
+  summary_template: 'Inline validation logic detected outside a dedicated Validator: {symbol}'
+  remediation: Extract this validation into the pack-declared *Validator module (see stack.yaml logic_extraction.validator_suffix); the handler should only invoke it and delegate. Deduplicate if the same rule is copied across endpoints.
+  details_template: 'Extracted validation logic must consolidate into a dedicated, named *Validator module, not live inline in the handler. Evidence: L{line}: {text}'
+- id: view-logic-placement-inline-business-rule
+  finding: jvm
+  category: view-logic-placement
+  severity: warning
+  match: '\}\s*else\s+if\s*\(.*\)\s*\{(?!.*\b(?:Validator|Service)\b)'
+  flags: g
+  summary_template: 'Inline multi-branch business-rule logic detected outside a dedicated Service: {symbol}'
+  remediation: Extract this business-rule logic into the pack-declared *Service module (see stack.yaml logic_extraction.service_suffix); the handler should only invoke it and delegate. Deduplicate if the same rule is copied across endpoints.
+  details_template: 'Extracted business logic must consolidate into a dedicated, named *Service module, not live inline in the handler. Evidence: L{line}: {text}'

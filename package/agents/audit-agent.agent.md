@@ -117,6 +117,35 @@ For every Critical hit:
   `blocked-human-decision` tag) rather than regenerating UI. This keeps the "discard layout"
   rule from accidentally discarding business logic.
 
+### Step 10 — View-logic placement (dedicated Service/Validator modules)
+
+Amends #59 (Step 9): even a correctly-migrated contract-backed endpoint must not carry its
+extracted validation/business logic inline — it must consolidate into dedicated, named
+`*Service`/`*Validator` modules, never duplicated per-endpoint. The stack pack's
+`logic_extraction` block and the `view-logic-placement-*` audit rules enforce this. Every hit is
+**Warning** — the reviewer resolves borderline "is this non-trivial" calls.
+
+```bash
+# 10a. Inline validation/business-rule logic in handler-named classes with no
+# Service/Validator collaborator on the same line
+grep -rEn '\b(Controller|Resource|Endpoint)\b' modern/src --include="*.java" -l | while read -r f; do
+  grep -Hn -E '\.(isEmpty|hasErrors)\(\)|== *null|\.matches\("' "$f" | grep -v -E '\b(Validator|Service)\b'
+  grep -Hn -E '\}\s*else\s+if\s*\(' "$f" | grep -v -E '\b(Validator|Service)\b'
+done
+
+# 10b. Per-endpoint duplication: same predicate repeated across 2+ handler files
+grep -rEn '\.(isEmpty|hasErrors)\(\)|== *null|\.matches\("' modern/src --include="*.java" \
+  | sed -E 's/^[^:]+:[0-9]+://' | sort | uniq -c | sort -rn | awk '$1 >= 2'
+```
+
+For every hit:
+- Extract validation logic into a dedicated, named `*Validator`; business logic into a
+  dedicated, named `*Service` (suffixes from `logic_extraction.validator_suffix` /
+  `.service_suffix`). The handler is left binding and delegating only.
+- A rule shared across multiple endpoints (10b) consolidates into ONE module used by all of
+  them, not copied per-endpoint.
+- A trivial pass-through view needs no empty `*Service`/`*Validator` shell.
+
 ## Output Format
 
 Write the findings report to stdout using this structure:
@@ -159,6 +188,11 @@ Write the findings report to stdout using this structure:
 | File | Line | Marker (JSP file / JSP syntax / JSF / view import / template render) | Severity |
 |---|---|---|---|
 ✅ None — or one row per hit. 9e hits are Warning unless explicitly template-native.
+
+#### 8. View-Logic Placement
+| File | Line | Signal (inline validation / BindingResult / pattern-guard / business rule / duplication) | Severity |
+|---|---|---|---|
+✅ None — or one row per hit. All hits are Warning.
 
 ### Summary
 | Category | Count | Highest Severity |
@@ -231,6 +265,16 @@ node migration/registry/dist/cli.js set-artifact-status --id "<id>" --status ski
   && node migration/registry/dist/cli.js append-event \
        --id "<id>" --type reviewed --agent audit-agent \
        --summary "view-dropped-presentational: layout-only JSP/JSF/Struts view, no scriptlet/EL/backing-bean behavior to extract"
+```
+
+### 5b. For view-logic-placement findings (per hit, Warning)
+```bash
+node migration/registry/dist/cli.js create-artifact \
+  --path "<modern/path/to/HandlerArtifact.java>" \
+  --artifact-type "extract-view-logic-to-module" \
+  --category "view-logic-placement" \
+  --tier second-class \
+  --status planned
 ```
 
 ### 6. For missing tests on core classes (Critical)
