@@ -386,7 +386,8 @@ export type JvmAuditCategory =
   | "removed-api"
   | "deprecated-api"
   | "python-compat"
-  | "view-regeneration";
+  | "view-regeneration"
+  | "view-logic-placement";
 
 export interface JvmAuditFinding {
   finding_id: string;
