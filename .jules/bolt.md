@@ -1,3 +1,6 @@
 ## 2024-05-27 - Memoize expensive list filtering in views
 **Learning:** Components like `ArtifactList` and `RunsView` were computing expensive operations (e.g. `Array.from(new Set(...)).sort()`) and `.filter()` over large data arrays on EVERY render. Since these views contain local state for selecting rows (`selected` / `selectedRunId`), simply clicking a row triggers a full component re-render, causing perceptible UI jank as these heavy array operations run synchronously.
 **Action:** Wrap derived datasets that iterate over list props with `useMemo`. This ensures filtering and Set generation only run when the raw dataset or filter criteria change, not when local selection state is toggled.
+## 2024-05-28 - Debounce API-bound search inputs
+**Learning:** Components like `BlockersView` had search inputs tied directly to query state objects that triggered immediate API fetches (`fetchBlockers`) on every keystroke. This causes excessive backend requests and UI stutter.
+**Action:** When connecting a search input to an API request, maintain the value in local state (`useState`) for immediate feedback, and debounce the query change propagation (via `setTimeout` in `useEffect`) by 300ms. Also ensure local state synchronizes with external query resets.
