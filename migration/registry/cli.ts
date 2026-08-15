@@ -52,6 +52,10 @@ import {
   listJvmAuditFindings,
   reopenFinding,
 } from "./commands/modernization";
+import {
+  listDispositions,
+  upsertProposedDisposition,
+} from "./commands/dispositions";
 
 import {
   addApprovedCompanionOutput,
@@ -978,6 +982,42 @@ program
     approvedBy: opts.approvedBy,
     agent: opts.agent,
     model: opts.model,
+  })));
+
+// ─── Dependency dispositions (ISSUE-61 / specs/006-dependency-disposition) ───
+
+program
+  .command("list-dispositions")
+  .description("List dependency disposition records (one per library)")
+  .option("--status <status>", "proposed | confirmed")
+  .option("--pending-only", "Show only confirmed rows carrying a pending re-proposal")
+  .action((opts) => run(() => listDispositions(db(), {
+    status: opts.status as "proposed" | "confirmed" | undefined,
+    pendingOnly: opts.pendingOnly as boolean | undefined,
+  })));
+
+program
+  .command("propose-disposition")
+  .description("Record or refine a proposed disposition for a library (planner-agent / collector / operator-policy writes)")
+  .requiredOption("--library <name>", "Canonical library coordinates")
+  .requiredOption("--disposition <kind>", "keep | replace-with-native | inline")
+  .requiredOption("--rationale <text>", "Why this disposition is proposed")
+  .requiredOption("--proposed-by <actor>", "planner-collector | planner-agent | operator-policy")
+  .option("--current-version <v>", "Observed current version")
+  .option("--native-replacement <name>", "Required when --disposition replace-with-native")
+  .option("--inline-note <text>", "Required when --disposition inline")
+  .option("--locked-version <v>", "Target version lock (for keep proposals)")
+  .option("--usage-json <json>", "Used-surface summary from usage analysis")
+  .action((opts) => run(() => upsertProposedDisposition(db(), {
+    libraryName: opts.library,
+    currentVersion: opts.currentVersion,
+    disposition: opts.disposition,
+    nativeReplacement: opts.nativeReplacement,
+    inlineNote: opts.inlineNote,
+    lockedTargetVersion: opts.lockedVersion,
+    rationale: opts.rationale,
+    usageJson: opts.usageJson,
+    proposedBy: opts.proposedBy,
   })));
 
 program
