@@ -4,9 +4,10 @@ import {
   listJvmAuditFindings,
 } from "../registry/commands/modernization";
 import type { DependencyFindingWithStrategy } from "../registry/commands/modernization";
+import { listDispositions } from "../registry/commands/dispositions";
 import { getUndecidedModules } from "../registry/commands/scope";
 import type { ModuleScopeSummary } from "../registry/commands/scope";
-import type { JvmAuditFinding } from "../registry/types";
+import type { DependencyDisposition, JvmAuditFinding } from "../registry/types";
 
 // TASK-03: downstream phases must fast-fail (no agent spawn) on an empty registry.
 export class EmptyRegistryError extends Error {
@@ -29,6 +30,9 @@ export interface PlanningReadiness {
   // ISSUE-68: modules with first-class artifacts and no recorded keep/drop
   // scope decision. Planning is blocked until every module has one.
   unresolvedScopeModules: ModuleScopeSummary[];
+  // ISSUE-61 US2: disposition rows awaiting confirmation — status='proposed'
+  // OR a confirmed row carrying a pending re-proposal (FR-006/FR-007).
+  unconfirmedDispositions: DependencyDisposition[];
 }
 
 function summarizeArtifacts(findings: Array<{ artifact_id: string }>): string {
@@ -42,12 +46,34 @@ export function evaluatePlanningReadiness(db: Database.Database): PlanningReadin
   const warningJvmFindings = jvm.filter((finding) => finding.severity === "warning");
   const dependencyFindings = listDependencyFindings(db);
   const openDependencies = dependencyFindings.filter((finding) => finding.dismissed_at == null);
+  // ISSUE-61: a finding whose library carries a confirmed non-keep disposition
+  // counts as resolved — the disposition IS the resolution (the library will
+  // not be carried into the target). Kept libraries' findings still require
+  // approved strategies exactly as today.
+  const dispositionResolved = new Set(
+    (db.prepare(`
+      SELECT f.finding_id
+      FROM dependency_findings f
+      WHERE NOT EXISTS (
+        SELECT 1 FROM dependency_dispositions d
+        WHERE d.library_name = f.dependency_name
+          AND d.status = 'confirmed'
+          AND d.disposition != 'keep'
+      )
+    `).all() as Array<{ finding_id: string }>).map((row) => row.finding_id),
+  );
+  const dispositions = listDispositions(db);
   return {
     blockingJvmFindings,
     warningJvmFindings,
-    unresolvedDependencyFindings: openDependencies.filter((finding) => finding.strategy == null),
+    unresolvedDependencyFindings: openDependencies.filter(
+      (finding) => finding.strategy == null && dispositionResolved.has(finding.finding_id),
+    ),
     approvedDependencyFindings: openDependencies.filter((finding) => finding.strategy != null),
     unresolvedScopeModules: getUndecidedModules(db),
+    unconfirmedDispositions: dispositions.filter(
+      (row) => row.status === "proposed" || row.pending_disposition != null,
+    ),
   };
 }
 
@@ -102,6 +128,19 @@ export function formatPlanningBlockMessage(readiness: PlanningReadiness): {
       summary: "Planning blocked by unresolved dependency modernization strategies.",
       reason: `${readiness.unresolvedDependencyFindings.length} risky dependency finding(s) still need an approved upgrade or replacement strategy${sampleArtifacts ? ` across ${sampleArtifacts}` : ""}.`,
       command: "node migration/registry/dist/cli.js list-dependency-findings --unresolved-only",
+    };
+  }
+
+  // ISSUE-61 US2: disposition branch is evaluated AFTER scope → JVM →
+  // dependency — those remain the most fundamental blockers (contracts/
+  // registry-schema.md "Readiness integration").
+  if (readiness.unconfirmedDispositions.length > 0) {
+    const sample = readiness.unconfirmedDispositions.map((row) => row.library_name).slice(0, 5).join(", ");
+    const count = readiness.unconfirmedDispositions.length;
+    return {
+      summary: "Planning blocked by unconfirmed dependency dispositions.",
+      reason: `${count} librar${count === 1 ? "y" : "ies"} lack a confirmed keep / replace-with-native / inline disposition (${sample}${count > 5 ? ", …" : ""}). Every in-scope library needs a confirmed disposition before planning sign-off.`,
+      command: "node migration/registry/dist/cli.js list-dispositions --status proposed",
     };
   }
 

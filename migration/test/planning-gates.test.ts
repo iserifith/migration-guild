@@ -228,6 +228,11 @@ test("dependency gate allows planning when replacement mapping is approved", asy
       rationale: "Spring Boot 3 requires the Jakarta namespace.",
     });
 
+    // Feature 006: the collector now proposes a disposition for every declared
+    // library mid-run; bulk-confirm so this pre-006 gate test stays focused on
+    // the dependency-strategy gate it was written for.
+    process.env["GUILDCTL_AUTO_CONFIRM_DISPOSITIONS"] = "1";
+
     await runPlan(db, {
       refreshCompatibilityAudits: () => ({ ...auditSummary, dependencies: { total: 1, unresolved: 0 } }),
       startPolling: () => () => undefined,
@@ -240,6 +245,7 @@ test("dependency gate allows planning when replacement mapping is approved", asy
 
     assert.deepEqual(agents, ["stack-advisor", "planner-agent"]);
   } finally {
+    delete process.env["GUILDCTL_AUTO_CONFIRM_DISPOSITIONS"];
     db.close();
   }
 });

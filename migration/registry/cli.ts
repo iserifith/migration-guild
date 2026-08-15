@@ -53,6 +53,7 @@ import {
   reopenFinding,
 } from "./commands/modernization";
 import {
+  confirmDisposition,
   listDispositions,
   upsertProposedDisposition,
 } from "./commands/dispositions";
@@ -1018,6 +1019,26 @@ program
     rationale: opts.rationale,
     usageJson: opts.usageJson,
     proposedBy: opts.proposedBy,
+  })));
+
+program
+  .command("confirm-disposition")
+  .description("Confirm (optionally overriding) a library's disposition")
+  .requiredOption("--library <name>", "Canonical library coordinates")
+  .requiredOption("--confirmed-by <name>", "Operator or authorized automation actor")
+  .option("--disposition <kind>", "Override: keep | replace-with-native | inline")
+  .option("--native-replacement <name>", "Override: native replacement target")
+  .option("--inline-note <text>", "Override: inline note")
+  .option("--locked-version <v>", "Override: target version lock")
+  .option("--rationale <text>", "Override rationale (required with --disposition)")
+  .action((opts) => run(() => confirmDisposition(db(), {
+    libraryName: opts.library,
+    confirmedBy: opts.confirmedBy,
+    disposition: opts.disposition,
+    nativeReplacement: opts.nativeReplacement,
+    inlineNote: opts.inlineNote,
+    lockedTargetVersion: opts.lockedVersion,
+    rationale: opts.rationale,
   })));
 
 program

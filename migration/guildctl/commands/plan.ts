@@ -14,6 +14,8 @@ import { refreshCompatibilityAudits } from "../audit";
 import { loadActiveStack, readStackInstruction } from "../stack";
 import { evaluatePlanningReadiness, formatPlanningBlockMessage, requireNonEmptyRegistry } from "../readiness";
 import { collectDispositions } from "../dispositions";
+import { confirmDisposition, listDispositions } from "../../registry/commands/dispositions";
+import type { DependencyDisposition, DependencyDispositionKind } from "../../registry/types";
 import { formatInventoryValidationReport, loadClassificationSpec, validateInventoryQuality } from "../classification";
 import { resolveAndReportRuntime } from "../runtime-report";
 import type { ResolvedRuntimeConfig } from "../harness";
@@ -154,6 +156,168 @@ export async function confirmHighRiskArtifacts(db: Database.Database): Promise<v
   rl.close();
 }
 
+// ─── Feature 006 US2: dependency disposition confirmation gate ──────────────
+
+/**
+ * Surfaces unconfirmed dependency dispositions (status='proposed' OR a pending
+ * re-proposal) for an explicit operator decision after the Planner phase.
+ * Mirrors confirmMappings' prompt shape, extended with the override affordance
+ * required by US2 (contracts/cli-surface.md "Plan-phase interactive flow"):
+ *  - GUILDCTL_AUTO_CONFIRM_DISPOSITIONS=1 bulk-confirms every pending proposal
+ *    and folds every pending re-proposal as 'benchmark-runner'
+ *    (change_kind='auto-confirm').
+ *  - interactive TTY: y/n/e readline loop; 'e' prompts for new kind/target/
+ *    rationale, recorded as change_kind='override'.
+ *  - non-interactive stdin with the env var unset: rows stay pending, a
+ *    silence-first warning is printed, the process does NOT hang — the
+ *    end-of-Plan disposition readiness gate (runPlan) blocks sign-off.
+ */
+export async function confirmDispositions(db: Database.Database): Promise<void> {
+  const pending = listDispositions(db).filter(
+    (row) => row.status === "proposed" || row.pending_disposition != null,
+  );
+  if (pending.length === 0) return;
+
+  if (process.env["GUILDCTL_AUTO_CONFIRM_DISPOSITIONS"] === "1") {
+    for (const row of pending) {
+      confirmDisposition(db, {
+        libraryName: row.library_name,
+        confirmedBy: "benchmark-runner",
+        autoConfirm: true,
+      });
+    }
+    process.stdout.write(`  ✓ Auto-confirmed ${pending.length} dependency disposition(s) for benchmark\n`);
+    return;
+  }
+
+  if (!process.stdin.isTTY) {
+    process.stdout.write(
+      `  ⚠ ${pending.length} dependency disposition(s) pending human confirmation — planning sign-off will be blocked (set GUILDCTL_AUTO_CONFIRM_DISPOSITIONS=1 to bulk-confirm in automation)\n`,
+    );
+    return;
+  }
+
+  console.log("\n  Proposed dependency dispositions — confirm each before planning sign-off:\n");
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const ask = (q: string) => new Promise<string>((res) => rl.question(q, res));
+
+  for (const row of pending) {
+    printDispositionPrompt(row);
+
+    let decided = false;
+    while (!decided) {
+      const isReProposal = row.status === "confirmed" && row.pending_disposition != null;
+      const answer = (await ask(
+        isReProposal
+          ? "  Accept new disposition? [y]es / [n]o keep current / [e]dit: "
+          : "  Confirm? [y]es / [n]o skip / [e]dit disposition: ",
+      )).trim().toLowerCase();
+      if (answer === "y" || answer === "") {
+        confirmDisposition(db, { libraryName: row.library_name, confirmedBy: "operator" });
+        process.stdout.write("  ✓ confirmed\n");
+        decided = true;
+      } else if (answer === "n") {
+        process.stdout.write(isReProposal ? "  – current disposition kept\n" : "  – skipped (counts in the readiness gate)\n");
+        decided = true;
+      } else if (answer === "e") {
+        const override = await promptDispositionOverride(ask);
+        if (override) {
+          confirmDisposition(db, {
+            libraryName: row.library_name,
+            confirmedBy: "operator",
+            ...override,
+          });
+          process.stdout.write(`  ✓ updated → ${override.disposition}\n`);
+          decided = true;
+        }
+      }
+    }
+  }
+
+  rl.close();
+}
+
+function printDispositionPrompt(row: DependencyDisposition): void {
+  const usage = row.usage_json
+    ? (JSON.parse(row.usage_json) as { using_artifact_count?: number; scan_notes?: string[] })
+    : null;
+  const target = row.disposition === "replace-with-native"
+    ? ` (${row.native_replacement})`
+    : row.disposition === "inline"
+      ? ` (${row.inline_note})`
+      : row.locked_target_version
+        ? ` @${row.locked_target_version}`
+        : "";
+
+  if (row.status === "confirmed" && row.pending_disposition != null) {
+    const pendingTarget = row.pending_disposition === "replace-with-native"
+      ? ` (${row.pending_native_replacement})`
+      : row.pending_disposition === "inline"
+        ? ` (${row.pending_inline_note})`
+        : row.pending_locked_target_version
+          ? ` @${row.pending_locked_target_version}`
+          : "";
+    process.stdout.write(
+      `\n  ${row.library_name}   (confirmed: ${row.disposition}${target})  → NEW PROPOSAL: ${row.pending_disposition}${pendingTarget}\n`,
+    );
+    if (row.pending_rationale) process.stdout.write(`    ${"\x1b[2m"}Re-run evidence: ${row.pending_rationale}${"\x1b[0m"}\n`);
+    return;
+  }
+
+  process.stdout.write(`\n  ${row.library_name}   → ${row.disposition}${target}\n`);
+  if (usage?.using_artifact_count != null) {
+    process.stdout.write(`    ${"\x1b[2m"}Used by ${usage.using_artifact_count} artifact(s).${"\x1b[0m"}\n`);
+  }
+  process.stdout.write(`    ${"\x1b[2m"}${row.rationale}${"\x1b[0m"}\n`);
+}
+
+const DISPOSITION_KIND_PROMPT = /^(keep|replace-with-native|inline)$/;
+
+async function promptDispositionOverride(
+  ask: (q: string) => Promise<string>,
+): Promise<{
+  disposition: DependencyDispositionKind;
+  nativeReplacement?: string;
+  inlineNote?: string;
+  lockedTargetVersion?: string;
+  rationale: string;
+} | null> {
+  const kindRaw = (await ask("  New disposition (keep | replace-with-native | inline): ")).trim();
+  if (!DISPOSITION_KIND_PROMPT.test(kindRaw)) {
+    process.stdout.write("  ✗ unknown disposition — leaving row unchanged\n");
+    return null;
+  }
+  const disposition = kindRaw as DependencyDispositionKind;
+  let nativeReplacement: string | undefined;
+  let inlineNote: string | undefined;
+  let lockedTargetVersion: string | undefined;
+  if (disposition === "replace-with-native") {
+    nativeReplacement = (await ask("  Native replacement (e.g. java.time): ")).trim();
+    if (!nativeReplacement) {
+      process.stdout.write("  ✗ native replacement is required — leaving row unchanged\n");
+      return null;
+    }
+  } else if (disposition === "inline") {
+    inlineNote = (await ask("  Inline note (what gets inlined where): ")).trim();
+    if (!inlineNote) {
+      process.stdout.write("  ✗ inline note is required — leaving row unchanged\n");
+      return null;
+    }
+  } else {
+    lockedTargetVersion = (await ask("  Locked target version: ")).trim();
+    if (!lockedTargetVersion) {
+      process.stdout.write("  ✗ locked target version is required for keep — leaving row unchanged\n");
+      return null;
+    }
+  }
+  const rationale = (await ask("  Rationale: ")).trim();
+  if (!rationale) {
+    process.stdout.write("  ✗ rationale is required — leaving row unchanged\n");
+    return null;
+  }
+  return { disposition, nativeReplacement, inlineNote, lockedTargetVersion, rationale };
+}
 
 function getMappings(db: Database.Database) {
   return db.prepare(`
@@ -387,13 +551,18 @@ export async function runPlan(
   }
 
   const initialReadiness = evaluatePlanningReadiness(db);
+  // Disposition gate is end-of-Plan (T023) — mask it from all pre-Planner
+  // block evaluations so freshly collected proposals never block wave
+  // assignment mid-run (research.md §7).
   const scopeBlock = formatPlanningBlockMessage({
     ...initialReadiness,
+    unconfirmedDispositions: [],
     blockingJvmFindings: [],
     unresolvedDependencyFindings: [],
   });
   const jvmBlock = formatPlanningBlockMessage({
     ...initialReadiness,
+    unconfirmedDispositions: [],
     unresolvedDependencyFindings: [],
     unresolvedScopeModules: [],
   });
@@ -535,6 +704,7 @@ export async function runPlan(
   const readiness = evaluatePlanningReadiness(db);
   const dependencyBlock = formatPlanningBlockMessage({
     ...readiness,
+    unconfirmedDispositions: [], // disposition gate is end-of-Plan (T023), not pre-Planner
     blockingJvmFindings: [],
     unresolvedScopeModules: [],
   });
@@ -603,4 +773,31 @@ export async function runPlan(
   // pending high-risk work never blocks wave assignment for everything else.
   // Enforcement lives at the claim boundary (claim.ts), not here.
   await confirmHighRiskArtifacts(db);
+
+  // Feature 006 US2: dependency disposition confirmation — also AFTER the
+  // Planner phase (research.md §7), so pending proposals never block wave
+  // assignment mid-run. The gate below keeps planning fail-closed: unconfirmed
+  // rows block sign-off rather than being silently defaulted.
+  await confirmDispositions(db);
+
+  // End-of-Plan disposition readiness gate (mirrors the dependencyBlock gate
+  // above): re-evaluate readiness and fail closed on unconfirmed dispositions.
+  const finalReadiness = evaluatePlanningReadiness(db);
+  const dispositionBlock = formatPlanningBlockMessage({
+    ...finalReadiness,
+    blockingJvmFindings: [],
+    unresolvedScopeModules: [],
+    unresolvedDependencyFindings: [],
+  });
+  if (dispositionBlock) {
+    setNext(db, {
+      summary: dispositionBlock.summary,
+      reason: dispositionBlock.reason,
+      recommendedCommand: dispositionBlock.command,
+    });
+    process.stderr.write(`  ✗ ${dispositionBlock.summary}\n`);
+    process.stderr.write(`    ${dispositionBlock.reason}\n`);
+    process.stderr.write(`    Run: ${dispositionBlock.command}\n\n`);
+    process.exit(1);
+  }
 }
