@@ -76,6 +76,84 @@ async function confirmMappings(
 }
 
 
+// ─── Feature 005 US3: high-risk artifact confirmation gate ──────────────────
+
+interface PendingRiskConfirmation {
+  artifact_id: string;
+  risk_score: number;
+  reason_codes_json: string;
+}
+
+/**
+ * Surfaces pending high-risk artifacts for an explicit operator decision after
+ * the Planner phase. Mirrors confirmMappings' shape exactly (research.md §5):
+ *  - GUILDCTL_AUTO_CONFIRM_RISK=1 bulk-confirms as 'benchmark-runner' (CI/benchmark bypass)
+ *  - interactive TTY: y/n readline loop recording 'operator' decisions
+ *  - non-interactive stdin with the env var unset: leave rows pending — the
+ *    claim gate keeps them unclaimable (FR-012), the process does not hang.
+ */
+export async function confirmHighRiskArtifacts(db: Database.Database): Promise<void> {
+  const pending = db.prepare(`
+    SELECT rc.artifact_id, ra.risk_score, ra.reason_codes_json
+    FROM risk_confirmations rc
+    JOIN artifact_risk_assessments ra ON ra.artifact_id = rc.artifact_id
+    WHERE rc.decision = 'pending'
+    ORDER BY ra.risk_score DESC, rc.artifact_id
+  `).all() as PendingRiskConfirmation[];
+  if (pending.length === 0) return;
+
+  if (process.env["GUILDCTL_AUTO_CONFIRM_RISK"] === "1") {
+    const confirm = db.prepare(`
+      UPDATE risk_confirmations SET decision = 'confirmed', decided_by = 'benchmark-runner', decided_at = datetime('now')
+      WHERE artifact_id = ? AND decision = 'pending'
+    `);
+    for (const row of pending) confirm.run(row.artifact_id);
+    process.stdout.write(`  ✓ Auto-confirmed ${pending.length} high-risk artifact(s) for migration\n`);
+    return;
+  }
+
+  if (!process.stdin.isTTY) {
+    process.stdout.write(
+      `  ⚠ ${pending.length} high-risk artifact(s) pending human confirmation — held from migration (set GUILDCTL_AUTO_CONFIRM_RISK=1 to bulk-confirm in automation)\n`,
+    );
+    return;
+  }
+
+  console.log("\n  High-risk artifacts — confirm each before it can be claimed for migration:\n");
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const ask = (q: string) => new Promise<string>((res) => rl.question(q, res));
+
+  for (const row of pending) {
+    const reasons = JSON.parse(row.reason_codes_json) as string[];
+    process.stdout.write(`\n  ${row.artifact_id}  (risk score ${row.risk_score})\n`);
+    for (const reason of reasons) process.stdout.write(`    ${"\x1b[2m"}${reason}${"\x1b[0m"}\n`);
+
+    let decided = false;
+    while (!decided) {
+      const answer = (await ask("  Confirm for migration? [y]es / [n]o decline: ")).trim().toLowerCase();
+      if (answer === "y" || answer === "") {
+        db.prepare(`
+          UPDATE risk_confirmations SET decision = 'confirmed', decided_by = 'operator', decided_at = datetime('now')
+          WHERE artifact_id = ? AND decision = 'pending'
+        `).run(row.artifact_id);
+        process.stdout.write("  ✓ confirmed — claimable\n");
+        decided = true;
+      } else if (answer === "n") {
+        db.prepare(`
+          UPDATE risk_confirmations SET decision = 'declined', decided_by = 'operator', decided_at = datetime('now')
+          WHERE artifact_id = ? AND decision = 'pending'
+        `).run(row.artifact_id);
+        process.stdout.write("  – declined — remains blocked\n");
+        decided = true;
+      }
+    }
+  }
+
+  rl.close();
+}
+
+
 function getMappings(db: Database.Database) {
   return db.prepare(`
     SELECT id, legacy_framework, target_framework, strategy, notes, confirmed
@@ -505,4 +583,10 @@ export async function runPlan(
     process.exit(plannerResult.exitCode);
   }
   console.log("\n  ✓ Planning complete\n");
+
+  // Feature 005 US3: surface pending high-risk artifacts for explicit operator
+  // confirmation — deliberately AFTER the Planner phase (research.md §5) so
+  // pending high-risk work never blocks wave assignment for everything else.
+  // Enforcement lives at the claim boundary (claim.ts), not here.
+  await confirmHighRiskArtifacts(db);
 }

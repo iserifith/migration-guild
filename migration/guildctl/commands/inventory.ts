@@ -20,6 +20,7 @@ import { refreshCompatibilityAudits } from "../audit";
 import { evaluatePlanningReadiness, formatPlanningBlockMessage } from "../readiness";
 import { findMatchingFiles, loadActiveStack, readStackInstruction, censusSourceFiles, countFilesForStack, listStackPacks } from "../stack";
 import { deriveArtifactModule, formatInventoryValidationReport, getInventoryCompletionStatus, loadClassificationSpec, recordInventoryCompletion, validateInventoryQuality } from "../classification";
+import { applyBatchRiskAssessment, loadRiskSpec, scoreArtifact } from "../risk";
 
 // ─── File scanner ────────────────────────────────────────────────────────────
 
@@ -405,6 +406,29 @@ export async function runInventory(db: Database.Database, workspaceRoot = resolv
   }
 
   stopPolling();
+
+  // ── Risk assessment pass (feature 005, research.md §1) ─────────────────────
+  // Deterministic, in-process, over the same first-class artifact set the
+  // classification batches covered. Runs after classification completes and
+  // before validateInventoryQuality so a scoring failure fails the phase.
+  const riskSpec = loadRiskSpec(pack);
+  const riskRecords = firstClassIds.map((id) => {
+    const artifact = db.prepare("SELECT path FROM artifacts WHERE id = ?").get(id) as { path: string };
+    const absPath = path.isAbsolute(artifact.path) ? artifact.path : path.join(projectRoot, artifact.path);
+    let content = "";
+    try {
+      content = fs.readFileSync(absPath, "utf8");
+    } catch {
+      // Unreadable source: score with empty content so the artifact still gets a
+      // row (heuristic-skipped reason codes) rather than being silently missed.
+    }
+    return scoreArtifact(id, content, riskSpec);
+  });
+  applyBatchRiskAssessment(db, riskRecords);
+  const highRiskCount = riskRecords.filter((r) => r.highRisk).length;
+  process.stdout.write(
+    `  Risk summary: ${riskRecords.length} artifact(s) scored, ${highRiskCount} high-risk\n`,
+  );
 
   const completionStatus = getInventoryCompletionStatus(db);
   const createdArtifactIds = artifactIds(db).filter((id) => !allowedArtifactIdsBeforeAgent.includes(id));
