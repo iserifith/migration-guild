@@ -31,6 +31,22 @@ view-layer UI.
    agent cannot confidently separate behavior from presentation, the artifact is marked
    `blocked` with the `blocked-human-decision` tag rather than regenerated as UI. This
    keeps the "discard layout" rule from accidentally discarding business logic.
+5. **Placement of extracted logic.** Declared by `logic_extraction` in `stack.yaml` and
+   enforced by the `view-logic-placement-*` audit rules — this narrows point 1 above from
+   "preserved as behavior" to "preserved in a dedicated module":
+   - Validation logic extracted from a migrated view-handling module consolidates into a
+     dedicated, named `*Validator` module; business logic into a dedicated, named `*Service`
+     module.
+   - The contract-backed endpoint/handler only binds and delegates — routing, parameter
+     binding, invoking the service/validator, and response shaping. Non-trivial validation
+     or business-rule logic MUST NOT appear inline in the handler.
+   - A rule shared across multiple endpoints lives in one shared module used by all of
+     them — never copied per-endpoint.
+   - Logic used by exactly one endpoint still gets its own named module (isolation for
+     testing, not only deduplication).
+   - A trivial pass-through view carrying no validation/business rules beyond delegation
+     needs no empty `*Service`/`*Validator` shell and may delegate directly to an existing
+     domain service.
 
 When this section is in tension with anything above, this section wins for view-handling
 modules: contracts in, UI out.

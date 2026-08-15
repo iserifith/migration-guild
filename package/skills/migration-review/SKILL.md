@@ -91,6 +91,35 @@ grep -rEn '\b(TemplateEngine|thymeleaf|freemarker|velocity)\b.*(process|render)'
   modern/src --include="*.java"
 ```
 
+### View-logic placement — extracted logic must land in dedicated modules
+Amends the section above (issue #100): even when a view-handling module correctly lands as a
+contract-backed endpoint, its extracted validation/business logic must consolidate into
+**dedicated, named modules** — never inline in the handler, never duplicated per-endpoint. The
+stack pack's `logic_extraction` block and the `view-logic-placement-*` audit rules enforce this.
+For every migrated view-handling module, verify the following. Any failure is **Critical** (a
+finding, not an approval) — the audit rule itself fires at Warning severity precisely so this
+checklist item, not the automated scan, makes the final call.
+
+- **Validation lands in a dedicated `*Validator`; business logic in a dedicated `*Service`.**
+  (Suffixes come from the pack's `logic_extraction.validator_suffix` / `.service_suffix`.)
+- **The handler only binds and delegates.** Routing, parameter binding, invoking the
+  service/validator, response shaping — no non-trivial validation or business-rule logic
+  inline in the contract-backed endpoint/handler itself.
+- **No rule duplicated across endpoints.** A rule shared by multiple endpoints lives in one
+  shared module used by all of them, never copied per-handler.
+- **Trivial pass-through views are exempt.** A view with no real validation/business rules
+  beyond delegation needs no empty `*Service`/`*Validator` shell.
+
+Quick scan commands:
+```bash
+grep -rEn '\b(Controller|Resource|Endpoint)\b' modern/src --include="*.java" -l | while read -r f; do
+  grep -Hn -E '\.(isEmpty|hasErrors)\(\)|== *null|\.matches\("' "$f" | grep -v -E '\b(Validator|Service)\b'
+  grep -Hn -E '\}\s*else\s+if\s*\(' "$f" | grep -v -E '\b(Validator|Service)\b'
+done
+grep -rEn '\.(isEmpty|hasErrors)\(\)|== *null|\.matches\("' modern/src --include="*.java" \
+  | sed -E 's/^[^:]+:[0-9]+://' | sort | uniq -c | sort -rn | awk '$1 >= 2'
+```
+
 ## Output Rules
 
 - Findings come first.

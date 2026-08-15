@@ -25,8 +25,9 @@ test("Java pack drives detection, inventory, audit, and scaffold without executa
 
   assert.equal(detectStack(root), "java-spring");
   const pack = loadStackPack("java-spring", root);
-  // 8 baseline JVM/dependency rules + 4 view-regeneration-* rules (issue #59).
-  assert.equal(pack.rules.length, 12);
+  // 8 baseline JVM/dependency rules + 4 view-regeneration-* rules (issue #59)
+  // + 2 view-logic-placement-* rules (issue #100).
+  assert.equal(pack.rules.length, 14);
 
   // Issue #59: the four view-regeneration rules must be present and use the locked
   // template vocabulary (validateTemplates runs at pack load, so a missing rule
@@ -43,6 +44,25 @@ test("Java pack drives detection, inventory, audit, and scaffold without executa
       `java-spring pack must declare rule "${id}" (issue #59)`,
     );
   }
+
+  // Issue #100: the two view-logic-placement rules must be present (same
+  // validateTemplates-at-load guarantee as above) with category
+  // "view-logic-placement", and the pack must declare its logic_extraction
+  // naming vocabulary.
+  const placementRuleIds = [
+    "view-logic-placement-inline-validation",
+    "view-logic-placement-inline-business-rule",
+  ];
+  for (const id of placementRuleIds) {
+    const rule = pack.rules.find((r) => r.id === id);
+    assert.ok(rule, `java-spring pack must declare rule "${id}" (issue #100)`);
+    assert.equal(rule!.category, "view-logic-placement", `rule "${id}" must use category "view-logic-placement"`);
+  }
+  assert.deepEqual(pack.manifest.logic_extraction, {
+    service_suffix: "Service",
+    validator_suffix: "Validator",
+    handler_roles: ["rest-endpoint"],
+  });
 
   const db = new Database(":memory:");
   applySchema(db);
