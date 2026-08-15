@@ -101,7 +101,7 @@ As a migration operator, I want the confirmed disposition set to be the authorit
 
 - **SC-001**: After a Plan run on any in-scope workspace, 100% of third-party libraries used by in-scope artifacts have exactly one current disposition record retrievable from the registry without re-scanning.
 - **SC-002**: No library reaches the target dependency set without a confirmed disposition — in 100% of test runs, including unattended runs, libraries lacking confirmation appear as unresolved readiness items rather than being silently kept or silently dropped.
-- **SC-003**: In a test codebase with planted known cases (a library with an obvious native equivalent, a small helper library with minimal used surface, a library that must be kept), the planner proposes the expected disposition kind for at least 90% of planted cases, with every miss still resolved through the confirmation step.
+- **SC-003**: Validated by a deterministic benchmark test (task T031) that plants 10 known cases (4 with obvious native equivalents, 3 minimal-use helpers, 3 must-keep libraries) and asserts the planner proposes the expected disposition kind for at least 9 of the 10, with every miss still resolved through the confirmation step. The "at least 90%" criterion is realized as "≥9 of 10 planted cases".
 - **SC-004**: An operator can retrieve the complete locked dependency set (kept + versions, replaced + native targets, inlined + flags) in a single query in under 5 seconds for a workspace of 500 libraries.
 - **SC-005**: The locked dependency set produced by this feature is consumable unchanged by the follow-up version-locked doc-RAG work — i.e., every kept library entry carries a resolved, locked target version, in 100% of cases.
 

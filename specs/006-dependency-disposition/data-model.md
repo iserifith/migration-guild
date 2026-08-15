@@ -132,6 +132,13 @@ columns), which remains in effect per FR-011.
   `evaluatePlanningReadiness`, see contracts/registry-schema.md).
 - `dependency_disposition_history` → `dependency_dispositions`: soft reference
   by `disposition_id`; history rows survive live-row changes.
+- `dependency_dispositions` → `events`: NONE. Disposition mutations do not
+  emit `events` rows — `events.artifact_id` is `NOT NULL REFERENCES
+  artifacts(id)` and the per-library workspace-wide grain has no artifact to
+  reference (a declared-but-unused library has zero using artifacts).
+  `dependency_disposition_history` is the sole decision-evidence trail; this
+  is a deliberate divergence from the `dependency-strategy-set` precedent,
+  which is artifact-scoped via `dependency_findings`.
 
 ## Volume assumptions
 
