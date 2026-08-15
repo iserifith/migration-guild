@@ -54,6 +54,7 @@ import {
 } from "./commands/modernization";
 import {
   confirmDisposition,
+  getLockedDependencySet,
   listDispositions,
   upsertProposedDisposition,
 } from "./commands/dispositions";
@@ -1040,6 +1041,11 @@ program
     lockedTargetVersion: opts.lockedVersion,
     rationale: opts.rationale,
   })));
+
+program
+  .command("locked-dependency-set")
+  .description("Print the deterministic locked dependency set (confirmed rows only, ORDER BY library_name ASC) — the artifact consumed by the version-locked doc-RAG proposal (FR-009)")
+  .action(() => run(() => getLockedDependencySet(db())));
 
 program
   .command("record-scope-decision")
