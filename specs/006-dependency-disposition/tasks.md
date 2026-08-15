@@ -121,8 +121,8 @@ description: "Task list for feature 006-dependency-disposition"
 **Purpose**: Full-suite regression confirmation and end-to-end validation against the documented quickstart.
 
 - [x] T029 [P] Run `npm run build && npm run test` from the repository root and confirm no regressions in pre-existing suites, in particular `migration/test/registry-schema-delta.test.ts`, `migration/test/planning-gates.test.ts`, and `migration/test/plan-risk-confirmation.test.ts`.
-- [ ] T030 Execute `specs/006-dependency-disposition/quickstart.md` Scenarios 1–6 end-to-end against a scratch workspace (`/tmp/disp-ws`, per the quickstart's Prerequisites), confirming every documented "Expected" outcome.
-- [ ] T031 [P] Write the SC-003 benchmark test in `migration/test/disposition-benchmark.test.ts`: plant 10 known libraries in a scratch workspace fixture (4 with obvious native equivalents, 3 minimal-use helper libraries, 3 must-keep libraries), run the T012 collector, and assert the seeded proposal kind matches the expected disposition for at least 9 of the 10 planted cases (spec SC-003's ≥90% criterion realized as ≥9/10); every miss must still be resolvable through confirmation (assert a miss, if any, accepts `confirmDisposition` with an override). (depends on T012)
+- [x] T030 Execute `specs/006-dependency-disposition/quickstart.md` Scenarios 1–6 end-to-end against a scratch workspace (`/tmp/disp-ws`, per the quickstart's Prerequisites), confirming every documented "Expected" outcome.
+- [x] T031 [P] Write the SC-003 benchmark test in `migration/test/disposition-benchmark.test.ts`: plant 10 known libraries in a scratch workspace fixture (4 with obvious native equivalents, 3 minimal-use helper libraries, 3 must-keep libraries), run the T012 collector, and assert the seeded proposal kind matches the expected disposition for at least 9 of the 10 planted cases (spec SC-003's ≥90% criterion realized as ≥9/10); every miss must still be resolvable through confirmation (assert a miss, if any, accepts `confirmDisposition` with an override). (depends on T012)
 
 ---
 
