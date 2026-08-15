@@ -13,6 +13,7 @@ import { getUndecidedModules, recordScopeDecision } from "../../registry/command
 import { refreshCompatibilityAudits } from "../audit";
 import { loadActiveStack, readStackInstruction } from "../stack";
 import { evaluatePlanningReadiness, formatPlanningBlockMessage, requireNonEmptyRegistry } from "../readiness";
+import { collectDispositions } from "../dispositions";
 import { formatInventoryValidationReport, loadClassificationSpec, validateInventoryQuality } from "../classification";
 import { resolveAndReportRuntime } from "../runtime-report";
 import type { ResolvedRuntimeConfig } from "../harness";
@@ -551,6 +552,16 @@ export async function runPlan(
     process.exit(1);
   }
 
+  // ── Dependency dispositions (006) — collector pass BEFORE the Planner ──────
+  // Every declared library gets exactly one proposed disposition row; the
+  // Planner agent only refines rows that already exist (plan.md Summary).
+  {
+    const summary = collectDispositions(db, pack, projectRoot);
+    console.log(`  ✓ Dependency dispositions: ${summary.libraries.length} library(ies) proposed`);
+    for (const note of summary.scan_notes) console.log(`    ⚠ ${note}`);
+    for (const warning of summary.warnings) console.log(`    ⚠ ${warning}`);
+  }
+
   // ── Planner ─────────────────────────────────────────────────────────────────
   printPhaseHeader("Phase 2b · Planner");
   console.log(`  Agent: planner-agent   Model: ${planningModel}\n`);
@@ -562,7 +573,10 @@ export async function runPlan(
     agent: "planner-agent",
     model: planningModel,
     phase: "planning",
-    basePrompt: "Run planning: build the dependency graph and assign wave numbers to all pending artifacts.",
+    basePrompt: "Run planning: build the dependency graph and assign wave numbers to all pending artifacts. " +
+      "Dependency disposition proposals already exist in the registry for every declared library; refine them where AST-level usage evidence supports a different disposition kind by running " +
+      "`node migration/registry/dist/cli.js propose-disposition --library <group:artifact> --disposition <keep|replace-with-native|inline> --rationale <text> [--native-replacement <api>] [--inline-note <note>] [--locked-target-version <ver>]`. " +
+      "Never invent a replacement to avoid a 'keep' outcome; missing evidence degrades toward keep.",
     enforce: deps.enforceInvariants ?? false,
     retries: deps.retries ?? 0,
     invariantLabel: "planner",
