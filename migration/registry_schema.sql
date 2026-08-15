@@ -430,7 +430,8 @@ CREATE TABLE IF NOT EXISTS jvm_audit_findings (
                      'internal-api',
                      'removed-api',
                      'deprecated-api',
-                     'python-compat'
+                     'python-compat',
+                     'view-regeneration'
                  )),
     severity     TEXT NOT NULL CHECK (severity IN ('critical', 'warning')),
     symbol       TEXT,

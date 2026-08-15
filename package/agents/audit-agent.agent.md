@@ -78,6 +78,45 @@ cat modern/build.gradle 2>/dev/null || cat modern/pom.xml
 ```
 Flag any library used **only** in `src/test/java` that is declared as `implementation` or `compile` scope. Should be `testImplementation` / `<scope>test</scope>`.
 
+### Step 9 — View-regeneration artifacts (no UI from legacy views)
+
+Legacy view-handling modules (JSP, JSF/Facelets, Struts forms, servlet page renderers) must
+migrate to **structured API contracts** (OpenAPI / MCP tool schemas) — never to regenerated
+view-layer UI. The stack pack's `view_contract` block and the `view-regeneration-*` audit rules
+enforce this. Every hit below is **Critical** unless noted.
+
+```bash
+# 9a. JSP / JSPX / XHTML files under modern/
+find modern -type f \( -name "*.jsp" -o -name "*.jspx" -o -name "*.xhtml" \) 2>/dev/null
+
+# 9b. JSP scriptlet / directive / taglib syntax
+grep -rEn '<%@|<jsp:|<%[!=]' modern/src --include="*.java"
+grep -rEn '<%@|<jsp:|<%[!=]' modern --include="*.jsp" --include="*.jspx" --include="*.xhtml"
+
+# 9c. JSF / Facelets imports and tags
+grep -rEn '\b(javax\.faces|jakarta\.faces)\b' modern/src --include="*.java"
+grep -rEn '<[hf]:[A-Za-z]' modern --include="*.xhtml"
+
+# 9d. Legacy view-framework imports
+grep -rEn '\b(javax\.servlet\.jsp|JspException|PageContext|TagSupport|org\.apache\.struts\.taglib)\b' \
+  modern/src --include="*.java"
+
+# 9e. Server-side template rendering (Warning unless explicitly template-native)
+grep -rEn '\b(TemplateEngine|thymeleaf|freemarker|velocity)\b.*(process|render)' \
+  modern/src --include="*.java"
+```
+
+For every Critical hit:
+- The artifact must expose the pack-declared API contract (`view_contract.format`, default
+  `openapi`, with `alternates: [mcp-tools]` permitted). Routing, validation, and business
+  logic are preserved; layout/markup/styling is dropped.
+- Purely-presentational views with no scriptlet/EL/backing-bean behavior are recorded with
+  `status: skipped` plus the `view-dropped-presentational` tag and an artifact event carrying
+  the stated reason — they are **never** regenerated as UI.
+- Low-confidence presentation/behavior separation fails closed to review (`blocked` with the
+  `blocked-human-decision` tag) rather than regenerating UI. This keeps the "discard layout"
+  rule from accidentally discarding business logic.
+
 ## Output Format
 
 Write the findings report to stdout using this structure:
@@ -116,6 +155,11 @@ Write the findings report to stdout using this structure:
 | Library | Current Scope | Correct Scope |
 |---|---|---|
 
+#### 7. View-Regeneration Artifacts
+| File | Line | Marker (JSP file / JSP syntax / JSF / view import / template render) | Severity |
+|---|---|---|---|
+✅ None — or one row per hit. 9e hits are Warning unless explicitly template-native.
+
 ### Summary
 | Category | Count | Highest Severity |
 |---|---|---|
@@ -124,6 +168,9 @@ Write the findings report to stdout using this structure:
 | # | Action | File(s) | Severity |
 |---|---|---|---|
 ```
+
+**View-regeneration findings outrank cosmetic audit findings.** Any Critical hit in section 7
+must be remediated before the migration is considered view-clean.
 
 ## After the Report
 
@@ -169,7 +216,24 @@ node migration/registry/dist/cli.js create-artifact \
   --status planned
 ```
 
-### 5. For missing tests on core classes (Critical)
+### 5. For view-regeneration findings (per hit)
+```bash
+node migration/registry/dist/cli.js create-artifact \
+  --path "<modern/path/to/ViewArtifact.java|.jsp|.xhtml>" \
+  --artifact-type "replace-view-with-api-contract" \
+  --category "view-regeneration" \
+  --tier first-class \
+  --status planned
+```
+For purely-presentational views with no behavior, mark `skipped` instead and append an event:
+```bash
+node migration/registry/dist/cli.js set-artifact-status --id "<id>" --status skipped \
+  && node migration/registry/dist/cli.js append-event \
+       --id "<id>" --type reviewed --agent audit-agent \
+       --summary "view-dropped-presentational: layout-only JSP/JSF/Struts view, no scriptlet/EL/backing-bean behavior to extract"
+```
+
+### 6. For missing tests on core classes (Critical)
 ```bash
 node migration/registry/dist/cli.js create-artifact \
   --path "modern/src/test/java/<package>/<ClassName>Test.java" \
@@ -179,7 +243,7 @@ node migration/registry/dist/cli.js create-artifact \
   --status planned
 ```
 
-### 6. Assign all to next wave and run migration
+### 7. Assign all to next wave and run migration
 ```bash
 node migration/registry/dist/cli.js list-ready
 # All new audit entries will appear ready

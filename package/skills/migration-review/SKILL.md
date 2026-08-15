@@ -53,6 +53,44 @@ Run these checks against every migrated file before closing a review.
 - Methods that accept `Map`, `List`, or any mutable collection and mutate it without a defensive copy are **Critical** correctness bugs.
 - Look for `// TODO: Make copy` or direct mutation of a parameter.
 
+### View modules — must be API contracts, never regenerated UI
+Legacy view-handling modules (JSP pages, JSF/Facelets views, Struts forms, servlet page
+renderers) migrate to **structured API contracts** (OpenAPI / MCP tool schemas) — never to
+regenerated view-layer UI. The stack pack's `view_contract` block and the `view-regeneration-*`
+audit rules enforce this. For every migrated file that originated from a view-handling legacy
+module, verify the following. Any failure is **Critical**.
+
+- **No view-layer artifacts in `modern/`.** Reject any `.jsp`, `.jspx`, or `.xhtml` file
+  under `modern/`, JSP scriptlet/directive/taglib syntax (`<%@|<jsp:|<%[!=]`) in any Java
+  source, JSF/Facelets imports (`javax.faces` / `jakarta.faces`) or tag usage (`<h:` / `<f:`),
+  and any legacy view-framework import (`javax.servlet.jsp`, `JspException`, `PageContext`,
+  `TagSupport`, `org.apache.struts.taglib`).
+- **Routing, validation, and business logic preserved as behavior.** The migrated module
+  exposes its surface as the pack-declared contract (`view_contract.format`, default
+  `openapi`, with `alternates: [mcp-tools]` permitted). Endpoints and handlers cover the
+  legacy view's behavior end-to-end — discarding layout must never mean discarding logic.
+- **Layout, markup, and styling dropped, not ported.** Template structure, CSS, JavaScript
+  includes, custom-tag usage, and presentation helpers must not appear in `modern/`.
+- **Purely-presentational views recorded as skipped.** A view with no scriptlet/EL logic
+  and no bound backing bean — only layout — must be `status: skipped` with the
+  `view-dropped-presentational` tag plus an artifact event carrying the stated reason.
+  Reject any attempt to regenerate it as UI.
+- **Low-confidence presentation/behavior separation fails closed to review.** If the agent
+  cannot confidently separate behavior from presentation, the artifact must be marked
+  `blocked` with the `blocked-human-decision` tag rather than regenerated as UI.
+- **Server-side template rendering (thymeleaf/freemarker/velocity) is a Warning** unless
+  the target is explicitly template-native and reviewable. Confirm intent before approving.
+
+Quick scan commands to copy into the review notes:
+```bash
+find modern -type f \( -name "*.jsp" -o -name "*.jspx" -o -name "*.xhtml" \) 2>/dev/null
+grep -rEn '<%@|<jsp:|<%[!=]|\b(javax\.faces|jakarta\.faces|javax\.servlet\.jsp|JspException|PageContext|TagSupport|org\.apache\.struts\.taglib)\b' \
+  modern/src --include="*.java"
+grep -rEn '<[hf]:[A-Za-z]' modern --include="*.xhtml"
+grep -rEn '\b(TemplateEngine|thymeleaf|freemarker|velocity)\b.*(process|render)' \
+  modern/src --include="*.java"
+```
+
 ## Output Rules
 
 - Findings come first.
