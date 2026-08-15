@@ -62,6 +62,10 @@ view_contract:
   style: rest
   alternates: [mcp-tools]
   drop_rule: presentational
+logic_extraction:
+  service_suffix: Service
+  validator_suffix: Validator
+  handler_roles: [rest-endpoint]
 instructions:
   classify: classify.md
   mappings: mappings.md

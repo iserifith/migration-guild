@@ -148,6 +148,49 @@ For every **Critical** hit under 8a–8d:
 - Low-confidence presentation/behavior separation fails closed to review (`blocked` with the
   `blocked-human-decision` tag) rather than regenerating UI.
 
+## 9. View-Logic Placement (dedicated Service/Validator modules)
+
+Amends #59 (Section 8): even when a view-handling module correctly lands as a contract-backed
+endpoint rather than regenerated UI, its extracted validation/business logic must consolidate
+into **dedicated, named modules** — never inline in the handler, never duplicated per-endpoint.
+The `logic_extraction` block in the stack pack and the `view-logic-placement-*` audit rules
+enforce this. Scan the `modern/` tree holistically (not just per-artifact) for both signals below;
+every hit is **Warning** (the tool cannot always tell "non-trivial" from a legitimate short
+guard clause — record the finding and let the reviewer resolve borderline cases).
+
+### 9a. Inline validation/business-rule logic in handler-named classes
+```bash
+grep -rEn '\b(Controller|Resource|Endpoint)\b' modern/src --include="*.java" -l | while read -r f; do
+  grep -Hn -E '\.(isEmpty|hasErrors)\(\)|== *null|\.matches\("' "$f" | grep -v -E '\b(Validator|Service)\b'
+  grep -Hn -E '\}\s*else\s+if\s*\(' "$f" | grep -v -E '\b(Validator|Service)\b'
+done
+```
+A hit means a handler-named class (`*Controller`/`*Resource`/`*Endpoint`) contains an inline
+validation guard, `BindingResult` check, pattern-match guard, or multi-branch business decision
+with no `*Service`/`*Validator` collaborator reference on that line.
+
+### 9b. Per-endpoint duplication
+```bash
+# Look for the same validation/business predicate repeated across 2+ handler files —
+# a signal the rule should have been extracted into ONE shared module, not copied.
+grep -rEn '\.(isEmpty|hasErrors)\(\)|== *null|\.matches\("' modern/src --include="*.java" \
+  | sed -E 's/^[^:]+:[0-9]+://' | sort | uniq -c | sort -rn | awk '$1 >= 2'
+```
+Any predicate appearing 2+ times across different handler files is a deduplication finding,
+even if each individual occurrence would otherwise be a legitimate extraction candidate.
+
+### Resolution
+
+For every 9a/9b hit:
+- Extract validation logic into a dedicated, named `*Validator` module (suffix from the pack's
+  `logic_extraction.validator_suffix`); business logic into a dedicated, named `*Service` module
+  (`logic_extraction.service_suffix`).
+- The handler is left binding and delegating only — routing, parameter binding, invoking the
+  service/validator, response shaping.
+- A rule shared across multiple endpoints (9b) consolidates into ONE module used by all of them.
+- A trivial pass-through view with no real validation/business rules needs no empty
+  `*Service`/`*Validator` shell.
+
 ## Output Format
 
 ```markdown
@@ -182,6 +225,9 @@ For every **Critical** hit under 8a–8d:
 
 ### 8. View-Regeneration Artifacts
 [list each hit with file, line, marker category (JSP/JSPX/XHTML file, JSP syntax, JSF, view import, template render), and severity (Critical by default, Warning for 8e unless template-native); ✅ clean if no hits]
+
+### 9. View-Logic Placement
+[list each hit with file, line, signal (inline validation/BindingResult/pattern-guard, multi-branch business rule, or per-endpoint duplication), and Warning severity; ✅ clean if no hits]
 
 ### Prioritized Fix List
 | # | Action | Files | Severity |
@@ -252,6 +298,16 @@ node migration/registry/dist/cli.js set-artifact-status --id "<id>" --status ski
   && node migration/registry/dist/cli.js append-event \
        --id "<id>" --type reviewed --agent audit-agent \
        --summary "view-dropped-presentational: layout-only JSP/JSF/Struts view, no scriptlet/EL/backing-bean behavior to extract"
+```
+
+### For view-logic-placement findings (Warning; per hit)
+```bash
+node migration/registry/dist/cli.js create-artifact \
+  --path "<modern/path/to/HandlerArtifact.java>" \
+  --artifact-type "extract-view-logic-to-module" \
+  --category "view-logic-placement" \
+  --tier second-class \
+  --status planned
 ```
 
 ### For critical missing tests

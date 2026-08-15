@@ -6,6 +6,25 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### August 15, 2026
+
+- Added the view-logic-placement rule, amending #59's view-regeneration rule (#100): a
+  view-handling module landing correctly as a contract-backed endpoint is no longer enough —
+  its extracted validation/business logic must now consolidate into dedicated, named
+  `*Validator`/`*Service` modules, never inline in the handler, never duplicated per-endpoint.
+  `java-spring`'s `stack.yaml` gains a `logic_extraction:` block (service/validator suffixes,
+  handler roles) and `mappings.md` gains a "Placement of extracted logic" subsection (both
+  mirrored into `package/stacks/java-spring/`, parity-checked); `audit.rules.yaml` gains the
+  `view-logic-placement-inline-validation` / `-inline-business-rule` rules (warning severity —
+  judgment-bounded, the reviewer resolves borderline cases); the `jvm_audit_findings` CHECK
+  constraint plus `JvmAuditCategory` union accept the new category.
+  `post-migration-audit.prompt.md` and `audit-agent.agent.md` gain a matching holistic
+  placement + per-endpoint-duplication scan, reporting through the existing findings/registry
+  path; the `migration-review` skill and `review-agent.agent.md` gain a matching checklist
+  item/review priority (Critical on failure, reinforcing the warning-severity audit rule with
+  the critic's final call). New `audit-view-logic-placement.test.ts` (2/2) plus an extended
+  `stack-pack-engine.test.ts` (16/16, rule count 12→14) cover it; full suite is 493/493 green.
+
 ### August 14, 2026
 
 - Updated agent guidance so a missing JDK/Gradle toolchain no longer triggers filesystem-search

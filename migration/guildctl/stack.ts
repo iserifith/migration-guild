@@ -182,6 +182,13 @@ export interface StackManifest {
   audit: { rules_file: string; external_probes: ExternalProbe[] };
   /** Optional; absent means artifacts record unverified/no-stack-check. */
   verify?: StackVerify;
+  /**
+   * Optional; absent means the pack declares no dedicated-module placement
+   * convention (placement audit rules are inert for that pack). Data-only —
+   * no runtime consumer; mappings.md prose and audit.rules.yaml regexes are
+   * hand-authored to match these suffixes, not generated from them.
+   */
+  logic_extraction?: { service_suffix: string; validator_suffix: string; handler_roles: string[] };
   instructions: { classify: string; mappings: string; tests: string };
   scaffold: ScaffoldDescription;
 }
