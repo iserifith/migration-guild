@@ -58,9 +58,9 @@ pruned-library guidance suffix (FR-010). Full technical rationale in
 
 | Principle | Assessment | Gate |
 |---|---|---|
-| I. Evidence Over Assertion | Completeness of the disposition set (SC-001) is guaranteed by a deterministic collector writing one registry row per library — not by trusting the planner agent's self-report; the agent only refines rows that already exist. Usage evidence is persisted as `usage_json` on the row, inspectable at confirmation time. Every decision mutation writes an `events` row and a history snapshot. | PASS |
+| I. Evidence Over Assertion | Completeness of the disposition set (SC-001) is guaranteed by a deterministic collector writing one registry row per library — not by trusting the planner agent's self-report; the agent only refines rows that already exist. Usage evidence is persisted as `usage_json` on the row, inspectable at confirmation time. Every decision mutation writes a `dependency_disposition_history` snapshot in the same transaction — the sole evidence trail (dispositions are workspace-wide per-library and have no `artifact_id`, so the artifact-scoped `events` table is not used). | PASS |
 | II. Legacy Is Read-Only; `modern/` Is the Only Write Target | The collector and usage analysis only READ `legacy/` source and build manifests (same `fs.readFileSync` idiom as `classifyArtifactSource` and the risk scanner). All writes go to the registry. v1 performs no manifest or source modification (FR-013). | PASS |
-| III. Registry-Mediated Coordination | All new state lives in first-class registry tables (research.md §1 explicitly rejected an `operator_state` JSON blob). No new coordination channel; decision events flow through the existing `events` table/poller. Claim-path semantics untouched (research.md §7 rejected claim-boundary enforcement for this artifact type). | PASS |
+| III. Registry-Mediated Coordination | All new state lives in first-class registry tables (research.md §1 explicitly rejected an `operator_state` JSON blob). No new coordination channel; disposition decisions are queryable from the registry tables/history. Claim-path semantics untouched (research.md §7 rejected claim-boundary enforcement for this artifact type). | PASS |
 | IV. Separation of Powers: Builder, Critic, Arbiter | Not directly implicated — dispositioning is a planning decision point, structurally analogous to `stack_mappings` confirmation and `risk_confirmations` (also outside the Builder/Critic/Arbiter chain). The confirmation actor (operator/benchmark-runner) is distinct from the proposing actor (planner-collector/planner-agent) by construction — proposer ≠ confirmer on every row. | N/A / PASS |
 | V. Tests Before Production Code | This plan phase produces no production code. `quickstart.md`'s "Regression coverage" section enumerates the `migration/test/*.test.ts` additions `tasks.md` must sequence ahead of/alongside implementation — this feature changes Plan-phase control flow and a readiness gate, squarely inside §V's "phase control flow MUST ship with regression tests." | Deferred to tasks.md — flagged, not violated |
 | VI. Fail-Closed Automation | Unattended runs without `GUILDCTL_AUTO_CONFIRM_DISPOSITIONS` never silently confirm: rows stay pending, the process does not hang, and the end-of-Plan readiness gate blocks sign-off (research.md §5/§7). Missing stack-pack knowledge degrades proposals toward `keep`, never toward silent pruning (research.md §6). Auto-confirmed rows are attributed to `benchmark-runner` (FR-006). | PASS |
@@ -138,10 +138,11 @@ the same reason `risk.ts` was not folded into `inventory.ts` in feature 005.
 
 - **I. Evidence Over Assertion**: confirmed — `data-model.md` requires
   `confirmed_by`/`confirmed_at` to be set together in the same statement as any
-  status flip (never a bare flip), every transition snapshots the prior row to
-  history first, and `contracts/registry-schema.md` requires an `events` row per
-  decision mutation. Usage evidence (`usage_json`) is a stored registry value,
-  not an agent claim.
+  status flip (never a bare flip), and every transition snapshots the prior row
+  to `dependency_disposition_history` first — the sole decision-evidence trail
+  per `contracts/registry-schema.md` ("Decision-evidence trail": no `events`
+  rows, since dispositions have no `artifact_id`). Usage evidence
+  (`usage_json`) is a stored registry value, not an agent claim.
 - **II. Legacy Is Read-Only**: confirmed — no contract or entity involves a
   write to `legacy/` or `modern/`; FR-013 excludes all write-side changes
   (inlining, manifest edits) from v1.
