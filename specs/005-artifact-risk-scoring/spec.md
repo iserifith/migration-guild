@@ -57,7 +57,7 @@ As a migration operator, I want artifacts whose risk score exceeds the configure
 1. **Given** an artifact whose risk score exceeds the stack pack's high-risk cutoff, **When** planning runs, **Then** the artifact is presented to the operator for explicit confirmation before it can be claimed for migration, consistent with the existing mapping-confirmation flow.
 2. **Given** an operator confirms a high-risk artifact for migration, **When** the confirmation is recorded, **Then** the artifact becomes claimable through the normal wave/claim machinery like any other artifact.
 3. **Given** an operator declines to confirm a high-risk artifact, **When** the decision is recorded, **Then** the artifact does not enter the Migrate phase and its state clearly reflects that it is blocked pending review (or skipped, per operator choice).
-4. **Given** an automated/unattended run (no interactive operator available), **When** a high-risk artifact is encountered, **Then** the run does not silently migrate it — it either halts for review or requires an explicit pre-authorized bypass, mirroring the existing auto-confirm precedent for mapping confirmation.
+4. **Given** an automated/unattended run (no interactive operator available), **When** a high-risk artifact is encountered, **Then** the run does not silently migrate it — that artifact is held (never claimed) pending review, while the run itself continues with independent lower-risk work; an explicit pre-authorized bypass (mirroring the existing auto-confirm precedent for mapping confirmation) is required for automation to migrate the high-risk artifact itself.
 5. **Given** an artifact at or below the high-risk cutoff, **When** planning runs, **Then** it proceeds through the normal flow with no additional confirmation step.
 
 ---
@@ -121,7 +121,7 @@ As a migration operator, I want the planner to be able to see and use risk score
 - **SC-002**: In a test codebase with known-risky constructs (reflection, God methods, complexity hotspots) planted alongside known-simple artifacts, the scanner correctly flags at least 95% of the planted risky constructs with a matching reason code and produces zero reason codes for at least 95% of the planted simple artifacts.
 - **SC-003**: No artifact scoring above a stack pack's high-risk cutoff reaches the Migrate phase's claim pool without a recorded human confirmation decision — verified across all test runs, including automated/unattended runs.
 - **SC-004**: Operators can change a stack pack's risk thresholds and see the effect (different artifacts flagged/unflagged) on the next Inventory run without any code change, in under the time it takes to edit one configuration file and re-run Inventory.
-- **SC-005**: A run that hits a high-risk artifact under full automation halts or is explicitly and deliberately unblocked — it never proceeds past that artifact silently, in 100% of tested cases.
+- **SC-005**: A run that hits a high-risk artifact under full automation either holds that artifact (never claims it) while continuing independent lower-risk work, or is explicitly and deliberately unblocked by a pre-authorized bypass — it never migrates that artifact silently, in 100% of tested cases.
 
 ## Assumptions
 
