@@ -527,6 +527,20 @@ export function claimArtifactById(
 
     assertRunHasNoActiveClaim(db, opts.runId);
 
+    // Feature 005 US3: high-risk artifacts are claim-gated until an operator
+    // confirms them (contracts/registry-schema.md claim-eligibility contract).
+    const riskGate = db
+      .prepare("SELECT decision FROM risk_confirmations WHERE artifact_id = ?")
+      .get(requestedId) as { decision: string } | undefined;
+    if (riskGate && riskGate.decision !== "confirmed") {
+      throw new RegistryError(
+        3,
+        riskGate.decision === "declined"
+          ? `Artifact "${requestedId}" was declined for migration by an operator. Refusing claim.`
+          : `Artifact "${requestedId}" is pending human risk confirmation (high-risk). Refusing claim until confirmed.`,
+      );
+    }
+
     if (artifact.status !== fromStatus) {
       throw new RegistryError(
         3,
@@ -719,6 +733,10 @@ export function claimNextTask(
       WHERE a.status = @fromStatus
         ${waveClause}
         ${tierClause}
+        AND NOT EXISTS (
+          SELECT 1 FROM risk_confirmations rc
+          WHERE rc.artifact_id = a.id AND rc.decision != 'confirmed'
+        )
         AND NOT EXISTS (
           SELECT 1
           FROM dependencies d

@@ -5,6 +5,7 @@ import type Database from "better-sqlite3";
 import type { Role } from "../registry/types";
 import { updateArtifact } from "../registry/commands/artifacts";
 import type { LoadedStackPack } from "./stack";
+import type { RiskSpec } from "./risk";
 
 export interface ClassificationSpec {
   version: number;
@@ -30,6 +31,7 @@ export interface ClassificationSpec {
     generic?: string[];
   };
   signals?: ClassificationSignal[];
+  risk?: RiskSpec;
 }
 
 export interface ClassificationSignal {

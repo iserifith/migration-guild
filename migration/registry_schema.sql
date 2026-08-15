@@ -420,6 +420,31 @@ CREATE TABLE IF NOT EXISTS artifact_classifications (
 CREATE INDEX IF NOT EXISTS idx_artifact_classifications_framework ON artifact_classifications(framework);
 CREATE INDEX IF NOT EXISTS idx_artifact_classifications_ambiguous ON artifact_classifications(ambiguous);
 
+-- ─── Automated Risk Scoring ────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS artifact_risk_assessments (
+    artifact_id       TEXT PRIMARY KEY REFERENCES artifacts(id) ON DELETE CASCADE,
+    risk_score        REAL NOT NULL CHECK (risk_score >= 0),
+    high_risk         INTEGER NOT NULL DEFAULT 0 CHECK (high_risk IN (0, 1)),
+    reason_codes_json TEXT NOT NULL,
+    signals_json      TEXT NOT NULL,
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifact_risk_assessments_high_risk
+  ON artifact_risk_assessments(high_risk);
+
+CREATE TABLE IF NOT EXISTS risk_confirmations (
+    artifact_id  TEXT PRIMARY KEY REFERENCES artifacts(id) ON DELETE CASCADE,
+    decision     TEXT NOT NULL DEFAULT 'pending' CHECK (decision IN ('pending', 'confirmed', 'declined')),
+    decided_by   TEXT,
+    decided_at   TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_risk_confirmations_decision
+  ON risk_confirmations(decision);
+
 -- ─── JVM Compatibility Audit Findings ─────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS jvm_audit_findings (
