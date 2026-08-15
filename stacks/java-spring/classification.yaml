@@ -12,6 +12,8 @@ frameworks:
     - guice
     - junit
     - testng
+    - jsp
+    - jsf
   aliases:
     plain Java: plain-java
     plain-java: plain-java
@@ -25,6 +27,8 @@ frameworks:
     hibernate-jpa: jpa
     junit4: junit
     junit5: junit
+    jspx: jsp
+    facelets: jsf
   fallback: plain-java
   ambiguous: ambiguous
 roles:
@@ -61,7 +65,7 @@ quality:
   fallback_required_evidence: negative-evidence
 tags:
   generic: [analyzed, scaffolded, migrated, tests-written, reviewed]
-  meaningful: [behavior-risk, test-gap, config-follow-up, dependency-extracted, no-legacy-deps, blocked-external, blocked-human-decision]
+  meaningful: [behavior-risk, test-gap, config-follow-up, dependency-extracted, no-legacy-deps, blocked-external, blocked-human-decision, view-dropped-presentational]
 signals:
   - id: servlet-filter
     framework: servlet
@@ -73,6 +77,31 @@ signals:
       content:
         - '\bimport\s+(javax|jakarta)\.servlet\.Filter\b'
         - '\bimplements\s+Filter\b'
+  - id: jsp-view
+    framework: jsp
+    role: rest-endpoint
+    priority: 15
+    confidence: 0.9
+    evidence: JSP scriptlet/directive/tag or .jsp file
+    match:
+      content:
+        - '<%@'
+        - '<jsp:'
+        - '<%[!=]'
+      path:
+        - '\.jspx?$'
+  - id: jsf-view
+    framework: jsf
+    role: rest-endpoint
+    priority: 15
+    confidence: 0.9
+    evidence: JSF/Facelets imports or tag namespace
+    match:
+      content:
+        - '\b(?:javax|jakarta)\.faces\b'
+        - '<[hf]:[A-Za-z]'
+      path:
+        - '\.xhtml$'
   - id: servlet-http
     framework: servlet
     role: rest-endpoint

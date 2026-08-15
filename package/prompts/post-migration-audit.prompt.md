@@ -96,6 +96,58 @@ Review `build.gradle` or `pom.xml`:
 cat modern/build.gradle 2>/dev/null || cat modern/pom.xml
 ```
 
+## 8. View-Regeneration Artifacts (no UI from legacy views)
+
+Legacy view-handling modules (JSP pages, JSF/Facelets views, Struts forms, servlet page renderers)
+must migrate to **structured API contracts** (OpenAPI / MCP tool schemas) — never to regenerated
+view-layer UI. The `view_contract` block in the stack pack and the `view-regeneration-*`
+audit rules enforce this. Scan for any of the following markers in `modern/`; every hit is
+**Critical**.
+
+### 8a. JSP / JSPX / XHTML presence
+```bash
+find modern -type f \( -name "*.jsp" -o -name "*.jspx" -o -name "*.xhtml" \) 2>/dev/null
+find modern -type f \( -name "*.jsp" -o -name "*.jspx" -o -name "*.xhtml" \) 2>/dev/null | wc -l
+```
+Any non-zero count is **Critical**: layout/markup/styling must be dropped, not ported.
+
+### 8b. JSP scriptlet / directive / taglib syntax inside Java sources
+```bash
+grep -rEn '<%@|<jsp:|<%[!=]' modern/src --include="*.java"
+grep -rEn '<%@|<jsp:|<%[!=]' modern --include="*.jsp" --include="*.jspx" --include="*.xhtml"
+```
+
+### 8c. JSF / Facelets imports and tags
+```bash
+grep -rEn '\b(javax\.faces|jakarta\.faces)\b' modern/src --include="*.java"
+grep -rEn '<[hf]:[A-Za-z]' modern --include="*.xhtml"
+```
+
+### 8d. Legacy view-framework imports
+```bash
+grep -rEn '\b(javax\.servlet\.jsp|JspException|PageContext|TagSupport|org\.apache\.struts\.taglib)\b' \
+  modern/src --include="*.java"
+```
+
+### 8e. Server-side template rendering (warning)
+```bash
+grep -rEn '\b(TemplateEngine|thymeleaf|freemarker|velocity)\b.*(process|render)' \
+  modern/src --include="*.java"
+```
+Hits are **Warning** unless the target is explicitly template-native and reviewable; otherwise
+treat as **Critical**.
+
+### Resolution
+
+For every **Critical** hit under 8a–8d:
+- The artifact must be reclassified to expose the pack-declared API contract
+  (`view_contract.format`, default `openapi`, with `alternates: [mcp-tools]` permitted).
+- Routing, validation, and business logic preserved as behavior; layout/markup/styling dropped.
+- Purely-presentational views are recorded with `status: skipped` plus the
+  `view-dropped-presentational` tag and an artifact event carrying the reason.
+- Low-confidence presentation/behavior separation fails closed to review (`blocked` with the
+  `blocked-human-decision` tag) rather than regenerating UI.
+
 ## Output Format
 
 ```markdown
@@ -128,12 +180,17 @@ cat modern/build.gradle 2>/dev/null || cat modern/pom.xml
 ### 7. Build Scope Issues
 [list or ✅ clean]
 
+### 8. View-Regeneration Artifacts
+[list each hit with file, line, marker category (JSP/JSPX/XHTML file, JSP syntax, JSF, view import, template render), and severity (Critical by default, Warning for 8e unless template-native); ✅ clean if no hits]
+
 ### Prioritized Fix List
 | # | Action | Files | Severity |
 |---|---|---|---|
 ```
 
 Prioritize by: correctness bugs > misplaced fixtures > broken imports > legacy imports > dead code > missing tests > build hygiene.
+
+**View-regeneration findings outrank cosmetic audit findings.** Any Critical hit in section 8 must be remediated before the migration is considered view-clean.
 
 ## Create Registry Entries for Remediation
 
@@ -178,6 +235,23 @@ node migration/registry/dist/cli.js create-artifact \
   --category "build" \
   --tier second-class \
   --status planned
+```
+
+### For view-regeneration findings (Critical; per hit)
+```bash
+node migration/registry/dist/cli.js create-artifact \
+  --path "<modern/path/to/ViewArtifact.java|.jsp|.xhtml>" \
+  --artifact-type "replace-view-with-api-contract" \
+  --category "view-regeneration" \
+  --tier first-class \
+  --status planned
+```
+For purely-presentational views with no behavior, mark `skipped` instead and append an event:
+```bash
+node migration/registry/dist/cli.js set-artifact-status --id "<id>" --status skipped \
+  && node migration/registry/dist/cli.js append-event \
+       --id "<id>" --type reviewed --agent audit-agent \
+       --summary "view-dropped-presentational: layout-only JSP/JSF/Struts view, no scriptlet/EL/backing-bean behavior to extract"
 ```
 
 ### For critical missing tests

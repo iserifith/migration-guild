@@ -2,7 +2,7 @@ id: java-spring
 display_name: Java / Spring Boot 3
 detect:
   markers: [pom.xml, build.gradle, build.gradle.kts, "**/*.java"]
-source_globs: ["**/*.java"]
+source_globs: ["**/*.java", "**/*.jsp", "**/*.jspx", "**/*.xhtml"]
 manifest_globs: ["**/pom.xml", "**/build.gradle", "**/build.gradle.kts"]
 dependency_parsers:
   - match: pom.xml
@@ -57,6 +57,11 @@ verify:
     unavailable_note: >
       No javac was found on PATH; per-artifact verification was skipped and the
       artifact is recorded as unverified rather than verified.
+view_contract:
+  format: openapi
+  style: rest
+  alternates: [mcp-tools]
+  drop_rule: presentational
 instructions:
   classify: classify.md
   mappings: mappings.md

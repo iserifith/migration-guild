@@ -25,7 +25,24 @@ test("Java pack drives detection, inventory, audit, and scaffold without executa
 
   assert.equal(detectStack(root), "java-spring");
   const pack = loadStackPack("java-spring", root);
-  assert.equal(pack.rules.length, 8);
+  // 8 baseline JVM/dependency rules + 4 view-regeneration-* rules (issue #59).
+  assert.equal(pack.rules.length, 12);
+
+  // Issue #59: the four view-regeneration rules must be present and use the locked
+  // template vocabulary (validateTemplates runs at pack load, so a missing rule
+  // would surface here as a wrong count rather than as a template crash).
+  const viewRegenRuleIds = [
+    "view-regeneration-jsp",
+    "view-regeneration-jsf",
+    "view-regeneration-legacy-view-imports",
+    "view-regeneration-template-engine",
+  ];
+  for (const id of viewRegenRuleIds) {
+    assert.ok(
+      pack.rules.some((rule) => rule.id === id),
+      `java-spring pack must declare rule "${id}" (issue #59)`,
+    );
+  }
 
   const db = new Database(":memory:");
   applySchema(db);

@@ -15,6 +15,19 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
   instead of hunting for a compiler (`find /` and similar scans are explicitly forbidden).
   `package/agent-instructions.md` states the same rule kit-wide: an absent toolchain is an
   expected environment state and verification stays optional and bounded, never a gate.
+- Added the view-regeneration rule for legacy view-handling modules (#59): JSP/JSPX/XHTML and
+  JSF/Facelets sources now map to `view-regeneration` findings instead of being silently carried
+  through as regeneratable UI. `java-spring`'s `stack.yaml`/`classification.yaml` widen
+  `source_globs` and add `jsp-view`/`jsf-view` signals, `audit.rules.yaml` gains the
+  `view-regeneration-*` rule set (mirrored into `package/stacks/java-spring/`, parity-checked),
+  and the `jvm_audit_findings` CHECK constraint plus `JvmAuditCategory` union accept the new
+  category. `post-migration-audit.prompt.md` and `audit-agent.agent.md` scan for the five
+  view-framework signals and record findings via the `replace-view-with-api-contract` /
+  `view-dropped-presentational` outcomes; the `migration-review` skill and `review-agent.agent.md`
+  add a matching review checklist/priority so migrated output is checked for stray regenerated
+  view components. New `audit-view-regeneration.test.ts` (5/5) plus an extended
+  `stack-pack-engine.test.ts` (9/9, including the stacks/package-stacks parity check) cover it;
+  full suite is 491/491 green.
 
 ### August 12, 2026
 
