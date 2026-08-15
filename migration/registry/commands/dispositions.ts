@@ -378,3 +378,99 @@ export function listDispositions(
     ORDER BY library_name ASC
   `).all(params) as DependencyDisposition[];
 }
+
+// ─── US3: locked dependency set + migration-agent context (FR-009/FR-010) ───
+
+/**
+ * data-model.md Entity 3 — a derived, deterministic projection over confirmed
+ * rows (never a table, so it can never drift from the disposition rows).
+ * Kind-paired target fields are null for kinds that do not use them.
+ */
+export interface LockedDependencySetEntry {
+  library_name: string;
+  disposition: DependencyDispositionKind;
+  locked_target_version: string | null;
+  native_replacement: string | null;
+  inline_note: string | null;
+  confirmed_by: string;
+  confirmed_at: string;
+}
+
+/**
+ * FR-009: the confirmed disposition set as a complete, deterministic locked
+ * dependency set — confirmed rows only, ORDER BY library_name ASC. Rows with
+ * pending_disposition non-NULL contribute their CURRENT (primary) confirmed
+ * decision, which remains in effect per FR-011 until re-confirmed. Repeated
+ * calls with no intervening writes are byte-for-byte identical (single
+ * indexed scan, fixed column list, fixed key order in the row objects).
+ */
+export function getLockedDependencySet(db: Database.Database): LockedDependencySetEntry[] {
+  return db.prepare(`
+    SELECT
+      library_name,
+      disposition,
+      locked_target_version,
+      native_replacement,
+      inline_note,
+      confirmed_by,
+      confirmed_at
+    FROM dependency_dispositions
+    WHERE status = 'confirmed'
+    ORDER BY library_name ASC
+  `).all() as LockedDependencySetEntry[];
+}
+
+function usingArtifactsOf(row: DependencyDisposition): string[] {
+  if (!row.usage_json) return [];
+  try {
+    const parsed = JSON.parse(row.usage_json) as { using_artifacts?: unknown };
+    if (!Array.isArray(parsed.using_artifacts)) return [];
+    return parsed.using_artifacts.filter((a): a is string => typeof a === "string");
+  } catch {
+    // Malformed usage_json (hand-seeded row, truncated collector write): the
+    // dependency_findings fallback below still applies — never throw here.
+    return [];
+  }
+}
+
+/**
+ * FR-010: prompt-ready guidance for the code-writer pool, listing confirmed
+ * non-keep dispositions on libraries used by the artifact. A library is "used
+ * by the artifact" when the artifact id appears in usage_json.using_artifacts
+ * OR (fallback) a dependency_findings row pairs the artifact with the
+ * library's dependency_name. NULL when the artifact only uses keep libraries
+ * (or no dispositions match) — callers append nothing.
+ */
+export function dispositionContextForArtifact(
+  db: Database.Database,
+  artifactId: string,
+): string | null {
+  const confirmed = db.prepare(`
+    SELECT * FROM dependency_dispositions
+    WHERE status = 'confirmed' AND disposition != 'keep'
+    ORDER BY library_name ASC
+  `).all() as DependencyDisposition[];
+  if (confirmed.length === 0) return null;
+
+  const findingsForArtifact = new Set(
+    (db.prepare(
+      "SELECT DISTINCT dependency_name FROM dependency_findings WHERE artifact_id = ?",
+    ).all(artifactId) as Array<{ dependency_name: string }>).map((r) => r.dependency_name),
+  );
+
+  const matched = confirmed.filter((row) =>
+    usingArtifactsOf(row).includes(artifactId) || findingsForArtifact.has(row.library_name),
+  );
+  if (matched.length === 0) return null;
+
+  const lines = matched.map((row) => {
+    if (row.disposition === "replace-with-native") {
+      return `  - ${row.library_name} → replace-with-native: do not re-declare ${row.library_name}; use ${row.native_replacement} instead.`;
+    }
+    return `  - ${row.library_name} → inline: do not re-declare ${row.library_name}; inline the used surface instead (${row.inline_note}).`;
+  });
+  return [
+    "Dependency dispositions for libraries used by this artifact — do not re-declare pruned dependencies:",
+    ...lines,
+  ].join("\n");
+}
