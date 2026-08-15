@@ -24,7 +24,7 @@ description: "Task list for feature 006-dependency-disposition"
 
 **Purpose**: Establish a clean baseline. No new npm dependency, no new top-level directory, no project scaffolding is required (plan.md Technical Context / Constraints) — this feature extends existing modules in place.
 
-- [ ] T001 Run `npm run build && npm run test` from the repository root and confirm both succeed on the current `dev`-derived branch tip, establishing the green baseline that Phase 2 onward must not regress.
+- [x] T001 Run `npm run build && npm run test` from the repository root and confirm both succeed on the current `dev`-derived branch tip, establishing the green baseline that Phase 2 onward must not regress.
 
 **Checkpoint**: Baseline green. No project structure changes needed before Foundational work begins.
 
@@ -36,9 +36,9 @@ description: "Task list for feature 006-dependency-disposition"
 
 **⚠️ CRITICAL**: No user story implementation task may start until T002–T004 are complete.
 
-- [ ] T002 [P] Write the schema-delta test in `migration/test/disposition-schema.test.ts`, mirroring `migration/test/registry-schema-delta.test.ts`'s PRAGMA-introspection approach: after `applySchema(db)`, assert `dependency_dispositions` exists with all columns and CHECK constraints from `specs/006-dependency-disposition/contracts/registry-schema.md` (`disposition IN ('keep','replace-with-native','inline')`, `status IN ('proposed','confirmed')`, `pending_disposition` CHECK, `library_name UNIQUE`), assert `dependency_disposition_history` exists with its `change_kind` CHECK, and assert indexes `idx_dependency_dispositions_status`, `idx_dependency_dispositions_pending`, `idx_dependency_disposition_history_library` exist. This test MUST fail until T003 lands.
-- [ ] T003 Add the `dependency_dispositions` and `dependency_disposition_history` `CREATE TABLE`/`CREATE INDEX` DDL verbatim from `specs/006-dependency-disposition/contracts/registry-schema.md` to `migration/registry_schema.sql` (new tables — no `ensureColumn` guard needed in `migration/registry/db/schema.ts` per the contract, since `CREATE TABLE IF NOT EXISTS` covers both fresh and existing databases). Makes T002 pass. (depends on T002)
-- [ ] T004 [P] Add `DependencyDisposition` and `DependencyDispositionHistoryEntry` TypeScript interfaces (fields per `specs/006-dependency-disposition/data-model.md` Entity 1 and Entity 2) to `migration/registry/types.ts`, following the existing `JvmAuditFinding`-style interface convention in that file.
+- [x] T002 [P] Write the schema-delta test in `migration/test/disposition-schema.test.ts`, mirroring `migration/test/registry-schema-delta.test.ts`'s PRAGMA-introspection approach: after `applySchema(db)`, assert `dependency_dispositions` exists with all columns and CHECK constraints from `specs/006-dependency-disposition/contracts/registry-schema.md` (`disposition IN ('keep','replace-with-native','inline')`, `status IN ('proposed','confirmed')`, `pending_disposition` CHECK, `library_name UNIQUE`), assert `dependency_disposition_history` exists with its `change_kind` CHECK, and assert indexes `idx_dependency_dispositions_status`, `idx_dependency_dispositions_pending`, `idx_dependency_disposition_history_library` exist. This test MUST fail until T003 lands.
+- [x] T003 Add the `dependency_dispositions` and `dependency_disposition_history` `CREATE TABLE`/`CREATE INDEX` DDL verbatim from `specs/006-dependency-disposition/contracts/registry-schema.md` to `migration/registry_schema.sql` (new tables — no `ensureColumn` guard needed in `migration/registry/db/schema.ts` per the contract, since `CREATE TABLE IF NOT EXISTS` covers both fresh and existing databases). Makes T002 pass. (depends on T002)
+- [x] T004 [P] Add `DependencyDisposition` and `DependencyDispositionHistoryEntry` TypeScript interfaces (fields per `specs/006-dependency-disposition/data-model.md` Entity 1 and Entity 2) to `migration/registry/types.ts`, following the existing `JvmAuditFinding`-style interface convention in that file.
 
 **Checkpoint**: Schema exists and is typed. User story implementation can begin.
 
