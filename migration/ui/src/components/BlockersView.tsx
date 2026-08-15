@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   BlockerEntry,
   BlockerQuery,
@@ -58,7 +58,22 @@ export default function BlockersView({
   timeMode: TimeDisplayMode;
 }) {
   const blockerSearch = blockerQuery.q ?? "";
+  const [localSearch, setLocalSearch] = useState(blockerSearch);
   const blockerSort = blockerQuery.sort ?? "oldest";
+
+  useEffect(() => {
+    setLocalSearch(blockerSearch);
+  }, [blockerSearch]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (localSearch !== blockerSearch) {
+        onBlockerQueryChange({ q: localSearch, page: 1 });
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [localSearch, blockerSearch, onBlockerQueryChange]);
+
   const issueSeverity = issueQuery.severity ?? "";
   const issueCategory = issueQuery.category ?? "";
   const issueSort = issueQuery.sort ?? "severity";
@@ -116,10 +131,10 @@ export default function BlockersView({
               <input
                 aria-label="Blocker search"
                 className="filter-input"
-                onChange={(e) => onBlockerQueryChange({ q: e.target.value, page: 1 })}
+                onChange={(e) => setLocalSearch(e.target.value)}
                 placeholder="Search artifact or summary"
                 type="search"
-                value={blockerSearch}
+                value={localSearch}
               />
               <select
                 aria-label="Blocker sort"
