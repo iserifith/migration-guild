@@ -248,3 +248,11 @@ tr.clickable:focus-visible { outline: 2px solid var(--text-accent); outline-offs
   .tabs { overflow-x: auto; }
   .main { padding: 16px; }
 }
+
+/* Accessibility: Focus visible styles for interactive elements */
+button:focus-visible,
+.tab:focus-visible,
+.close-btn:focus-visible {
+  outline: 2px solid var(--text-accent);
+  outline-offset: 2px;
+}
