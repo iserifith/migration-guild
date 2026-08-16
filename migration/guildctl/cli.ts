@@ -30,6 +30,8 @@ import { runPlan } from "./commands/plan";
 import { PlanInvariantError } from "./commands/plan";
 import { runBootstrap } from "./commands/bootstrap";
 import { runMigrate } from "./commands/migrate";
+import { runIngestDocs } from "./commands/ingest-docs";
+import { getIndexDb } from "../index-db/connection";
 import { runReview } from "./commands/review";
 import { runStatus, printNextSteps } from "./commands/status";
 import { runRelease } from "./commands/release";
@@ -337,6 +339,22 @@ program
   .action(async (opts) => {
     assertDbExists(dbPath());
     await runMigrate(db(), { parallel: opts.parallel, wave: opts.wave });
+  });
+
+// ─── ingest-docs (007-doc-rag-lookup, US3) ────────────────────────────────────
+
+program
+  .command("ingest-docs")
+  .description("Populate .guild/index.db with version-pinned documentation for the confirmed locked 'keep' set (007-doc-rag-lookup, FR-003/FR-005)")
+  .requiredOption("--triggered-by <actor>", "Operator or authorized automation actor identity")
+  .option("--library <name>", "Restrict this run to one library (targeted re-ingest after a single version change)")
+  .action(async (opts) => {
+    const indexDb = getIndexDb();
+    const report = await runIngestDocs(db(), indexDb, {
+      triggeredBy: opts.triggeredBy,
+      library: opts.library,
+    });
+    process.stdout.write(JSON.stringify(report, null, 2) + "\n");
   });
 
 // ─── review ───────────────────────────────────────────────────────────────────
