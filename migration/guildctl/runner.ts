@@ -45,6 +45,15 @@ export interface SpawnAgentOpts {
    * the process actually spawned could describe different runtimes.
    */
   resolution?: ResolvedRuntimeConfig;
+  /**
+   * FR-010 (US3): when preClaim is used, the artifact being worked on is only
+   * known after the claim resolves — too late for the fixed `prompt` string.
+   * If supplied, this is called with the preclaimed artifact id right after
+   * the claim succeeds, and its return value replaces the prompt passed to
+   * the spawned process (the base `prompt` is unaffected on the no-preClaim
+   * or claim-miss paths).
+   */
+  promptForArtifact?: (artifactId: string) => string;
 }
 
 export function expandWardenExclusions(paths: string[]): string[] {
@@ -496,6 +505,11 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
         wardenAllowedPaths = [];
       }
       wardenSnapshot = snapshotWorkspaceForWardenWithExclusions(projectRoot, wardenExcludedPaths);
+      if (opts.promptForArtifact) {
+        const artifactPrompt = opts.promptForArtifact(preClaimedArtifactId);
+        const promptArgIndex = args.indexOf("-p");
+        if (promptArgIndex !== -1) args[promptArgIndex + 1] = artifactPrompt;
+      }
     } catch {
       process.stderr.write(`[guildctl] pre-claim: failed to parse claim JSON\n`);
       finishRun(db, { runId: run.run_id, exitCode: 1, reason: "pre-claim: failed to parse claim JSON" });

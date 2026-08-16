@@ -272,17 +272,22 @@ export function confirmDisposition(
       disposition,
       // Nulling semantics: target fields not relevant to the (possibly new)
       // kind are cleared unless explicitly overridden — an override REPLACES
-      // the proposal, it doesn't merge with a stale pairing.
-      native_replacement: opts.nativeReplacement?.trim() ||
-        (opts.disposition === undefined || opts.disposition === "replace-with-native"
+      // the proposal, it doesn't merge with a stale pairing. A field that is
+      // explicitly passed (even as "") is honored as-is, including clearing
+      // it to null — only an *omitted* (undefined) field falls back.
+      native_replacement: opts.nativeReplacement !== undefined
+        ? (opts.nativeReplacement?.trim() || null)
+        : (opts.disposition === undefined || opts.disposition === "replace-with-native"
           ? existing.native_replacement
           : null),
-      inline_note: opts.inlineNote?.trim() ||
-        (opts.disposition === undefined || opts.disposition === "inline"
+      inline_note: opts.inlineNote !== undefined
+        ? (opts.inlineNote?.trim() || null)
+        : (opts.disposition === undefined || opts.disposition === "inline"
           ? existing.inline_note
           : null),
-      locked_target_version: opts.lockedTargetVersion?.trim() ||
-        (opts.disposition === undefined || opts.disposition === "keep"
+      locked_target_version: opts.lockedTargetVersion !== undefined
+        ? (opts.lockedTargetVersion?.trim() || null)
+        : (opts.disposition === undefined || opts.disposition === "keep"
           ? existing.locked_target_version
           : null),
       rationale,
