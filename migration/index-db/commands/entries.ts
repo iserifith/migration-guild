@@ -73,7 +73,12 @@ function validateEntry(opts: UpsertDocumentationEntryOptions): void {
  */
 export function upsertDocumentationEntry(db: Database.Database, opts: UpsertDocumentationEntryOptions): DocumentationEntry {
   validateEntry(opts);
-  const entryId = entryIdFor(opts.libraryName.trim(), opts.libraryVersion.trim(), opts.symbolKind, opts.symbolName.trim(), opts.signature ?? null);
+  // Normalize once and reuse everywhere: entryIdFor's hash input MUST match
+  // exactly what gets stored in the `signature` column (and therefore the
+  // UNIQUE/ON CONFLICT key) below, or the computed id and the row it actually
+  // resolves to can disagree for class-kind entries carrying a stray signature.
+  const normalizedSignature = opts.symbolKind === "class" ? null : (opts.signature?.trim() || null);
+  const entryId = entryIdFor(opts.libraryName.trim(), opts.libraryVersion.trim(), opts.symbolKind, opts.symbolName.trim(), normalizedSignature);
 
   const write = db.transaction(() => {
     // Version-change lifecycle (data-model.md): writing a new version of the
@@ -88,7 +93,7 @@ export function upsertDocumentationEntry(db: Database.Database, opts: UpsertDocu
         opts.libraryName.trim(),
         opts.symbolKind,
         opts.symbolName.trim(),
-        opts.symbolKind === "class" ? null : (opts.signature?.trim() ?? null),
+        normalizedSignature,
         opts.libraryVersion.trim(),
       ) as { library_version: string }[];
     for (const { library_version } of priorVersions) {
@@ -118,7 +123,7 @@ export function upsertDocumentationEntry(db: Database.Database, opts: UpsertDocu
       opts.libraryVersion.trim(),
       opts.symbolKind,
       opts.symbolName.trim(),
-      opts.symbolKind === "class" ? null : (opts.signature?.trim() || null),
+      normalizedSignature,
       opts.description.trim(),
       opts.returnType?.trim() || null,
       opts.sourceUrl.trim(),

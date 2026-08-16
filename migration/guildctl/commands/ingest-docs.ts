@@ -1,7 +1,8 @@
 import { spawnSync } from "child_process";
 import type Database from "better-sqlite3";
 import type { GuildConfig } from "../config";
-import { resolveHarness } from "../harness";
+import { resolveGuildConfig, resolveWorkspaceRoot } from "../config";
+import { resolveHarness, resolveAgentLaunch, type ResolvedRuntimeConfig } from "../harness";
 import { getLockedDependencySet } from "../../registry/commands/dispositions";
 import {
   IndexDbError,
@@ -11,7 +12,7 @@ import {
   startIngestionRun,
 } from "../../index-db/commands/entries";
 import type { IngestionOutcome } from "../../index-db/types";
-import type { spawnAgent } from "../runner";
+import { spawnAgent } from "../runner";
 
 /**
  * `guildctl ingest-docs` (007-doc-rag-lookup, US3) — populate .guild/index.db
@@ -57,13 +58,29 @@ export interface IngestDocsReport {
  * §5) — the ingestion loop must be harness-deterministic for v1. AGENT_CMD
  * overrides the same way it overrides every other dispatch (dev/test seam).
  */
+function pinnedIngestionConfig(config: Pick<GuildConfig, "harness" | "ingestion">): GuildConfig {
+  return { ...(config as GuildConfig), harness: config.ingestion?.harness || "opencode" };
+}
+
 export function resolveIngestionHarness(
   config: Pick<GuildConfig, "harness" | "ingestion">,
   root: string,
   env: NodeJS.ProcessEnv = process.env,
 ) {
-  const pinned = { ...(config as GuildConfig), harness: config.ingestion?.harness || "opencode" } as GuildConfig;
-  return resolveHarness(pinned, root, env);
+  return resolveHarness(pinnedIngestionConfig(config), root, env);
+}
+
+/**
+ * Full runtime resolution (harness + model + env) for the real agent
+ * dispatch, so `spawnAgent` uses the pinned ingestion harness instead of
+ * re-resolving `config.harness` (the workspace's primary harness) itself.
+ */
+function resolveIngestionLaunch(
+  config: GuildConfig,
+  root: string,
+  env: NodeJS.ProcessEnv = process.env,
+): ResolvedRuntimeConfig {
+  return resolveAgentLaunch({ config: pinnedIngestionConfig(config), root, env });
 }
 
 /**
@@ -130,7 +147,26 @@ export async function runIngestDocs(
   });
 
   const libraries: IngestDocsLibraryReport[] = [];
-  const runAgent = deps.spawnAgent;
+  // Injected deps (tests) own their own dispatch behavior end-to-end; only the
+  // real production path needs the pinned-harness resolution and fail-closed
+  // preflight, since a test's mock spawnAgent never touches a real harness.
+  const usingRealDispatcher = !deps.spawnAgent;
+  const runAgent = deps.spawnAgent ?? spawnAgent;
+
+  let resolution: ResolvedRuntimeConfig | undefined;
+  if (usingRealDispatcher && targets.length > 0) {
+    const root = resolveWorkspaceRoot();
+    const config = resolveGuildConfig({ cwd: root });
+    resolution = resolveIngestionLaunch(config, root);
+    // Constitution Principle VI (Fail-Closed Automation): check once, before
+    // dispatching any agent, rather than discovering an unreachable harness
+    // mid-loop after some libraries have already been attempted.
+    const check = checkHarness(resolution.harness);
+    if (!check.ok) {
+      completeIngestionRun(indexDb, run.run_id);
+      throw new IndexDbError(1, check.message);
+    }
+  }
 
   for (const row of targets) {
     const libraryName = row.library_name;
@@ -144,12 +180,6 @@ export async function runIngestDocs(
       continue;
     }
 
-    if (!runAgent) {
-      recordIngestionRunLibrary(indexDb, { runId: run.run_id, libraryName, libraryVersion: version, outcome: "failed", reason: "no agent dispatcher available" });
-      libraries.push({ library_name: libraryName, library_version: version, outcome: "failed", reason: "no agent dispatcher available", entries_written: 0 });
-      continue;
-    }
-
     try {
       const before = countDocumentationEntries(indexDb, libraryName, version);
       await runAgent({
@@ -159,6 +189,10 @@ export async function runIngestDocs(
         db: registryDb,
         phase: "ingestion",
         releaseClaimsOnFailure: true,
+        // Pinned ingestion-harness resolution (undefined for injected test
+        // dispatchers) — without this, spawnAgent would re-resolve using the
+        // workspace's primary `config.harness` instead of `ingestion.harness`.
+        resolution,
       } as Parameters<typeof spawnAgent>[0]);
       const written = countDocumentationEntries(indexDb, libraryName, version) - before;
       // A successful agent run is recorded as "indexed" (FR-005/FR-012): the

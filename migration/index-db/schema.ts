@@ -46,6 +46,16 @@ CREATE TRIGGER IF NOT EXISTS documentation_entries_ad AFTER DELETE ON documentat
     VALUES ('delete', old.rowid, old.symbol_name, old.description);
 END;
 
+-- ON CONFLICT ... DO UPDATE (upsertDocumentationEntry's re-ingest path) is a
+-- real UPDATE, not an INSERT — without this trigger the FTS index would go
+-- stale on any content correction that doesn't change the unique key.
+CREATE TRIGGER IF NOT EXISTS documentation_entries_au AFTER UPDATE ON documentation_entries BEGIN
+    INSERT INTO documentation_entries_fts(documentation_entries_fts, rowid, symbol_name, description)
+    VALUES ('delete', old.rowid, old.symbol_name, old.description);
+    INSERT INTO documentation_entries_fts(rowid, symbol_name, description)
+    VALUES (new.rowid, new.symbol_name, new.description);
+END;
+
 CREATE TABLE IF NOT EXISTS ingestion_runs (
     run_id                       TEXT PRIMARY KEY,
     started_at                   TEXT NOT NULL DEFAULT (datetime('now')),
