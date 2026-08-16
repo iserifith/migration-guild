@@ -459,6 +459,53 @@ export interface ScopeDecision {
   updated_at: string;
 }
 
+export type DependencyDispositionKind = "keep" | "replace-with-native" | "inline";
+
+export type DependencyDispositionStatus = "proposed" | "confirmed";
+
+export interface DependencyDisposition {
+  disposition_id: string;
+  library_name: string;
+  current_version: string | null;
+  disposition: DependencyDispositionKind;
+  status: DependencyDispositionStatus;
+  native_replacement: string | null;
+  inline_note: string | null;
+  locked_target_version: string | null;
+  rationale: string;
+  usage_json: string | null;
+  proposed_by: string;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  pending_disposition: DependencyDispositionKind | null;
+  pending_native_replacement: string | null;
+  pending_inline_note: string | null;
+  pending_locked_target_version: string | null;
+  pending_rationale: string | null;
+  pending_proposed_by: string | null;
+  pending_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DependencyDispositionChangeKind =
+  | "propose"
+  | "refine"
+  | "confirm"
+  | "override"
+  | "auto-confirm"
+  | "re-propose";
+
+export interface DependencyDispositionHistoryEntry {
+  history_id: string;
+  disposition_id: string;
+  library_name: string;
+  snapshot_json: string;
+  change_kind: DependencyDispositionChangeKind;
+  change_actor: string;
+  superseded_at: string;
+}
+
 export const EXIT_CODES = {
   SUCCESS: 0,
   VALIDATION_ERROR: 1,

@@ -52,6 +52,12 @@ import {
   listJvmAuditFindings,
   reopenFinding,
 } from "./commands/modernization";
+import {
+  confirmDisposition,
+  getLockedDependencySet,
+  listDispositions,
+  upsertProposedDisposition,
+} from "./commands/dispositions";
 
 import {
   addApprovedCompanionOutput,
@@ -979,6 +985,67 @@ program
     agent: opts.agent,
     model: opts.model,
   })));
+
+// ─── Dependency dispositions (ISSUE-61 / specs/006-dependency-disposition) ───
+
+program
+  .command("list-dispositions")
+  .description("List dependency disposition records (one per library)")
+  .option("--status <status>", "proposed | confirmed")
+  .option("--pending-only", "Show only confirmed rows carrying a pending re-proposal")
+  .action((opts) => run(() => listDispositions(db(), {
+    status: opts.status as "proposed" | "confirmed" | undefined,
+    pendingOnly: opts.pendingOnly as boolean | undefined,
+  })));
+
+program
+  .command("propose-disposition")
+  .description("Record or refine a proposed disposition for a library (planner-agent / collector / operator-policy writes)")
+  .requiredOption("--library <name>", "Canonical library coordinates")
+  .requiredOption("--disposition <kind>", "keep | replace-with-native | inline")
+  .requiredOption("--rationale <text>", "Why this disposition is proposed")
+  .requiredOption("--proposed-by <actor>", "planner-collector | planner-agent | operator-policy")
+  .option("--current-version <v>", "Observed current version")
+  .option("--native-replacement <name>", "Required when --disposition replace-with-native")
+  .option("--inline-note <text>", "Required when --disposition inline")
+  .option("--locked-version <v>", "Target version lock (for keep proposals)")
+  .option("--usage-json <json>", "Used-surface summary from usage analysis")
+  .action((opts) => run(() => upsertProposedDisposition(db(), {
+    libraryName: opts.library,
+    currentVersion: opts.currentVersion,
+    disposition: opts.disposition,
+    nativeReplacement: opts.nativeReplacement,
+    inlineNote: opts.inlineNote,
+    lockedTargetVersion: opts.lockedVersion,
+    rationale: opts.rationale,
+    usageJson: opts.usageJson,
+    proposedBy: opts.proposedBy,
+  })));
+
+program
+  .command("confirm-disposition")
+  .description("Confirm (optionally overriding) a library's disposition")
+  .requiredOption("--library <name>", "Canonical library coordinates")
+  .requiredOption("--confirmed-by <name>", "Operator or authorized automation actor")
+  .option("--disposition <kind>", "Override: keep | replace-with-native | inline")
+  .option("--native-replacement <name>", "Override: native replacement target")
+  .option("--inline-note <text>", "Override: inline note")
+  .option("--locked-version <v>", "Override: target version lock")
+  .option("--rationale <text>", "Override rationale (required with --disposition)")
+  .action((opts) => run(() => confirmDisposition(db(), {
+    libraryName: opts.library,
+    confirmedBy: opts.confirmedBy,
+    disposition: opts.disposition,
+    nativeReplacement: opts.nativeReplacement,
+    inlineNote: opts.inlineNote,
+    lockedTargetVersion: opts.lockedVersion,
+    rationale: opts.rationale,
+  })));
+
+program
+  .command("locked-dependency-set")
+  .description("Print the deterministic locked dependency set (confirmed rows only, ORDER BY library_name ASC) — the artifact consumed by the version-locked doc-RAG proposal (FR-009)")
+  .action(() => run(() => getLockedDependencySet(db())));
 
 program
   .command("record-scope-decision")

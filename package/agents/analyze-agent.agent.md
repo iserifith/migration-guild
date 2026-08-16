@@ -22,7 +22,7 @@ You are a Java code analyst. Read exactly one claimed legacy Java file and write
    - If `GUILDCTL_ARTIFACT_ID` is set: do not run `claim`. Use `GUILDCTL_ARTIFACT_ID` as `<id>`, `GUILDCTL_CLAIM_ID` as `claim_id`, and `GUILDCTL_CLAIM_TOKEN` as `claim_token`. Proceed directly to step 2.
    - If `GUILDCTL_ARTIFACT_ID` is **not** set: self-claim by running:
    ```bash
-   node migration/registry/dist/cli.js claim \
+   node migration/dist/registry/cli.js claim \
      --agent "${GUILDCTL_AGENT_KIND:-analyze-agent}" \
      --owner "${GUILDCTL_AGENT_NAME:-analyze-agent}" \
      --run-id "${GUILDCTL_RUN_ID:?missing GUILDCTL_RUN_ID}" \
@@ -64,12 +64,12 @@ You are a Java code analyst. Read exactly one claimed legacy Java file and write
 
 4. Persist the context file into the registry:
    ```bash
-   node migration/registry/dist/cli.js write-context --id "<id>" --agent analyze-agent --file "<temp-file>"
+   node migration/dist/registry/cli.js write-context --id "<id>" --agent analyze-agent --file "<temp-file>"
    ```
 
 5. Renew the claim lease before finalizing:
    ```bash
-   node migration/registry/dist/cli.js heartbeat-claim \
+   node migration/dist/registry/cli.js heartbeat-claim \
      --claim-id "<claim_id>" \
      --claim-token "<claim_token>" \
      --agent analyze-agent
@@ -77,7 +77,7 @@ You are a Java code analyst. Read exactly one claimed legacy Java file and write
 
 6. Update registry:
    ```bash
-   node migration/registry/dist/cli.js set-artifact-status \
+   node migration/dist/registry/cli.js set-artifact-status \
      --id "<id>" \
      --status analyzed \
      --agent analyze-agent \

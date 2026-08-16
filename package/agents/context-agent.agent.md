@@ -31,7 +31,7 @@ You are a Java migration analyst. Your job is to read legacy source files, produ
 9. Rate migration complexity: Low / Medium / High.
 10. Register as a **first-class** artifact:
     ```bash
-    node migration/registry/dist/cli.js register-artifact \
+    node migration/dist/registry/cli.js register-artifact \
       --id "legacy:<module>:<ClassName>" \
       --kind legacy-source \
       --path "<relative file path>" \
@@ -53,7 +53,7 @@ After processing all Java files, scan the module for these file types and regist
 
 Register each non-Java file:
 ```bash
-node migration/registry/dist/cli.js register-artifact \
+node migration/dist/registry/cli.js register-artifact \
   --id "config:<module>:<filename>" \
   --kind <kind> \
   --path "<relative file path>" \
