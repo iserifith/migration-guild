@@ -42,31 +42,37 @@ function LiveMissionControl() {
   const errors = [statusHook, societyHook, wavePlanHook, sessionsHook, artifactsHook, eventsHook]
     .map((hook) => hook.error)
     .filter((error): error is Error => error !== null);
-  const total = status?.files.total ?? 0;
-  const completed = status?.files.completed ?? 0;
-  const roleCount = (role: SocietyRole) => Object.entries(society?.roles ?? {}).reduce((sum, [agent, count]) => sum + (classifyRole(agent) === role ? count : 0), 0);
-  const data: MissionControlData = {
-    metrics: [
-      { label: "Completion", value: `${total ? Math.round(completed / total * 100) : 0}%`, detail: `${completed} / ${total} artifacts`, tone: "neutral" },
-      { label: "Evidence pass rate", value: `${Math.round((society?.evidence.pass_rate ?? 0) * 100)}%`, detail: `${society?.evidence.passed ?? 0} of ${society?.evidence.total ?? 0} proofs`, tone: "success" },
-      { label: "Awaiting arbitration", value: String(society?.evidence.artifacts_awaiting_arbitration ?? 0), detail: "Proof ready, unjudged", tone: "warning" },
-      { label: "In progress", value: String(status?.files.in_progress ?? 0), detail: `${sessions.length} active claims`, tone: "neutral" },
-    ],
-    society: [
-      { role: "builder", action: "Proposes → migrated", count: `${roleCount("builder")} active` },
-      { role: "critic", action: "Runs tests → evidence", count: `${roleCount("critic")} active` },
-      { role: "arbiter", action: "Accepts from proof", count: `${society?.evidence.artifacts_awaiting_arbitration ?? 0} pending` },
-    ],
-    waves: wavePlan.map((wave) => {
-      const done = (wave.by_status.completed ?? 0) + (wave.by_status.reviewed ?? 0);
-      const progress = wave.total ? Math.round(done / wave.total * 100) : 0;
-      return { label: `Wave ${wave.wave}`, status: `${done}/${wave.total} done`, progress, tone: progress === 100 ? "success" : progress === 0 ? "warning" : "accent" };
-    }),
-    activity: events.slice(0, 6).map((event) => {
-      const role = classifyRole(event.agent);
-      return { id: event.id, role: role[0].toUpperCase() + role.slice(1), message: event.note, relativeTime: relativeTime(event.created_at), tone: (/reject|fail/i.test(event.event_type) ? "danger" : role) as ActivityTone };
-    }),
-  };
+
+  // ⚡ Bolt: memoize expensive map/reduce operations to prevent recalculating
+  // on every polling re-render. Note the use of `sessions.length` to avoid
+  // re-rendering when the array reference changes but the count does not.
+  const data: MissionControlData = React.useMemo(() => {
+    const total = status?.files.total ?? 0;
+    const completed = status?.files.completed ?? 0;
+    const roleCount = (role: SocietyRole) => Object.entries(society?.roles ?? {}).reduce((sum, [agent, count]) => sum + (classifyRole(agent) === role ? count : 0), 0);
+    return {
+      metrics: [
+        { label: "Completion", value: `${total ? Math.round(completed / total * 100) : 0}%`, detail: `${completed} / ${total} artifacts`, tone: "neutral" },
+        { label: "Evidence pass rate", value: `${Math.round((society?.evidence.pass_rate ?? 0) * 100)}%`, detail: `${society?.evidence.passed ?? 0} of ${society?.evidence.total ?? 0} proofs`, tone: "success" },
+        { label: "Awaiting arbitration", value: String(society?.evidence.artifacts_awaiting_arbitration ?? 0), detail: "Proof ready, unjudged", tone: "warning" },
+        { label: "In progress", value: String(status?.files.in_progress ?? 0), detail: `${sessions.length} active claims`, tone: "neutral" },
+      ],
+      society: [
+        { role: "builder", action: "Proposes → migrated", count: `${roleCount("builder")} active` },
+        { role: "critic", action: "Runs tests → evidence", count: `${roleCount("critic")} active` },
+        { role: "arbiter", action: "Accepts from proof", count: `${society?.evidence.artifacts_awaiting_arbitration ?? 0} pending` },
+      ],
+      waves: wavePlan.map((wave) => {
+        const done = (wave.by_status.completed ?? 0) + (wave.by_status.reviewed ?? 0);
+        const progress = wave.total ? Math.round(done / wave.total * 100) : 0;
+        return { label: `Wave ${wave.wave}`, status: `${done}/${wave.total} done`, progress, tone: progress === 100 ? "success" : progress === 0 ? "warning" : "accent" };
+      }),
+      activity: events.slice(0, 6).map((event) => {
+        const role = classifyRole(event.agent);
+        return { id: event.id, role: role[0].toUpperCase() + role.slice(1), message: event.note, relativeTime: relativeTime(event.created_at), tone: (/reject|fail/i.test(event.event_type) ? "danger" : role) as ActivityTone };
+      }),
+    };
+  }, [status, society, sessions.length, wavePlan, events]);
   return (
     <>
       {errors.length > 0 && (
