@@ -111,14 +111,17 @@ export function upsertDocumentationEntry(db: Database.Database, opts: UpsertDocu
         opts.libraryVersion.trim(),
       ) as { library_version: string }[];
     for (const { library_version } of priorVersions) {
-      db.prepare("DELETE FROM documentation_entries WHERE library_name = ? AND library_version = ?")
-        .run(opts.libraryName.trim(), library_version);
+      db.prepare(
+        "DELETE FROM documentation_entries WHERE library_name = ? AND library_version = ? AND symbol_kind = ? AND symbol_name = ? AND COALESCE(signature, '') = COALESCE(?, '')",
+      ).run(opts.libraryName.trim(), library_version, opts.symbolKind, opts.symbolName.trim(), normalizedSignature);
     }
-    // Explicit supersedesVersion (for tests that pass it) is still honored.
+    // Explicit supersedesVersion (for tests that pass it) is still honored, scoped
+    // to this same symbol/signature — it must not touch sibling symbols still
+    // documented at the superseded version.
     if (opts.supersedesVersion?.trim() && opts.supersedesVersion.trim() !== opts.libraryVersion.trim()) {
       db.prepare(
-        "DELETE FROM documentation_entries WHERE library_name = ? AND library_version = ?",
-      ).run(opts.libraryName.trim(), opts.supersedesVersion.trim());
+        "DELETE FROM documentation_entries WHERE library_name = ? AND library_version = ? AND symbol_kind = ? AND symbol_name = ? AND COALESCE(signature, '') = COALESCE(?, '')",
+      ).run(opts.libraryName.trim(), opts.supersedesVersion.trim(), opts.symbolKind, opts.symbolName.trim(), normalizedSignature);
     }
     db.prepare(
       `INSERT INTO documentation_entries

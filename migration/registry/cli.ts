@@ -109,7 +109,11 @@ function run(fn: () => unknown): void {
 const program = new Command();
 program
   .name("registry")
-  .description("Migration artifact registry CLI");
+  .description("Migration artifact registry CLI")
+  // Long flag intentionally omitted: index-doc-entry's own `--version <v>`
+  // (locked library version) would otherwise collide with Commander's
+  // global version option and short-circuit that subcommand.
+  .version("0.1.0", "-V");
 program.option(
   "--db <path>",
   "Path to registry.db (overrides REGISTRY_DB env)",
