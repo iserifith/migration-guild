@@ -8,6 +8,13 @@ export interface GuildConfig {
   version: number;
   stack: string;
   harness: string;
+  /**
+   * Doc-ingestion pipeline settings (007-doc-rag-lookup). The ingestion agent
+   * is always resolved via ingestion.harness (default "opencode"), NOT the
+   * workspace's primary `harness` setting — research.md §5 pins the ingestion
+   * harness for v1 so the ingestion loop is harness-deterministic.
+   */
+  ingestion: { harness: string };
   workspace: { name: string; root: string };
   database: { path: string };
   model: { model: string; base_url?: string | null; api_key_env?: string | null; context_length?: number };
@@ -40,6 +47,7 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   version: 1,
   stack: "java-spring",
   harness: "opencode",
+  ingestion: { harness: "opencode" },
   workspace: { name: "migration-guild-workspace", root: "." },
   database: { path: ".guild/registry.db" },
   model: {
@@ -247,6 +255,17 @@ export function resolveRegistryDbPath(options: RegistryDbPathOptions = {}): stri
   const database = isObject(config["database"]) ? config["database"] as JsonMap : undefined;
   const configured = typeof database?.["path"] === "string" ? String(database["path"]) : undefined;
   return resolvePathAgainstWorkspace(configured || ".guild/registry.db", workspaceRoot);
+}
+
+/**
+ * 007-doc-rag-lookup: `.guild/index.db` path, resolved the same way the
+ * registry path is — relative to the workspace root by default. A future
+ * `database.index_path` override can be added here the same way
+ * `database.path` overrides the registry, without a contract change.
+ */
+export function resolveIndexDbPath(options: { workspaceRoot?: string } = {}): string {
+  const workspaceRoot = path.resolve(options.workspaceRoot ?? resolveWorkspaceRoot());
+  return path.join(workspaceRoot, ".guild", "index.db");
 }
 
 export function isPathInside(child: string, parent: string): boolean {

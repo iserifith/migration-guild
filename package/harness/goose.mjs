@@ -21,7 +21,7 @@
 // OPENCODE_CLI_PATH from the other adapters).
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, realpathSync, mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -262,6 +262,37 @@ function attachStreamJsonStdout(child, totals) {
 
 // ─── Invocation builder ───────────────────────────────────────────────
 
+// 007-doc-rag-lookup: the guild-docs MCP server (version-locked doc lookups)
+// is registered only for Migrate/Critic-launching personas
+// (contracts/mcp-tool-contract.md "Harness wiring"). Goose speaks stdio
+// extensions: we write a temp config.yaml with an extensions.guild-docs block
+// and point GOOSE_CONFIG at it.
+const DOC_MCP_AGENTS = new Set(["code-writer-agent", "test-writer-agent", "review-agent"]);
+
+export function writeDocMcpGooseConfig(env = process.env, cwd = process.cwd()) {
+  const serverScript = path.resolve(cwd, "migration", "mcp-doc-server", "server.ts");
+  const indexDbPath = env.GUILD_INDEX_DB_PATH || path.resolve(cwd, ".guild", "index.db");
+  const dir = mkdtempSync(path.join(os.tmpdir(), "guild-goose-"));
+  const file = path.join(dir, "config.yaml");
+  const content = [
+    "extensions:",
+    "  guild-docs:",
+    "    type: stdio",
+    `    cmd: ${JSON.stringify(process.execPath)}`,
+    "    args:",
+    '      - "--import"',
+    '      - "tsx"',
+    `      - ${JSON.stringify(serverScript)}`,
+    "    envs:",
+    `      GUILD_INDEX_DB_PATH: ${JSON.stringify(indexDbPath)}`,
+    "    enabled: true",
+    "    timeout: 60",
+    "",
+  ].join("\n");
+  writeFileSync(file, content);
+  return { file, content };
+}
+
 export function buildGooseInvocation(argv, options = {}) {
   const parsed = parseArgs(argv);
   const env = options.env ?? process.env;
@@ -326,15 +357,23 @@ export function buildGooseInvocation(argv, options = {}) {
 
   const { command, shell } = resolveGooseCommand(env);
 
+  const gooseEnv = {
+    ...env,
+    GOOSE_MODE: gooseMode,
+  };
+  // 007-doc-rag-lookup (T012): register the guild-docs MCP extension for
+  // Migrate/Critic-launching personas only.
+  if (DOC_MCP_AGENTS.has(parsed.agent)) {
+    const docMcp = writeDocMcpGooseConfig(env, cwd);
+    gooseEnv.GOOSE_CONFIG_FILE = docMcp.file;
+  }
+
   return {
     command,
     args,
     parsed,
     fullPrompt,
-    env: {
-      ...env,
-      GOOSE_MODE: gooseMode,
-    },
+    env: gooseEnv,
     shell,
   };
 }

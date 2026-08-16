@@ -38,6 +38,22 @@ function tomlString(value) {
   return JSON.stringify(value);
 }
 
+// 007-doc-rag-lookup: the guild-docs MCP server (version-locked doc lookups)
+// is registered only for Migrate/Critic-launching personas
+// (contracts/mcp-tool-contract.md "Harness wiring").
+const DOC_MCP_AGENTS = new Set(["code-writer-agent", "test-writer-agent", "review-agent"]);
+
+export function docMcpConfigOverrides(env = process.env, cwd = process.cwd()) {
+  const serverScript = path.resolve(cwd, "migration", "mcp-doc-server", "server.ts");
+  const indexDbPath = env.GUILD_INDEX_DB_PATH || path.resolve(cwd, ".guild", "index.db");
+  const serverArgs = tomlString(JSON.stringify(["--import", "tsx", serverScript]));
+  return [
+    "-c", `mcp_servers.guild-docs.command=${tomlString(process.execPath)}`,
+    "-c", `mcp_servers.guild-docs.args=${serverArgs}`,
+    "-c", `mcp_servers.guild-docs.env.GUILD_INDEX_DB_PATH=${tomlString(indexDbPath)}`,
+  ];
+}
+
 export function buildCodexInvocation(argv, options = {}) {
   const parsed = parseArgs(argv);
   const env = options.env ?? process.env;
@@ -55,6 +71,9 @@ export function buildCodexInvocation(argv, options = {}) {
     "-c", `model_providers.migration_guild.base_url=${tomlString(baseUrl)}`,
     "-c", `model_providers.migration_guild.env_key=${tomlString(apiKeyEnv)}`,
   ];
+  if (DOC_MCP_AGENTS.has(parsed.agent)) {
+    args.push(...docMcpConfigOverrides(env, options.cwd ?? process.cwd()));
+  }
   if (parsed.model) args.push("-c", `model=${tomlString(parsed.model)}`);
   args.push(fullPrompt);
   return { command: env.CODEX_CLI_PATH || "codex", args, parsed, fullPrompt };
