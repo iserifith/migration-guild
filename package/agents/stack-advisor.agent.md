@@ -17,12 +17,12 @@ You are a Java migration stack advisor. Your job is to examine all registered ar
 
 1. List all registered first-class artifacts with their detected frameworks:
    ```bash
-   node migration/registry/dist/cli.js list-artifacts --tier first-class
+   node migration/dist/registry/cli.js list-artifacts --tier first-class
    ```
 
 2. Also list second-class artifacts to pick up additional signals from descriptors and config:
    ```bash
-   node migration/registry/dist/cli.js list-artifacts --tier second-class
+   node migration/dist/registry/cli.js list-artifacts --tier second-class
    ```
 
 3. Collect the unique `framework` values from both lists. Group by category:
@@ -38,7 +38,7 @@ You are a Java migration stack advisor. Your job is to examine all registered ar
 
 5. Record each mapping in the registry:
    ```bash
-   node migration/registry/dist/cli.js create-mapping \
+   node migration/dist/registry/cli.js create-mapping \
      --legacy "<detected framework>" \
      --target "<recommended target>" \
      --strategy "<direct | adapter | rewrite>" \
@@ -62,16 +62,16 @@ You are a Java migration stack advisor. Your job is to examine all registered ar
 7. Ask the human to confirm each mapping:
    - To confirm a mapping, run:
      ```bash
-     node migration/registry/dist/cli.js confirm-mapping --id "<id>" --confirmed-by "<operator>"
+     node migration/dist/registry/cli.js confirm-mapping --id "<id>" --confirmed-by "<operator>"
      ```
    - To confirm all at once (bulk accept), run confirm-mapping for each ID returned by:
      ```bash
-     node migration/registry/dist/cli.js list-mappings
+     node migration/dist/registry/cli.js list-mappings
      ```
 
 8. After all mappings are confirmed, output:
    ```bash
-   node migration/registry/dist/cli.js show-mapping-summary
+   node migration/dist/registry/cli.js show-mapping-summary
    ```
    Then instruct the user to run `planner-agent` or `#analyze-and-plan`.
 

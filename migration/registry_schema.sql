@@ -531,6 +531,56 @@ CREATE TABLE IF NOT EXISTS audit_overrides (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_overrides_finding ON audit_overrides(finding_id);
 
+-- ISSUE-61: planner-emitted dependency dispositions — one current decision per
+-- third-party library per workspace (keep / replace-with-native / inline).
+-- Primary columns always hold the CURRENT decision; the pending_* group carries
+-- a re-proposal against an already-confirmed decision (FR-011) without adding a
+-- second row for the library.
+CREATE TABLE IF NOT EXISTS dependency_dispositions (
+    disposition_id             TEXT PRIMARY KEY,
+    library_name               TEXT NOT NULL UNIQUE,
+    current_version            TEXT,
+    disposition                TEXT NOT NULL CHECK (disposition IN ('keep', 'replace-with-native', 'inline')),
+    status                     TEXT NOT NULL CHECK (status IN ('proposed', 'confirmed')),
+    native_replacement         TEXT,
+    inline_note                TEXT,
+    locked_target_version      TEXT,
+    rationale                  TEXT NOT NULL,
+    usage_json                 TEXT,
+    proposed_by                TEXT NOT NULL,
+    confirmed_by               TEXT,
+    confirmed_at               TEXT,
+    pending_disposition        TEXT CHECK (pending_disposition IN ('keep', 'replace-with-native', 'inline')),
+    pending_native_replacement TEXT,
+    pending_inline_note        TEXT,
+    pending_locked_target_version TEXT,
+    pending_rationale          TEXT,
+    pending_proposed_by        TEXT,
+    pending_at                 TEXT,
+    created_at                 TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at                 TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_dependency_dispositions_status
+    ON dependency_dispositions(status);
+CREATE INDEX IF NOT EXISTS idx_dependency_dispositions_pending
+    ON dependency_dispositions(pending_disposition);
+
+-- Append-only audit trail: every mutation of a live row snapshots the prior
+-- state here first. No UPDATE/DELETE ever runs against this table.
+CREATE TABLE IF NOT EXISTS dependency_disposition_history (
+    history_id      TEXT PRIMARY KEY,
+    disposition_id  TEXT NOT NULL,
+    library_name    TEXT NOT NULL,
+    snapshot_json   TEXT NOT NULL,
+    change_kind     TEXT NOT NULL CHECK (change_kind IN ('propose', 'refine', 'confirm', 'override', 'auto-confirm', 're-propose')),
+    change_actor    TEXT NOT NULL,
+    superseded_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_dependency_disposition_history_library
+    ON dependency_disposition_history(library_name);
+
 -- ─── Triggers ────────────────────────────────────────────────────────────────
 -- Auto-write a status-changed event whenever any agent (at any depth) updates
 -- an artifact's status. guildctl CLI polls this table — no agent cooperation needed.

@@ -17,13 +17,13 @@ You are a Java test engineer. Write target-side tests based on the behavior anal
 
 1. Claim the next task:
    ```bash
-   node migration/registry/dist/cli.js claim --agent "${GUILDCTL_AGENT_NAME:-test-agent}" --model "${MODEL:-unknown}" --from-status analyzed
+   node migration/dist/registry/cli.js claim --agent "${GUILDCTL_AGENT_NAME:-test-agent}" --model "${MODEL:-unknown}" --from-status analyzed
    ```
    Exit code 2 = nothing left. Stop.
 
 2. Read the context:
    ```bash
-   node migration/registry/dist/cli.js get-context --id "<id>" --agent analyze-agent
+   node migration/dist/registry/cli.js get-context --id "<id>" --agent analyze-agent
    ```
    The JSON response has a `form` field (`file`, `summary`, or `none`) and a `content` field.
    Use `content` directly — do not convert path separators, search the filesystem for the file,
@@ -39,7 +39,7 @@ You are a Java test engineer. Write target-side tests based on the behavior anal
 
 5. Update registry:
    ```bash
-   node migration/registry/dist/cli.js set-artifact-status --id "<id>" --status tests-written
+   node migration/dist/registry/cli.js set-artifact-status --id "<id>" --status tests-written
    ```
 
 6. Go back to step 1.

@@ -18,6 +18,7 @@ import {
 } from "../monitoring";
 import { reconcileStaleClaims } from "../../registry/commands/claim";
 import { setNext } from "../../registry/commands/operator";
+import { dispositionContextForArtifact } from "../../registry/commands/dispositions";
 import { needsBootstrap, runBootstrap } from "./bootstrap";
 import { loadActiveStack, readStackInstruction } from "../stack";
 import { evaluateMigrationReadiness, formatMigrationBlockMessage, requireNonEmptyRegistry } from "../readiness";
@@ -46,6 +47,26 @@ export interface MigrateOpts {
   testParallel?: number;
   codeParallel?: number;
   wave?: number;
+}
+
+/**
+ * US3 / FR-010: the code-writer pool's prompt, optionally suffixed with the
+ * confirmed non-keep disposition guidance for the artifact being written
+ * (mirrors the readStackInstruction(pack, "tests") suffix on testPrompt).
+ * With no artifactId — the pool-level spawn, where the session's artifact is
+ * pre-claimed by its own CLI subprocess — the base prompt is returned
+ * unchanged; when the artifact is known, the dispositionContextForArtifact
+ * suffix is appended iff non-null (artifacts using only keep libraries get
+ * no suffix).
+ */
+export function codePromptForArtifact(
+  db: Database.Database,
+  basePrompt: string,
+  artifactId?: string,
+): string {
+  if (!artifactId) return basePrompt;
+  const suffix = dispositionContextForArtifact(db, artifactId);
+  return suffix ? `${basePrompt}\n\n${suffix}` : basePrompt;
 }
 
 interface MigrateDeps {
@@ -201,9 +222,19 @@ export async function runMigrate(
   const testPrompt = opts.wave != null
     ? `Write tests for next analyzed task from wave ${opts.wave}\n\n${readStackInstruction(pack, "tests")}`
     : `Write tests for next analyzed task\n\n${readStackInstruction(pack, "tests")}`;
-  const codePrompt = opts.wave != null
+  // FR-010 (US3): codePromptForArtifact appends the confirmed non-keep
+  // disposition guidance ("do not re-declare <library>; use <native target>")
+  // for the artifact being written. The pool-level spawn passes no artifact
+  // id — each session's artifact is pre-claimed by its own CLI subprocess —
+  // so the base prompt below has no suffix; runner.ts resolves the
+  // per-artifact suffix via promptForArtifact once the claim reveals which
+  // artifact this session actually got.
+  const baseCodePrompt = opts.wave != null
     ? `Write production code for next tests-written task from wave ${opts.wave}`
     : "Write production code for next tests-written task";
+  const codePrompt = codePromptForArtifact(db, baseCodePrompt);
+  const promptForArtifact = (artifactId: string): string =>
+    codePromptForArtifact(db, baseCodePrompt, artifactId);
   let pass = 1;
   let hadFailures = false;
 
@@ -293,6 +324,7 @@ export async function runMigrate(
               releaseClaimsOnFailure: true,
               preClaim: { fromStatus: "tests-written", tier: "first-class", wave: opts.wave },
               resolution: runtime,
+              promptForArtifact,
             })
           ));
       hadFailures ||= codeResults.some((result) => result.exitCode !== 0);

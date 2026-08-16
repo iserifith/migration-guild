@@ -44,7 +44,7 @@ When complete: all legacy source files are registered in the registry with statu
 
 Checkpoint:
 ```bash
-node migration/registry/dist/cli.js list-artifacts --status pending
+node migration/dist/registry/cli.js list-artifacts --status pending
 ```
 
 ### Phase 2 — Planning
@@ -54,7 +54,7 @@ When complete: all artifacts have a wave number and status `planned`.
 
 Checkpoint:
 ```bash
-node migration/registry/dist/cli.js wave-plan
+node migration/dist/registry/cli.js wave-plan
 ```
 
 ### Phase 3–4 — Migration (parallelizable)
@@ -64,8 +64,8 @@ When complete: all artifacts have status `migrated`.
 
 Checkpoint:
 ```bash
-node migration/registry/dist/cli.js list-artifacts --status planned
-node migration/registry/dist/cli.js list-artifacts --status in-progress
+node migration/dist/registry/cli.js list-artifacts --status planned
+node migration/dist/registry/cli.js list-artifacts --status in-progress
 ```
 
 ### Phase 5 — Review (parallelizable)
@@ -75,7 +75,7 @@ When complete: all artifacts have status `reviewed` or `needs-rework`.
 
 Checkpoint:
 ```bash
-node migration/registry/dist/cli.js list-artifacts --status migrated
+node migration/dist/registry/cli.js list-artifacts --status migrated
 ```
 
 ### Phase 6 — Post-Migration Audit
@@ -105,10 +105,10 @@ When complete: each affected artifact has exactly one explicit outcome:
 
 Checkpoint:
 ```bash
-node migration/registry/dist/cli.js list-runs --limit 20
-node migration/registry/dist/cli.js show-in-progress
-node migration/registry/dist/cli.js list-artifacts --status needs-rework
-node migration/registry/dist/cli.js list-artifacts --status blocked
+node migration/dist/registry/cli.js list-runs --limit 20
+node migration/dist/registry/cli.js show-in-progress
+node migration/dist/registry/cli.js list-artifacts --status needs-rework
+node migration/dist/registry/cli.js list-artifacts --status blocked
 ```
 
 ## Guardrails
@@ -127,12 +127,12 @@ node migration/registry/dist/cli.js list-artifacts --status blocked
 ## Status Commands
 
 ```bash
-node migration/registry/dist/cli.js show-status        # dashboard
-node migration/registry/dist/cli.js wave-plan          # wave progress
-node migration/registry/dist/cli.js list-ready         # what can be claimed now
-node migration/registry/dist/cli.js list-runs          # recent worker outcomes
-node migration/registry/dist/cli.js show-in-progress   # active/stalled claims
-node migration/registry/dist/cli.js show-file-status --path <path>
+node migration/dist/registry/cli.js show-status        # dashboard
+node migration/dist/registry/cli.js wave-plan          # wave progress
+node migration/dist/registry/cli.js list-ready         # what can be claimed now
+node migration/dist/registry/cli.js list-runs          # recent worker outcomes
+node migration/dist/registry/cli.js show-in-progress   # active/stalled claims
+node migration/dist/registry/cli.js show-file-status --path <path>
 ```
 
 ## Report Format

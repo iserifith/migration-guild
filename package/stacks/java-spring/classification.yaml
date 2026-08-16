@@ -202,3 +202,21 @@ signals:
     match:
       content:
         - '\bimport\s+org\.testng\.'
+
+# ─── Dependency dispositions (006-dependency-disposition) ────────────────────
+dependencies:
+  manifest_globs:
+    - "**/pom.xml"
+    - "**/build.gradle"
+    - "**/build.gradle.kts"
+  library_prefixes:
+    "org.apache.commons:commons-lang3": ["org.apache.commons.lang3"]
+    "com.google.guava:guava": ["com.google.common"]
+    "joda-time:joda-time": ["org.joda.time"]
+  native_equivalents:
+    "joda-time:joda-time":
+      native: "java.time"
+      note: "java.time supersedes Joda-Time since Java 8; JSR-310 is the platform API."
+    "com.google.guava:guava":
+      native: "java.util / java.util.Objects / java.util.Optional"
+      note: "Only valid when usage is limited to base utilities (Optional, Precondition, Strings); deep Guava usage (collections, cache) must stay keep."
