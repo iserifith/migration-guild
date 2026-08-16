@@ -7,6 +7,21 @@
 - XML bean wiring becomes configuration classes, beans, or component scanning.
 - JUnit 4 tests become JUnit 5 tests; prefer narrow MVC or unit tests over full-context tests.
 
+## Common modernization idioms
+
+These apply to any migrated class, not only view-handling modules. A migration that leaves
+these idioms in place — even with renamed identifiers or added comments — has not modernized
+the code; it has copied it.
+
+- `SimpleDateFormat` (especially held in shared/static state, where it is not thread-safe)
+  becomes `java.time` — `DateTimeFormatter` for formatting/parsing, `LocalDate`/`LocalDateTime`
+  in place of `java.util.Date`.
+- Raw `Map`/`List`/`Collection` (no generic type parameters) become parameterized types with
+  the concrete element/key/value types the code actually uses.
+- Manual `null` checks and null-or-default patterns (`x == null ? fallback : x`,
+  nullable-return methods) become `Objects.requireNonNull` at the boundary that must not
+  accept `null`, or `Optional` for a genuinely absent value propagated to a caller.
+
 ## View modules → API contracts (NEVER UI components)
 
 This is a hard rule, declared by `view_contract` in `stack.yaml` and enforced by the
