@@ -86,6 +86,7 @@ function SocietyViewContent({ data, selectedId, onSelect }: { data: SocietyViewD
         .society-active { color: var(--text-muted); font-size: 11px; }
         .society-chip { display: block; width: 100%; margin-top: 8px; padding: 8px 10px; border: .5px solid var(--border); border-radius: var(--radius); background: var(--surface-2); color: var(--text-primary); cursor: pointer; text-align: left; }
         .society-chip:hover, .society-chip.selected { border-color: var(--text-accent); }
+        .society-chip:focus-visible { outline: 2px solid var(--text-accent); outline-offset: 2px; }
         .society-chip-name { font-size: 12px; font-weight: 500; }
         .society-chip-meta { color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
         .society-badge { display: inline-block; padding: 2px 7px; border-radius: 20px; font-size: 10px; font-weight: 500; }
