@@ -30,12 +30,18 @@ node ../__GUILDCTL_KIT_BUILD__/setup.js
 #    Non-interactive alternative:
 node ../__GUILDCTL_KIT_BUILD__/setup.js --framework "Spring Boot 3.x" --legacy-url https://github.com/your-org/your-repo
 
-# 4. Install dependencies
+# 4. Install runtime dependencies
+#    migration/ ships with the kit; this only installs its node_modules.
 cd migration && npm install && cd ..
 
-# 5. Copy and fill in your .env
+# 5. Scaffold the workspace config (.guild/config.yaml + prompt pack)
+#    REQUIRED — the CLI reads .guild/config.yaml, not any other file.
+node migration/dist/guildctl/cli.js init
+
+# 6. Copy and fill in your .env
 cp .env.example .env
-#    Edit .env — set the API key env var referenced by guildctl.config.json
+#    Edit .env — set the API key env var referenced by .guild/config.yaml
+#    (see "Configure OpenAI-compatible runtime" below)
 #    The CLI loads .env automatically — no need to source it manually
 ```
 
@@ -119,17 +125,34 @@ node migration/dist/guildctl/cli.js run --parallel 3
 
 ## Configure OpenAI-compatible runtime
 
-Edit `.env` and set:
+The CLI reads its runtime config from `.guild/config.yaml` (created by `guildctl init`), **not**
+from `guildctl.config.json`. Edit `.guild/config.yaml` and set the default profile plus the harness:
+
+```yaml
+# .guild/config.yaml (created by `node migration/dist/guildctl/cli.js init`)
+harness:
+  type: openai-compatible        # how phases invoke the model runtime
+profiles:
+  default:
+    base_url: https://openrouter.ai/api/v1
+    model: openai/gpt-oss-120b
+    api_key_env: OPENROUTER_API_KEY
+```
+
+`api_key_env` names the variable `guildctl init` writes into your `.env` (default `OPENAI_API_KEY`).
+Set that variable's value in `.env`:
 
 ```env
 OPENROUTER_API_KEY=<your-key>
-OPENAI_BASE_URL=https://openrouter.ai/api/v1
 ```
 
-Then in `guildctl.config.json`, configure `base_url`, `model`, and `api_key_env` for an OpenAI-compatible endpoint.
 For the migration pipeline, the phase keys are `analysis`, `test-writing`, and `code-writing`.
-
+You can set a per-phase model under `profiles.default` (e.g. `profiles.default.analysis.model`).
 The CLI loads `.env` automatically — no `export` or `source` needed.
+
+Run `node migration/dist/guildctl/cli.js config` to print the resolved config and confirm your
+edits took effect. If `config` still shows stale defaults, you edited the wrong file — only
+`.guild/config.yaml` is read.
 
 ---
 
