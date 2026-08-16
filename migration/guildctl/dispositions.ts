@@ -245,7 +245,13 @@ export function collectDispositions(
         }
         // Prefix-free libraries can still be detected via qualified references
         // (e.g. `org.joda.time.DateTime` without an import on the same line).
-        const qualified = new RegExp(`\\b${escapeRegExp(evidence.libraryName.split(":")[1] ?? "")}\\b`).test(content);
+        // A library name with no ":" segment (no artifact id to key off of)
+        // has nothing meaningful to match — an empty pattern would match
+        // almost any content and fabricate usage evidence, so skip it.
+        const nameSegment = evidence.libraryName.split(":")[1];
+        const qualified = nameSegment
+          ? new RegExp(`\\b${escapeRegExp(nameSegment)}\\b`).test(content)
+          : false;
         if (qualified) {
           evidence.usageArtifacts.add(artifact.id);
           evidence.importCount += 1;

@@ -226,11 +226,15 @@ export async function runMigrate(
   // disposition guidance ("do not re-declare <library>; use <native target>")
   // for the artifact being written. The pool-level spawn passes no artifact
   // id — each session's artifact is pre-claimed by its own CLI subprocess —
-  // so the pool prompt is the base; the per-artifact suffix resolves at the
-  // claim site via the same builder.
-  const codePrompt = codePromptForArtifact(db, opts.wave != null
+  // so the base prompt below has no suffix; runner.ts resolves the
+  // per-artifact suffix via promptForArtifact once the claim reveals which
+  // artifact this session actually got.
+  const baseCodePrompt = opts.wave != null
     ? `Write production code for next tests-written task from wave ${opts.wave}`
-    : "Write production code for next tests-written task");
+    : "Write production code for next tests-written task";
+  const codePrompt = codePromptForArtifact(db, baseCodePrompt);
+  const promptForArtifact = (artifactId: string): string =>
+    codePromptForArtifact(db, baseCodePrompt, artifactId);
   let pass = 1;
   let hadFailures = false;
 
@@ -320,6 +324,7 @@ export async function runMigrate(
               releaseClaimsOnFailure: true,
               preClaim: { fromStatus: "tests-written", tier: "first-class", wave: opts.wave },
               resolution: runtime,
+              promptForArtifact,
             })
           ));
       hadFailures ||= codeResults.some((result) => result.exitCode !== 0);

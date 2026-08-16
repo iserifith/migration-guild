@@ -82,7 +82,7 @@ test("formatPlanningBlockMessage returns the disposition-blocked message AFTER s
     const block = formatPlanningBlockMessage(readiness);
     assert.ok(block, "disposition branch fires when earlier branches are clear");
     assert.equal(block.summary, "Planning blocked by unconfirmed dependency dispositions.");
-    assert.equal(block.command, "node migration/registry/dist/cli.js list-dispositions --status proposed");
+    assert.equal(block.command, "node migration/dist/registry/cli.js list-dispositions --status proposed");
     assert.match(block.reason, /1 librar/);
 
     // Ordering: a dependency-strategy block wins over the disposition branch

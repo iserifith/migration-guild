@@ -218,7 +218,23 @@ export async function confirmDispositions(db: Database.Database): Promise<void> 
         process.stdout.write("  ✓ confirmed\n");
         decided = true;
       } else if (answer === "n") {
-        process.stdout.write(isReProposal ? "  – current disposition kept\n" : "  – skipped (counts in the readiness gate)\n");
+        if (isReProposal) {
+          // Decline the re-proposal: re-confirm with the current disposition
+          // as an explicit override so the pending_* group is cleared instead
+          // of leaking through the readiness gate forever (FR-011).
+          confirmDisposition(db, {
+            libraryName: row.library_name,
+            confirmedBy: "operator",
+            disposition: row.disposition,
+            nativeReplacement: row.native_replacement,
+            inlineNote: row.inline_note,
+            lockedTargetVersion: row.locked_target_version,
+            rationale: row.rationale,
+          });
+          process.stdout.write("  – current disposition kept\n");
+        } else {
+          process.stdout.write("  – skipped (counts in the readiness gate)\n");
+        }
         decided = true;
       } else if (answer === "e") {
         const override = await promptDispositionOverride(ask);
@@ -745,7 +761,7 @@ export async function runPlan(
     phase: "planning",
     basePrompt: "Run planning: build the dependency graph and assign wave numbers to all pending artifacts. " +
       "Dependency disposition proposals already exist in the registry for every declared library; refine them where AST-level usage evidence supports a different disposition kind by running " +
-      "`node migration/registry/dist/cli.js propose-disposition --library <group:artifact> --disposition <keep|replace-with-native|inline> --rationale <text> [--native-replacement <api>] [--inline-note <note>] [--locked-target-version <ver>]`. " +
+      "`node migration/dist/registry/cli.js propose-disposition --library <group:artifact> --disposition <keep|replace-with-native|inline> --rationale <text> [--native-replacement <api>] [--inline-note <note>] [--locked-target-version <ver>]`. " +
       "Never invent a replacement to avoid a 'keep' outcome; missing evidence degrades toward keep.",
     enforce: deps.enforceInvariants ?? false,
     retries: deps.retries ?? 0,

@@ -140,7 +140,7 @@ export function formatPlanningBlockMessage(readiness: PlanningReadiness): {
     return {
       summary: "Planning blocked by unconfirmed dependency dispositions.",
       reason: `${count} librar${count === 1 ? "y" : "ies"} lack a confirmed keep / replace-with-native / inline disposition (${sample}${count > 5 ? ", …" : ""}). Every in-scope library needs a confirmed disposition before planning sign-off.`,
-      command: "node migration/registry/dist/cli.js list-dispositions --status proposed",
+      command: "node migration/dist/registry/cli.js list-dispositions --status proposed",
     };
   }
 
