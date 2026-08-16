@@ -8,7 +8,7 @@ through one of them, so each has a contract file:
 | Contract | Interface | Consumers | Requirements |
 |----------|-----------|-----------|--------------|
 | [registry-schema.md](./registry-schema.md) | SQLite registry DDL | every kit component; the durable coordination substrate | FR-001, FR-002, FR-030–FR-034 |
-| [registry-cli.md](./registry-cli.md) | `registry` CLI (`migration/registry/dist/cli.js`) | agents in installed workspaces, guildctl, Mission Control | FR-001–FR-010, FR-034, FR-040–FR-044 |
+| [registry-cli.md](./registry-cli.md) | `registry` CLI (`migration/dist/registry/cli.js`) | agents in installed workspaces, guildctl, Mission Control | FR-001–FR-010, FR-034, FR-040–FR-044 |
 | [guildctl-cli.md](./guildctl-cli.md) | `guildctl` CLI | operators | FR-008, FR-011–FR-019, FR-024–FR-033, FR-039 |
 | [stack-pack-verify.md](./stack-pack-verify.md) | `stack.yaml` stack-pack manifest | stack pack authors; core reads it as data | FR-003, FR-004 |
 | [environment-precedence.md](./environment-precedence.md) | process environment + `.env` loading | operators, every phase run | FR-020–FR-026 |

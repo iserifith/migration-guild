@@ -33,7 +33,7 @@ Remediation — recover failed runs, stalled claims, blocked artifacts, or needs
 The registry CLI tracks all migration state. Run from the project root:
 
 ```bash
-node migration/registry/dist/cli.js <command>
+node migration/dist/registry/cli.js <command>
 ```
 
 Key commands:
@@ -60,7 +60,7 @@ actually know:
   ran out of budget, or you simply did not check — record it explicitly:
 
   ```bash
-  node migration/registry/dist/cli.js set-verification --id <id> \
+  node migration/dist/registry/cli.js set-verification --id <id> \
     --state unverified --method none --reason agent-reported-unverifiable
   ```
 

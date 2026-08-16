@@ -8,8 +8,8 @@ repository using `package/mock/` sample content — never against the repo root.
 
 ## Prerequisites
 
-- Kit built: `npm run build` (compiles `migration/registry/dist/cli.js` and
-  `migration/guildctl/dist/cli.js`).
+- Kit built: `npm run build` (compiles `migration/dist/registry/cli.js` and
+  `migration/dist/guildctl/cli.js`).
 - A scratch workspace: `mkdir /tmp/disp-ws && cd /tmp/disp-ws`, bootstrapped per
   `GETTING-STARTED.md`, with a small legacy Java project containing:
   - a `pom.xml` declaring at least three third-party libraries:
@@ -24,11 +24,11 @@ repository using `package/mock/` sample content — never against the repo root.
 ## Scenario 1 — Collector proposes one record per library (US1, FR-001/FR-012)
 
 ```bash
-node migration/guildctl/dist/cli.js inventory   # registers artifacts + findings
+node migration/dist/guildctl/cli.js inventory   # registers artifacts + findings
 GUILDCTL_AUTO_KEEP_SCOPE=1 GUILDCTL_AUTO_CONFIRM_MAPPINGS=1 \
 GUILDCTL_AUTO_APPROVE_DEPENDENCIES=1 GUILDCTL_AUTO_CONFIRM_DISPOSITIONS=1 \
-  node migration/guildctl/dist/cli.js plan
-node migration/registry/dist/cli.js list-dispositions
+  node migration/dist/guildctl/cli.js plan
+node migration/dist/registry/cli.js list-dispositions
 ```
 
 Expected: one disposition row per manifest-declared library (including the
@@ -40,7 +40,7 @@ invented replacement (spec edge case #2).
 ## Scenario 2 — Interactive confirmation with override (US2, FR-005)
 
 ```bash
-node migration/guildctl/dist/cli.js plan    # TTY, auto-confirm vars unset
+node migration/dist/guildctl/cli.js plan    # TTY, auto-confirm vars unset
 ```
 
 Expected: after the Planner phase, each pending proposal is presented with its
@@ -52,7 +52,7 @@ to `keep` records the override: `list-dispositions` shows `keep`,
 ## Scenario 3 — Unattended run without auto-confirm is fail-closed (FR-006/FR-007)
 
 ```bash
-node migration/guildctl/dist/cli.js plan < /dev/null    # non-interactive, env unset
+node migration/dist/guildctl/cli.js plan < /dev/null    # non-interactive, env unset
 ```
 
 Expected: a silence-first warning that N dispositions are pending; planning
@@ -75,8 +75,8 @@ silently defaulted.
 ## Scenario 5 — Locked dependency set is deterministic and doc-RAG-ready (FR-008/FR-009, SC-004)
 
 ```bash
-node migration/registry/dist/cli.js locked-dependency-set
-node migration/registry/dist/cli.js locked-dependency-set | sha256sum   # twice
+node migration/dist/registry/cli.js locked-dependency-set
+node migration/dist/registry/cli.js locked-dependency-set | sha256sum   # twice
 ```
 
 Expected: identical output across invocations (ORDER BY library_name); every
@@ -87,8 +87,8 @@ Resolution completes well under 5s at 500 libraries (single indexed scan).
 ## Scenario 6 — Migration agents see pruned-library guidance (US3, FR-010)
 
 ```bash
-node migration/registry/dist/cli.js confirm-disposition --library joda-time:joda-time --confirmed-by operator   # accept replace-with-native
-node migration/guildctl/dist/cli.js migrate --wave 1
+node migration/dist/registry/cli.js confirm-disposition --library joda-time:joda-time --confirmed-by operator   # accept replace-with-native
+node migration/dist/guildctl/cli.js migrate --wave 1
 ```
 
 Expected: code-writer pool sessions for artifacts using joda-time receive prompt

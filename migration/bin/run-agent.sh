@@ -23,7 +23,7 @@ set -euo pipefail
 AGENT="${1:?Usage: run-agent.sh <agent> [model] [prompt]}"
 MODEL="${2:-gpt-5-mini}"
 PROMPT="${3:-}"
-REGISTRY="node migration/registry/dist/cli.js"
+REGISTRY="node migration/dist/registry/cli.js"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 LOG_DIR="logs"
 LOG_FILE="${LOG_DIR}/${AGENT}-${TIMESTAMP}.log"

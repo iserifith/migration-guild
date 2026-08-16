@@ -19,7 +19,7 @@ cat > legacy/src/main/webapp/user.jsp <<'EOF'
 <%@ page contentType="text/html" %>
 <html><body>${user.name}</body></html>
 EOF
-node migration/registry/dist/cli.js --help >/dev/null  # registry CLI present
+node migration/dist/registry/cli.js --help >/dev/null  # registry CLI present
 # run inventory scan (scanAndRegister) against the workspace
 ```
 

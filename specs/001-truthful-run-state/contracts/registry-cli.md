@@ -1,6 +1,6 @@
 # Contract: Registry CLI
 
-**Interface**: `node migration/registry/dist/cli.js <command>` — the command surface agents in
+**Interface**: `node migration/dist/registry/cli.js <command>` — the command surface agents in
 installed workspaces use, and the one guildctl and Mission Control read through.
 
 **Conventions**: exit `0` success, `1` error, `2` not found. `--json` emits one JSON document on

@@ -106,12 +106,12 @@ Rows with a pending re-proposal are presented distinctly:
 Operators MAY pre-seed policy before a run:
 
 ```text
-node migration/registry/dist/cli.js propose-disposition \
+node migration/dist/registry/cli.js propose-disposition \
   --library com.fasterxml.jackson.core:jackson-databind \
   --disposition keep --locked-version 2.17.2 \
   --rationale "Platform serialization standard — always keep" \
   --proposed-by operator-policy
-node migration/registry/dist/cli.js confirm-disposition \
+node migration/dist/registry/cli.js confirm-disposition \
   --library com.fasterxml.jackson.core:jackson-databind --confirmed-by operator
 ```
 

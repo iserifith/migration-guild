@@ -79,7 +79,7 @@ You are a Java migration reviewer. Your job is to review migrated code and its t
 
 1. List migrated artifacts to review:
    ```bash
-   node migration/registry/dist/cli.js list-artifacts --status migrated
+   node migration/dist/registry/cli.js list-artifacts --status migrated
    ```
 2. Read the migrated file and its associated tests.
 3. Read the legacy source for comparison.
@@ -87,11 +87,11 @@ You are a Java migration reviewer. Your job is to review migrated code and its t
 5. Record the verdict in the registry:
    ```bash
    # If ready for human review:
-   node migration/registry/dist/cli.js set-artifact-status --id "<id>" --status reviewed
+   node migration/dist/registry/cli.js set-artifact-status --id "<id>" --status reviewed
 
    # If issues need fixing:
-   node migration/registry/dist/cli.js set-artifact-status --id "<id>" --status needs-rework
-   node migration/registry/dist/cli.js append-event \
+   node migration/dist/registry/cli.js set-artifact-status --id "<id>" --status needs-rework
+   node migration/dist/registry/cli.js append-event \
      --id "<id>" --type reviewed --agent review-agent \
      --summary "<summary of findings>"
    ```

@@ -27,18 +27,18 @@ Use this agent when any of these are true:
 
 1. Identify the artifact to remediate.
    ```bash
-   node migration/registry/dist/cli.js list-artifacts --status blocked
-   node migration/registry/dist/cli.js list-artifacts --status needs-rework
-   node migration/registry/dist/cli.js show-in-progress
-   node migration/registry/dist/cli.js list-runs --limit 20
+   node migration/dist/registry/cli.js list-artifacts --status blocked
+   node migration/dist/registry/cli.js list-artifacts --status needs-rework
+   node migration/dist/registry/cli.js show-in-progress
+   node migration/dist/registry/cli.js list-runs --limit 20
    ```
 
 2. Read the artifact's current state and recent evidence.
    ```bash
-   node migration/registry/dist/cli.js get-artifact --id "<id>"
-   node migration/registry/dist/cli.js get-events --id "<id>" --limit 20
-   node migration/registry/dist/cli.js list-dependencies --id "<id>"
-   node migration/registry/dist/cli.js list-dependents --id "<id>"
+   node migration/dist/registry/cli.js get-artifact --id "<id>"
+   node migration/dist/registry/cli.js get-events --id "<id>" --limit 20
+   node migration/dist/registry/cli.js list-dependencies --id "<id>"
+   node migration/dist/registry/cli.js list-dependents --id "<id>"
    ```
 
 3. Correlate the likely failure mode.
@@ -53,12 +53,12 @@ Use this agent when any of these are true:
 
    **A. Release for retry** — use when the claim is stuck because the worker died or timed out before producing a trustworthy result.
    ```bash
-   node migration/registry/dist/cli.js release \
+   node migration/dist/registry/cli.js release \
      --id "<id>" \
      --agent remediation-agent \
      --reason "Released after failed or stalled worker"
 
-   node migration/registry/dist/cli.js append-event \
+   node migration/dist/registry/cli.js append-event \
      --id "<id>" \
      --type remediated \
      --agent remediation-agent \
@@ -68,13 +68,13 @@ Use this agent when any of these are true:
    **B. Send back one step** — use when the artifact itself needs another pass.
    - For review findings or narrow migration defects, usually return the artifact to `planned` so migration can reclaim it cleanly.
    ```bash
-   node migration/registry/dist/cli.js set-artifact-status \
+   node migration/dist/registry/cli.js set-artifact-status \
      --id "<id>" \
      --status planned \
      --agent remediation-agent \
      --reason "Requeued after remediation review"
 
-   node migration/registry/dist/cli.js append-event \
+   node migration/dist/registry/cli.js append-event \
      --id "<id>" \
      --type remediated \
      --agent remediation-agent \
@@ -83,13 +83,13 @@ Use this agent when any of these are true:
 
    **C. Mark blocked** — use when safe progress depends on missing information, an unresolved dependency, or a human decision.
    ```bash
-   node migration/registry/dist/cli.js set-artifact-status \
+   node migration/dist/registry/cli.js set-artifact-status \
      --id "<id>" \
      --status blocked \
      --agent remediation-agent \
      --reason "<clear blocker reason>"
 
-   node migration/registry/dist/cli.js append-event \
+   node migration/dist/registry/cli.js append-event \
      --id "<id>" \
      --type blocked \
      --agent remediation-agent \
@@ -98,10 +98,10 @@ Use this agent when any of these are true:
 
    **D. Escalate to human** — use when evidence is ambiguous or automatic repair would be risky.
    ```bash
-   node migration/registry/dist/cli.js set-next \
+   node migration/dist/registry/cli.js set-next \
      --summary "Human review needed for <id>" \
      --reason "<why automatic remediation is unsafe>" \
-     --command "node migration/registry/dist/cli.js get-events --id \"<id>\" --limit 20"
+     --command "node migration/dist/registry/cli.js get-events --id \"<id>\" --limit 20"
    ```
 
 5. Stop after one automatic remediation loop per artifact. If the same artifact fails again, escalate instead of retrying repeatedly.
