@@ -32,6 +32,7 @@ import { runBootstrap } from "./commands/bootstrap";
 import { runMigrate } from "./commands/migrate";
 import { runIngestDocs } from "./commands/ingest-docs";
 import { getIndexDb } from "../index-db/connection";
+import { IndexDbError } from "../index-db/commands/entries";
 import { runReview } from "./commands/review";
 import { runStatus, printNextSteps } from "./commands/status";
 import { runRelease } from "./commands/release";
@@ -350,11 +351,19 @@ program
   .option("--library <name>", "Restrict this run to one library (targeted re-ingest after a single version change)")
   .action(async (opts) => {
     const indexDb = getIndexDb();
-    const report = await runIngestDocs(db(), indexDb, {
-      triggeredBy: opts.triggeredBy,
-      library: opts.library,
-    });
-    process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+    try {
+      const report = await runIngestDocs(db(), indexDb, {
+        triggeredBy: opts.triggeredBy,
+        library: opts.library,
+      });
+      process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+    } catch (error) {
+      if (error instanceof IndexDbError) {
+        process.stderr.write(`\n  ✗ ${error.message}\n\n`);
+        process.exit(1);
+      }
+      throw error;
+    }
   });
 
 // ─── review ───────────────────────────────────────────────────────────────────

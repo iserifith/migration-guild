@@ -77,6 +77,7 @@ test("applyIndexDbSchema creates the FTS sync triggers", () => {
   const triggers = names(db, "trigger");
   assert.ok(triggers.includes("documentation_entries_ai"));
   assert.ok(triggers.includes("documentation_entries_ad"));
+  assert.ok(triggers.includes("documentation_entries_au"));
 });
 
 test("applyIndexDbSchema creates ingestion_runs with the contract's columns", () => {
@@ -132,4 +133,29 @@ test("FTS sync triggers keep the virtual table in sync with documentation_entrie
   db.prepare("DELETE FROM documentation_entries WHERE entry_id = 'doc-1'").run();
   const afterDelete = db.prepare(`SELECT rowid FROM documentation_entries_fts WHERE documentation_entries_fts MATCH 'checkNotNull'`).all();
   assert.equal(afterDelete.length, 0);
+});
+
+test("FTS sync trigger keeps the virtual table in sync on UPDATE (ON CONFLICT ... DO UPDATE re-ingestion)", () => {
+  const db = new Database(":memory:");
+  applyIndexDbSchema(db);
+  db.prepare(`INSERT INTO ingestion_runs (run_id, triggered_by, locked_set_snapshot_count) VALUES ('run-1', 'test', 1)`).run();
+  db.prepare(`INSERT INTO documentation_entries (
+      entry_id, library_name, library_version, symbol_kind, symbol_name, signature,
+      description, return_type, source_url, source_excerpt, ingestion_run_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run("doc-2", "com.google.guava:guava", "33.2.1-jre", "method", "Preconditions#checkArgument",
+      "(boolean)", "Original description mentioning widgetry.", "void",
+      "https://example.test/docs", "Original description mentioning widgetry.", "run-1");
+
+  // A re-ingest that only UPDATEs the row (same unique key: library/version/
+  // kind/name/signature) must NOT leave the FTS index serving the old text —
+  // the AFTER INSERT trigger alone does not fire for an UPDATE statement.
+  db.prepare("UPDATE documentation_entries SET description = ? WHERE entry_id = 'doc-2'")
+    .run("Corrected description mentioning gizmology instead.");
+
+  const stale = db.prepare(`SELECT rowid FROM documentation_entries_fts WHERE documentation_entries_fts MATCH 'widgetry'`).all();
+  assert.equal(stale.length, 0, "old content must not remain searchable after an UPDATE");
+
+  const fresh = db.prepare(`SELECT rowid FROM documentation_entries_fts WHERE documentation_entries_fts MATCH 'gizmology'`).all();
+  assert.equal(fresh.length, 1, "corrected content must be searchable after an UPDATE");
 });
