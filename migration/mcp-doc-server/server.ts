@@ -22,6 +22,8 @@ import {
   lookupLibraryDoc,
   searchLibraryDocs,
 } from "./queries";
+import { verifyReferences } from "../index-db/commands/entries";
+import type { VerifyReferencesResult } from "../index-db/commands/entries";
 import { resolveIndexDbPath } from "../guildctl/config";
 
 export const MCP_SERVER_NAME = "guild-docs";
@@ -45,6 +47,54 @@ export class DocLookupValidationError extends Error {
 
 /** Local type alias so queries.ts can throw the server's validation error without a circular import. */
 export type DocQueryDb = Pick<Database.Database, "prepare">;
+
+/**
+ * validateReference throws DocLookupValidationError (mapped to a tool error
+ * below) on any reference missing a required field — so a malformed batch is
+ * distinguishable from a valid batch that found nothing.
+ */
+function validateReference(raw: unknown): { library_name: string; library_version: string; symbol_name: string; signature?: string } {
+  if (typeof raw !== "object" || raw === null) {
+    throw new DocLookupValidationError("each reference must be an object");
+  }
+  const r = raw as Record<string, unknown>;
+  const library_name = r["library_name"];
+  const library_version = r["library_version"];
+  const symbol_name = r["symbol_name"];
+  if (typeof library_name !== "string" || !library_name.trim()) {
+    throw new DocLookupValidationError("reference missing required field: library_name");
+  }
+  if (typeof library_version !== "string" || !library_version.trim()) {
+    throw new DocLookupValidationError("reference missing required field: library_version");
+  }
+  if (typeof symbol_name !== "string" || !symbol_name.trim()) {
+    throw new DocLookupValidationError("reference missing required field: symbol_name");
+  }
+  const signature = r["signature"];
+  return {
+    library_name: library_name.trim(),
+    library_version: library_version.trim(),
+    symbol_name: symbol_name.trim(),
+    ...(typeof signature === "string" && signature.trim() ? { signature: signature.trim() } : {}),
+  };
+}
+
+/**
+ * Handler for verify_library_docs (US2, FR-010/FR-010a). Validates the batch
+ * at the tool boundary, delegates to verifyReferences, and returns
+ * { results, truncated, next_cursor } — matching the contract's output shape
+ * (next_cursor is omitted unless the batch was truncated).
+ */
+function verifyLibraryDocsHandler(db: DocQueryDb, rawInput: Record<string, unknown>): VerifyReferencesResult {
+  const references = rawInput["references"];
+  if (!Array.isArray(references) || references.length === 0) {
+    throw new DocLookupValidationError("references must be a non-empty array");
+  }
+  const cursorRaw = rawInput["cursor"];
+  const cursor = typeof cursorRaw === "number" && Number.isInteger(cursorRaw) && cursorRaw >= 0 ? cursorRaw : 0;
+  const validated = references.map(validateReference);
+  return verifyReferences(db, validated, cursor);
+}
 
 export function createDocServer(db: DocQueryDb): Server {
   const server = new Server(
@@ -88,6 +138,33 @@ export function createDocServer(db: DocQueryDb): Server {
           required: ["library_name", "library_version", "query"],
         },
       },
+      {
+        name: "verify_library_docs",
+        description:
+          "Batch-verify many library API references in ONE call (US2, FR-010/FR-010a). " +
+          "Returns one outcome per reference — verified-present | verified-absent | unavailable — " +
+          "order-preserved. Over-limit batches return truncated:true with next_cursor rather than dropping references.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            references: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  library_name: { type: "string" },
+                  library_version: { type: "string" },
+                  symbol_name: { type: "string" },
+                  signature: { type: "string", description: "Disambiguates method overloads (FR-011)." },
+                },
+                required: ["library_name", "library_version", "symbol_name"],
+              },
+            },
+            cursor: { type: "number", description: "Continuation cursor from a previous truncated response." },
+          },
+          required: ["references"],
+        },
+      },
     ],
   }));
 
@@ -100,6 +177,8 @@ export function createDocServer(db: DocQueryDb): Server {
         payload = lookupLibraryDoc(db, input);
       } else if (name === "lookup_library_doc_search") {
         payload = searchLibraryDocs(db, input);
+      } else if (name === "verify_library_docs") {
+        payload = verifyLibraryDocsHandler(db, input);
       } else {
         throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
       }
