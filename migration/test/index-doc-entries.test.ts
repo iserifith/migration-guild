@@ -118,6 +118,36 @@ test("version change deletes superseded rows in the same transaction that writes
   assert.deepEqual(ftsHits.map((r) => r.v), ["33.3.0-jre"]);
 });
 
+test("version change only supersedes the changed symbol, not every sibling entry at the old version", async () => {
+  const { upsertDocumentationEntry } = await import("../index-db/commands/entries");
+  const db = freshDb();
+  seedRun(db, "run-old");
+  upsertDocumentationEntry(db, { ...BASE, ingestionRunId: "run-old" });
+  const sibling = {
+    ...BASE,
+    symbolName: "Preconditions#checkArgument",
+    signature: "(boolean)",
+    sourceExcerpt: "public static void checkArgument(boolean expression) — Ensures the truth of an expression.",
+    ingestionRunId: "run-old",
+  };
+  upsertDocumentationEntry(db, sibling);
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM documentation_entries WHERE library_version = '33.2.1-jre'").pluck().get(),
+    2,
+  );
+
+  seedRun(db, "run-new");
+  upsertDocumentationEntry(db, { ...BASE, libraryVersion: "33.3.0-jre", ingestionRunId: "run-new" });
+
+  const remainingSibling = db
+    .prepare(
+      "SELECT COUNT(*) AS n FROM documentation_entries WHERE library_name = ? AND library_version = ? AND symbol_name = ?",
+    )
+    .pluck()
+    .get(BASE.libraryName, "33.2.1-jre", sibling.symbolName) as number;
+  assert.equal(remainingSibling, 1, "sibling symbol still documented at the old version must survive an unrelated version-supersede write");
+});
+
 test("index-doc-entry CLI command enforces the same write-path invariant (quickstart Scenario 2)", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "guild-indexdb-cli-"));
   const indexDbPath = path.join(dir, ".guild", "index.db");
