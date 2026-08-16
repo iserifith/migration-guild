@@ -6,6 +6,26 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### August 16, 2026
+
+- Expanded the `package/mock/` fixture set for Spec 008 (#112): three additive,
+  java-spring-only legacy fixtures plus docs and one regression test, no core-runtime change
+  (FR-009). `legacy-order-view/` is a Struts 1.x `Action` + `order-view.jsp` that trips both
+  the `struts-action` and `jsp-view` classification signals and carries inline validation +
+  business logic across two request paths — exercising the `view-regeneration-*` (critical)
+  and `view-logic-placement-*` (warning) audit rules end-to-end, solvable to zero view findings
+  when logic is extracted into `*Validator`/`*Service`. `legacy-customer-reports/` declares a
+  REAL Maven `<dependency>` on `legacy-customer-utils` and imports `LegacyCustomerKeyService`,
+  giving the planner a genuine cross-module edge so `guildctl plan` emits 2+ waves with the
+  dependency ordered first (SC-003). `legacy-modernization-bait/` is a deliberately shallow-migration
+  "bait" fixture (`SimpleDateFormat`, raw `Map`/`List`, manual null checks — each mapped to a
+  modern equivalent already in `mappings.md`); it pins the structural gap a rename-only migration
+  would leave, with the detection-rule work explicitly noted as out of scope. All three ship with
+  JUnit 4 legacy-side tests mirroring `LegacyCustomerKeyServiceTest`; `package/mock/README.md`
+  documents all four fixtures per FR-006. New `migration/test/mock-fixture-waves.test.ts` (1/1)
+  pins the SC-003 multi-wave ordering against the real scanner + `buildParallelPools`; full suite
+  is 710/710 green (645 migration + 65 UI).
+
 ### August 15, 2026
 
 - Added the view-logic-placement rule, amending #59's view-regeneration rule (#100): a
