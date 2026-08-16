@@ -55,11 +55,11 @@ test("openReadOnlyIndexDb opens the database read-only", async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test("server registers exactly the two Phase-4 tools", async () => {
+test("server registers exactly the three tools (Phase 4 + Phase 5)", async () => {
   const { client, server } = await makeClient(seededDb());
   const tools = await client.listTools();
   const names = tools.tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ["lookup_library_doc", "lookup_library_doc_search"]);
+  assert.deepEqual(names, ["lookup_library_doc", "lookup_library_doc_search", "verify_library_docs"]);
   await client.close();
   await server.close();
 });
@@ -96,4 +96,58 @@ test("resolveServerIndexDbPath prefers GUILD_INDEX_DB_PATH over the workspace de
   const { resolveServerIndexDbPath } = await import("../mcp-doc-server/server");
   assert.equal(resolveServerIndexDbPath({ GUILD_INDEX_DB_PATH: "/tmp/explicit.db" }), "/tmp/explicit.db");
   assert.match(resolveServerIndexDbPath({}), /\.guild[\/\\]index\.db$/);
+});
+
+/**
+ * T030 (US2): verify_library_docs handler — per contracts/mcp-tool-contract.md.
+ * A batch request returns { results, truncated }, each outcome one of
+ * verified-present | verified-absent | unavailable, in one call.
+ */
+
+test("server registers the verify_library_docs tool (Phase 5)", async () => {
+  const { client, server } = await makeClient(seededDb());
+  const tools = await client.listTools();
+  const names = tools.tools.map((t) => t.name).sort();
+  assert.deepEqual(names, ["lookup_library_doc", "lookup_library_doc_search", "verify_library_docs"]);
+  await client.close();
+  await server.close();
+});
+
+test("verify_library_docs returns results/truncated shape, one outcome per reference", async () => {
+  const { client, server } = await makeClient(seededDb());
+  const res = await client.callTool({
+    name: "verify_library_docs",
+    arguments: {
+      references: [
+        { library_name: "com.google.guava:guava", library_version: "33.2.1-jre", symbol_name: "Preconditions#checkNotNull", signature: "(java.lang.Object)" },
+        { library_name: "com.google.guava:guava", library_version: "33.2.1-jre", symbol_name: "Preconditions#checkNotBlank", signature: "(java.lang.String)" },
+        { library_name: "com.example:never-ingested", library_version: "1.0", symbol_name: "Anything" },
+      ],
+    },
+  });
+  assert.notEqual(res.isError, true);
+  const payload = JSON.parse((res.content as { type: string; text: string }[])[0].text) as {
+    results: { reference: unknown; outcome: string }[];
+    truncated: boolean;
+  };
+  assert.equal(payload.truncated, false);
+  assert.equal(payload.results.length, 3);
+  assert.deepEqual(
+    payload.results.map((r) => r.outcome),
+    ["verified-present", "verified-absent", "unavailable"],
+  );
+  await client.close();
+  await server.close();
+});
+
+test("verify_library_docs rejects malformed input as a tool error, never a result payload", async () => {
+  const { client, server } = await makeClient(seededDb());
+  const res = await client.callTool({
+    name: "verify_library_docs",
+    // references is required; pass an empty/non-array → malformed.
+    arguments: { references: [] },
+  });
+  assert.equal(res.isError, true, "empty references array must be a tool error");
+  await client.close();
+  await server.close();
 });

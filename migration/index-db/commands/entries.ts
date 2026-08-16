@@ -3,6 +3,20 @@ import type Database from "better-sqlite3";
 import type { DocumentationEntry, IngestionOutcome, IngestionRun, IngestionRunLibrary, SymbolKind } from "../types";
 
 /**
+ * Read-side query-handle validation error, mirroring the MCP server's
+ * `DocLookupValidationError`. Defined here (rather than imported from the
+ * server) to keep entries.ts free of a circular import: the server's
+ * queries.ts already imports types from entries.ts, and the server in turn
+ * imports queries.ts. Callers map this to a tool error at the boundary.
+ */
+export class DocLookupValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DocLookupValidationError";
+  }
+}
+
+/**
  * Migration Guild `.guild/index.db` write-path errors (007-doc-rag-lookup).
  * Mirrors registry/types.ts's RegistryError: validation failures are thrown,
  * never silently coerced, because FR-003a is a write-time guarantee.
@@ -201,4 +215,120 @@ export function recordIngestionRunLibrary(db: Database.Database, opts: RecordIng
 
 export function completeIngestionRun(db: Database.Database, runId: string): void {
   db.prepare("UPDATE ingestion_runs SET completed_at = datetime('now') WHERE run_id = ?").run(runId);
+}
+
+/**
+ * Read-side query handle used by verification/lookup (a structural subset of
+ * `Database` from better-sqlite3 — `prepare` is all we need). Defined locally
+ * to avoid a circular import with the MCP server's own `DocQueryDb` alias.
+ */
+export type DocQueryDb = Pick<Database.Database, "prepare">;
+
+/**
+ * Batch verification (FR-010 / FR-010a, US2) — bounded reference-count limit
+ * derived from the FR-015 token budget. Each reference is a small payload, so
+ * the budget is expressed as a reference count rather than a byte size: the
+ * response is one small object per reference. 50 is a conservative bound —
+ * at ~80 tokens per echoed reference+outcome, 50 ≈ 4k tokens, well inside the
+ * single-response budget shared with lookup/search
+ * (contracts/mcp-tool-contract.md). An over-limit request is truncated with a
+ * `next_cursor`, never silently dropped (data-model.md's Batch Verification
+ * entity).
+ */
+export const MAX_VERIFY_REFERENCES = 50;
+
+export type VerifyOutcome = "verified-present" | "verified-absent" | "unavailable";
+
+export interface VerifyReference {
+  library_name: string;
+  library_version: string;
+  symbol_name: string;
+  signature?: string;
+}
+
+export interface VerifyResultItem {
+  reference: VerifyReference;
+  outcome: VerifyOutcome;
+}
+
+export interface VerifyReferencesResult {
+  results: VerifyResultItem[];
+  truncated: boolean;
+  /** Index of the first reference NOT returned because the batch exceeded MAX_VERIFY_REFERENCES. */
+  next_cursor?: number;
+}
+
+/**
+ * Verify a batch of library API references against the index in a single
+ * read-side compute over existing `documentation_entries` rows (no writes, no
+ * new columns — verification is derived, per contracts/mcp-tool-contract.md).
+ *
+ * Outcome per reference:
+ *  - verified-present — a row exists for library+version+symbol (+signature)
+ *  - verified-absent  — library+version IS indexed but this symbol isn't
+ *  - unavailable      — no rows at all for that library+version
+ *
+ * Order is preserved and exactly one outcome is returned per input reference.
+ * `cursor` supports continuation of a truncated batch: pass the `next_cursor`
+ * from a previous call to receive the remaining slice.
+ */
+export function verifyReferences(
+  db: DocQueryDb,
+  references: VerifyReference[],
+  cursor = 0,
+): VerifyReferencesResult {
+  if (!Array.isArray(references)) {
+    throw new DocLookupValidationError("references must be an array");
+  }
+  if (!Number.isInteger(cursor) || cursor < 0) {
+    throw new DocLookupValidationError("cursor must be a non-negative integer");
+  }
+
+  // Slicing honors an optional continuation cursor and the hard count budget.
+  const slice = references.slice(cursor, cursor + MAX_VERIFY_REFERENCES);
+  const results: VerifyResultItem[] = slice.map((ref) => {
+    const library_name = String(ref.library_name ?? "");
+    const library_version = String(ref.library_version ?? "");
+    const symbol_name = String(ref.symbol_name ?? "");
+    // A method reference uses its signature to disambiguate overloads
+    // (FR-011); the column defaults to NULL for class entries, so an
+    // omitted signature matches class rows and signature-less lookups.
+    const signature = ref.signature === undefined ? null : String(ref.signature ?? "");
+
+    if (!library_name || !library_version || !symbol_name) {
+      // A malformed reference within an otherwise-valid batch yields an
+      // `unavailable` outcome rather than aborting the whole batch — the MCP
+      // handler already enforces input shape at the tool boundary, so this
+      // read-side compute must never throw on a bad per-item field.
+      return { reference: ref, outcome: "unavailable" };
+    }
+
+    // "unavailable" = the library+version has no index rows at all.
+    // "verified-absent" = the scope is indexed but this symbol isn't.
+    const scoped = db
+      .prepare("SELECT COUNT(*) AS n FROM documentation_entries WHERE library_name = ? AND library_version = ?")
+      .get(library_name, library_version) as { n: number };
+    if (scoped.n === 0) {
+      return { reference: ref, outcome: "unavailable" };
+    }
+
+    const present = db
+      .prepare(
+        `SELECT 1 FROM documentation_entries
+         WHERE library_name = ? AND library_version = ? AND symbol_name = ?
+           AND COALESCE(signature, '') = COALESCE(?, '')`,
+      )
+      .get(library_name, library_version, symbol_name, signature ?? "") as unknown;
+    return {
+      reference: ref,
+      outcome: present ? "verified-present" : "verified-absent",
+    };
+  });
+
+  const truncated = cursor + slice.length < references.length;
+  return {
+    results,
+    truncated,
+    ...(truncated ? { next_cursor: cursor + slice.length } : {}),
+  };
 }

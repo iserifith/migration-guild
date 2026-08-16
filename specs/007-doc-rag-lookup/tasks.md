@@ -108,14 +108,14 @@ description: "Task list for feature 007-doc-rag-lookup"
 
 ### Tests for User Story 2
 
-- [ ] T029 [P] [US2] Write the batch-verify test in `migration/test/index-db-verify.test.ts` covering: `verifyReferences` returns one outcome per input reference, order-preserved; a batch mixing indexed and never-ingested libraries returns `unavailable` only for the latter, without failing the whole batch (Edge Cases); and a batch exceeding the token-budget-derived reference-count limit returns `truncated: true` with a `next_cursor` rather than silently dropping references.
-- [ ] T030 [US2] Write the MCP handler test for `verify_library_docs` in `migration/test/mcp-doc-server.test.ts` (same file as T025 — sequential) per `specs/007-doc-rag-lookup/contracts/mcp-tool-contract.md`: a batch request returns the documented `results`/`truncated` shape, with each `outcome` one of `verified-present`/`verified-absent`/`unavailable`.
+- [x] T029 [P] [US2] Write the batch-verify test in `migration/test/index-db-verify.test.ts` covering: `verifyReferences` returns one outcome per input reference, order-preserved; a batch mixing indexed and never-ingested libraries returns `unavailable` only for the latter, without failing the whole batch (Edge Cases); and a batch exceeding the token-budget-derived reference-count limit returns `truncated: true` with a `next_cursor` rather than silently dropping references.
+- [x] T030 [US2] Write the MCP handler test for `verify_library_docs` in `migration/test/mcp-doc-server.test.ts` (same file as T025 — sequential) per `specs/007-doc-rag-lookup/contracts/mcp-tool-contract.md`: a batch request returns the documented `results`/`truncated` shape, with each `outcome` one of `verified-present`/`verified-absent`/`unavailable`.
 
 ### Implementation for User Story 2
 
-- [ ] T031 [US2] Implement `verifyReferences` in `migration/index-db/commands/entries.ts` (same file as T017/T022/T026 — sequential). Makes T029 pass. (depends on T026, T029)
-- [ ] T032 [US2] Implement the `verify_library_docs` tool handler in `migration/mcp-doc-server/server.ts` (same file as T009/T027 — sequential), delegating to T031. Makes T030 pass. (depends on T027, T031, T030)
-- [ ] T033 [P] [US2] Extend `package/agents/review-agent.agent.md` with instructions to collect every distinct library API reference in a reviewed artifact and submit them in a single `verify_library_docs` call, raising a hallucination-risk finding only for `verified-absent` outcomes and explicitly noting `unavailable` references as unverified rather than treating them as either a pass or a finding (FR-010).
+- [x] T031 [US2] Implement `verifyReferences` in `migration/index-db/commands/entries.ts` (same file as T017/T022/T026 — sequential). Makes T029 pass. (depends on T026, T029)
+- [x] T032 [US2] Implement the `verify_library_docs` tool handler in `migration/mcp-doc-server/server.ts` (same file as T009/T027 — sequential), delegating to T031. Makes T030 pass. (depends on T027, T031, T030)
+- [x] T033 [P] [US2] Extend `package/agents/review-agent.agent.md` with instructions to collect every distinct library API reference in a reviewed artifact and submit them in a single `verify_library_docs` call, raising a hallucination-risk finding only for `verified-absent` outcomes and explicitly noting `unavailable` references as unverified rather than treating them as either a pass or a finding (FR-010).
 
 **Checkpoint**: quickstart.md Scenario 5 passes. All three user stories independently functional.
 
