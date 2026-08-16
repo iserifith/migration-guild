@@ -4,9 +4,40 @@ import * as path from "path";
 import * as readline from "readline";
 import { execSync } from "child_process";
 
-const PKG_DIR = fs.existsSync(path.join(__dirname, "package"))
-  ? path.join(__dirname, "package")          // setup.js at kit root (e.g. node setup.js)
-  : path.join(__dirname, "..", "package");   // setup.js inside dist/ subfolder
+// Resolve the kit root (where package/, migration/, stacks/ live). setup.ts can
+// run two ways: from a full checkout (node setup.ts) where these dirs are siblings
+// of setup.ts, or from a built dist/setup.js (where __dirname is dist/ and the kit
+// dirs are one level up at the repo root). We never assume a toolkit-root *layout* —
+// the workspace is meant to be self-contained, so the kit just copies these dirs in.
+function findKitRoot(): string {
+  // 1) dist/setup.js shipped in a built checkout: ../ from dist/
+  const asDist = path.resolve(__dirname, "..");
+  if (
+    fs.existsSync(path.join(asDist, "migration")) &&
+    fs.existsSync(path.join(asDist, "package")) &&
+    fs.existsSync(path.join(asDist, "stacks"))
+  ) {
+    return asDist;
+  }
+  // 2) setup.ts run from a full source checkout: siblings of setup.ts
+  const asSource = path.resolve(__dirname);
+  if (
+    fs.existsSync(path.join(asSource, "migration")) &&
+    fs.existsSync(path.join(asSource, "package")) &&
+    fs.existsSync(path.join(asSource, "stacks"))
+  ) {
+    return asSource;
+  }
+  // 3) setup.js at kit root (e.g. tarball entrypoint that sits beside package/)
+  for (const candidate of [asDist, asSource]) {
+    if (fs.existsSync(path.join(candidate, "package"))) return candidate;
+  }
+  // Fallback to the legacy assumption.
+  return path.resolve(__dirname, "..");
+}
+
+const KIT_ROOT = findKitRoot();
+const PKG_DIR = path.join(KIT_ROOT, "package");
 
 // ── CLI flag parsing ──────────────────────────────────────────────────────────
 // Supports non-interactive mode:
@@ -38,12 +69,16 @@ const GITHUB_MAPPINGS: Record<string, string> = {
   instructions: path.join(GITHUB_DIR, "instructions"),
 };
 
+// Kit directories copied into the workspace so it is self-contained (no toolkit
+// root, no symlinks). Each key is the *source* subdirectory under KIT_ROOT; the
+// value is the destination under the workspace CWD.
 const ROOT_MAPPINGS: Record<string, string> = {
-  legacy: path.join(CWD, "legacy"),
-  modern: path.join(CWD, "modern"),
-  tools:  path.join(CWD, "migration"),
-  harness: path.join(CWD, "harness"),
-  stacks: path.join(CWD, "stacks"),
+  migration: path.join(CWD, "migration"),
+  package:   path.join(CWD, "package"),
+  stacks:    path.join(CWD, "stacks"),
+  harness:   path.join(CWD, "harness"),
+  legacy:    path.join(CWD, "legacy"),
+  modern:    path.join(CWD, "modern"),
 };
 
 const FRAMEWORKS = [
@@ -76,6 +111,12 @@ function copyDir(src: string, dest: string, skip: string[] = []): string[] {
   return copied;
 }
 
+// Source path for a kit directory. Root-level dirs (migration, package, stacks,
+// harness) live under KIT_ROOT; the .github/* assets live under KIT_ROOT/package.
+function kitSrc(folder: string): string {
+  return path.join(KIT_ROOT, folder);
+}
+
 // ── Update mode: sync kit files only, leave registry/legacy/modern alone ──────
 async function runUpdate() {
   console.log("\n╔══════════════════════════════════════╗");
@@ -96,19 +137,21 @@ async function runUpdate() {
     }
   }
 
-  // migration/ — skip registry.db and node_modules
-  const toolsSrc  = path.join(PKG_DIR, "tools");
-  const toolsDest = ROOT_MAPPINGS.tools;
-  const toolFiles = copyDir(toolsSrc, toolsDest, [
-    "node_modules", "registry.db", "registry.db-wal", "registry.db-shm",
-  ]);
-  if (toolFiles.length) {
-    console.log(`  migration/`);
-    toolFiles.forEach((f) => console.log(`    ↺ ${f}`));
-    total += toolFiles.length;
+  // Root-level kit dirs — copied verbatim so the workspace stays self-contained.
+  // migration/ skips its registry.db + node_modules; stacks/ and harness/ copy whole.
+  const rootSync: Array<[string, string[]]> = [
+    ["migration", ["node_modules", "registry.db", "registry.db-wal", "registry.db-shm"]],
+    ["stacks", []],
+    ["harness", []],
+  ];
+  for (const [folder, skip] of rootSync) {
+    const files = copyDir(kitSrc(folder), ROOT_MAPPINGS[folder], skip);
+    if (files.length) {
+      console.log(`  ${folder}/`);
+      files.forEach((f) => console.log(`    ↺ ${f}`));
+      total += files.length;
+    }
   }
-  total += copyDir(path.join(PKG_DIR, "harness"), ROOT_MAPPINGS.harness).length;
-  total += copyDir(path.join(PKG_DIR, "stacks"), ROOT_MAPPINGS.stacks).length;
   const copilotShim = path.join(PKG_DIR, "agent-shim.mjs");
   if (fs.existsSync(copilotShim)) {
     fs.copyFileSync(copilotShim, path.join(CWD, "agent-shim.mjs"));
@@ -175,12 +218,18 @@ async function runInstall() {
     }
   }
 
-  const ROOT_LABELS: Record<string, string> = { legacy: "legacy", modern: "modern", tools: "migration" };
-  for (const [folder, dest] of Object.entries(ROOT_MAPPINGS)) {
-    const src = path.join(PKG_DIR, folder);
-    const files = copyDir(src, dest);
+  // Root-level kit dirs copied into the workspace so it is self-contained — no
+  // toolkit root, no symlinks. migration/ skips registry.db + node_modules.
+  const rootCopy: Array<[string, string[]]> = [
+    ["migration", ["node_modules", "registry.db", "registry.db-wal", "registry.db-shm"]],
+    ["package", ["node_modules"]],
+    ["stacks", []],
+    ["harness", []],
+  ];
+  for (const [folder, skip] of rootCopy) {
+    const files = copyDir(kitSrc(folder), ROOT_MAPPINGS[folder], skip);
     if (files.length) {
-      console.log(`  ${ROOT_LABELS[folder] ?? folder}/`);
+      console.log(`  ${folder}/`);
       files.forEach((f) => console.log(`    + ${f}`));
       total += files.length;
     }
@@ -198,8 +247,9 @@ async function runInstall() {
     total++;
   }
 
-  // Copy .env.example and guildctl.config.json to workspace root
-  for (const f of [".env.example", "guildctl.config.json", "agent-shim.mjs"]) {
+  // Copy .env.example to the workspace root. (Config lives in .guild/config.yaml,
+  // which `guildctl init` scaffolds — there is no separate guildctl.config.json.)
+  for (const f of [".env.example", "agent-shim.mjs"]) {
     const src  = path.join(PKG_DIR, f);
     const dest = path.join(CWD, f);
     if (fs.existsSync(src) && !fs.existsSync(dest)) {
@@ -238,15 +288,18 @@ async function runInstall() {
 
   console.log(`\nDone. ${total} file(s) installed.`);
   const hasLegacy = repoUrl || legacyPath;
-  console.log("\nNext steps:");
-  if (!hasLegacy) console.log("  1. Copy your legacy Java source into legacy/");
+  console.log(`\nNext steps:`);
+  if (!hasLegacy) console.log(`  1. Copy your legacy Java source into legacy/`);
   const n = hasLegacy ? 1 : 2;
-  console.log(`  ${n}. Install runtime dependencies:`);
+  console.log(`  ${n}. Install runtime dependencies (migration/ ships with the kit; this just adds node_modules):`);
   console.log(`       cd migration && npm install && cd ..`);
-  console.log(`  ${n+1}. Run the full migration pipeline:`);
-  console.log(`       npx guildctl run --parallel 3`);
-  console.log(`  ${n+2}. Watch live progress (second terminal):`);
-  console.log(`       node migration/registry/dist/cli.js serve\n`);
+  console.log(`  ${n+1}. Scaffold the workspace config:`);
+  console.log(`       node migration/dist/guildctl/cli.js init`);
+  console.log(`  ${n+2}. Configure your runtime — edit .guild/config.yaml (see GETTING-STARTED "Configure runtime").`);
+  console.log(`  ${n+3}. Run the full migration pipeline:`);
+  console.log(`       node migration/dist/guildctl/cli.js run --parallel 3`);
+  console.log(`  ${n+4}. Watch live progress (second terminal):`);
+  console.log(`       node migration/dist/guildctl/cli.js doctor\n`);
 }
 
 async function main() {

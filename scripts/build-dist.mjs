@@ -166,6 +166,11 @@ async function assembleTarball() {
     }
   }
 
+  // Self-contained kit: bundle the built migration CLI + stacks/ so a copied or
+  // tarball workspace works without a sibling toolkit-root checkout (#115).
+  await copyFilteredDirectory(path.join(repoRoot, "migration", "dist"), path.join(buildDir, "migration", "dist"));
+  await copyFilteredDirectory(path.join(repoRoot, "stacks"), path.join(buildDir, "stacks"));
+
   await fs.mkdir(path.join(packagedDir, "legacy"), { recursive: true });
   await fs.mkdir(path.join(packagedDir, "modern"), { recursive: true });
   await fs.writeFile(path.join(packagedDir, "modern", ".gitkeep"), "");
