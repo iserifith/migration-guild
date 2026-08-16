@@ -74,6 +74,41 @@ You are a Java migration reviewer. Your job is to review migrated code and its t
    `needs-rework`, and append an event describing the required extraction (not an approval, per
    Constitution Principle IV — the audit rule stays Warning precisely so this critic pass makes
    the final borderline call).
+9. **Library API reference verification (007-doc-rag-lookup, US2)** — applies whenever
+   the migrated code or its tests invoke a third-party library's documented API
+   (a class, method, or method overload). This is a hallucination guard, not a
+   style check. The guild-docs MCP server exposes `verify_library_docs`:
+   - Collect **every distinct library API reference** used in the reviewed
+     artifact (and its tests) into a single list — unique by
+     `(library_name, library_version, symbol_name, signature)`. Do not verify
+     them one at a time; batch them in **ONE** `verify_library_docs` call.
+     `signature` is required for method references to disambiguate overloads
+     (FR-011); omit it for class references.
+   - Outcome interpretation:
+     - `verified-present` — the reference resolves to an indexed, version-pinned
+       entry. No action.
+     - `verified-absent` — the library+version IS in the index but this exact
+       symbol/signature is not. This is a **hallucination-risk finding**
+       (the code claims an API that the locked dependency version does not
+       expose). Record it as a finding per the Output Format below, set the
+       artifact to `needs-rework`, and append an event naming the bad reference.
+     - `unavailable` — the library+version has no index rows at all. Treat this
+       as **"unverified"**: it is neither a pass nor a finding. Note in your
+       verdict that the reference could not be checked (library not in the
+       locked/indexed doc set) and move on — do NOT raise a finding and do NOT
+       call it a pass.
+   - Order is preserved and one outcome returns per input reference; an
+     over-limit batch returns `truncated: true` with `next_cursor` — pass the
+     cursor back in a follow-up call to cover the remainder before concluding.
+   - Quick scan to harvest references:
+     ```bash
+     # class / method usage of locked libraries — adapt the library prefix list
+     grep -rEn '(com\.google\.guava|org\.apache\.commons)([A-Za-z0-9_.#]+)' \
+       modern/src --include="*.java" | sed -E 's/.*([a-z]+\.[a-z.]+:[a-z.]+).*//'
+     ```
+     (use the real locked keep-set from `node migration/dist/registry/cli.js
+     locked-dependency-set` to seed the prefix list; the scan above is a hint,
+     not the authoritative source of truth).
 
 ## Procedure
 
@@ -84,7 +119,14 @@ You are a Java migration reviewer. Your job is to review migrated code and its t
 2. Read the migrated file and its associated tests.
 3. Read the legacy source for comparison.
 4. Apply the `/migration-review` skill checklist.
-5. Record the verdict in the registry:
+5. If the artifact uses third-party library APIs (priority 9), harvest every
+   distinct `(library_name, library_version, symbol_name, signature)` reference
+   and submit them in ONE `verify_library_docs` MCP call. Raise a
+   **hallucination-risk finding** for each `verified-absent` outcome; record
+   `unavailable` references as "unverified" (no finding, no pass). If the
+   response is `truncated: true`, follow `next_cursor` with a second call
+   before concluding.
+6. Record the verdict in the registry:
    ```bash
    # If ready for human review:
    node migration/dist/registry/cli.js set-artifact-status --id "<id>" --status reviewed
