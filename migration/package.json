@@ -5,9 +5,9 @@
   "main": "registry/dist/index.js",
   "types": "registry/dist/index.d.ts",
   "bin": {
-    "registry": "registry/dist/cli.js",
-    "guildctl": "guildctl/dist/cli.js",
-    "guild": "guildctl/dist/cli.js"
+    "registry": "dist/registry/cli.js",
+    "guildctl": "dist/guildctl/cli.js",
+    "guild": "dist/guildctl/cli.js"
   },
   "scripts": {
     "test": "node --import tsx --test test/*.test.ts",

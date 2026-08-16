@@ -169,14 +169,14 @@ Runtime contract:
 - `guildctl run inventory` runs validation and refuses to print `Inventory complete` when quality fails.
 - `guildctl run plan` independently re-runs the inventory-quality gate before stack-advisor/planner work.
 
-Existing workspaces should run `node migration/registry/dist/cli.js migrate` (or rerun any guildctl phase, which applies schema idempotently) to create `artifact_classifications`, then rerun inventory so classifications are normalized under the active stack pack. Workspaces from the older package-derived-module scanner should clear and rescan inventory rather than reusing IDs/modules such as `org.apache...`: current Java module semantics are build/source-set ownership. Safe reset sequence for a failed inventory is:
+Existing workspaces should run `node migration/dist/registry/cli.js migrate` (or rerun any guildctl phase, which applies schema idempotently) to create `artifact_classifications`, then rerun inventory so classifications are normalized under the active stack pack. Workspaces from the older package-derived-module scanner should clear and rescan inventory rather than reusing IDs/modules such as `org.apache...`: current Java module semantics are build/source-set ownership. Safe reset sequence for a failed inventory is:
 
 ```bash
 # from the workspace using the packaged runtime paths
-node migration/registry/dist/cli.js migrate
+node migration/dist/registry/cli.js migrate
 sqlite3 .guild/registry.sqlite "DELETE FROM artifact_classifications; DELETE FROM artifact_tags WHERE artifact_id IN (SELECT id FROM artifacts WHERE kind='legacy-source'); DELETE FROM artifacts WHERE kind='legacy-source'; DELETE FROM operator_state WHERE key='inventory_completion';"
-GUILDCTL_INVENTORY_TIMEOUT_MINUTES=45 node migration/guildctl/dist/cli.js run inventory
-node migration/guildctl/dist/cli.js run plan
+GUILDCTL_INVENTORY_TIMEOUT_MINUTES=45 node migration/dist/guildctl/cli.js run inventory
+node migration/dist/guildctl/cli.js run plan
 ```
 
 Preserve hand-curated second-class descriptor/config artifacts unless they were created by the failed inventory run; inventory failure cleanup now handles newly-created unauthorized records automatically.

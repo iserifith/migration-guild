@@ -142,7 +142,7 @@ dispositionContextForArtifact(db, artifactId): string | null
   reason:  "<N> librar(y|ies) lack a confirmed keep / replace-with-native /
             inline disposition (<sample>). Every in-scope library needs a
             confirmed disposition before planning sign-off."
-  command: "node migration/registry/dist/cli.js list-dispositions --status proposed"
+  command: "node migration/dist/registry/cli.js list-dispositions --status proposed"
   ```
 - Dependency-finding interplay: a `dependency_findings` row whose
   `dependency_name` has a confirmed non-keep disposition counts as resolved for

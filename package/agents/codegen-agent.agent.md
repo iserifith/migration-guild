@@ -18,13 +18,13 @@ You are a Java code generator. Translate legacy Java files to the target framewo
 
 1. Claim the next task:
    ```bash
-   node migration/registry/dist/cli.js claim --agent "${GUILDCTL_AGENT_NAME:-codegen-agent}" --model "${MODEL:-unknown}" --from-status tests-written
+   node migration/dist/registry/cli.js claim --agent "${GUILDCTL_AGENT_NAME:-codegen-agent}" --model "${MODEL:-unknown}" --from-status tests-written
    ```
    Exit code 2 = nothing left. Stop.
 
 2. Read the context:
    ```bash
-   node migration/registry/dist/cli.js get-context --id "<id>" --agent analyze-agent
+   node migration/dist/registry/cli.js get-context --id "<id>" --agent analyze-agent
    ```
    The JSON response has a `form` field (`file`, `summary`, or `none`) and a `content` field.
    Use `content` directly — do not convert path separators, search the filesystem for the file,
@@ -39,7 +39,7 @@ You are a Java code generator. Translate legacy Java files to the target framewo
 
 6. Update registry:
    ```bash
-   node migration/registry/dist/cli.js set-artifact-status --id "<id>" --status migrated
+   node migration/dist/registry/cli.js set-artifact-status --id "<id>" --status migrated
    ```
 
 7. Go back to step 1.
