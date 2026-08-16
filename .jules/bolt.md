@@ -4,3 +4,6 @@
 ## 2024-05-28 - Debounce API-bound search inputs
 **Learning:** Components like `BlockersView` had search inputs tied directly to query state objects that triggered immediate API fetches (`fetchBlockers`) on every keystroke. This causes excessive backend requests and UI stutter.
 **Action:** When connecting a search input to an API request, maintain the value in local state (`useState`) for immediate feedback, and debounce the query change propagation (via `setTimeout` in `useEffect`) by 300ms. Also ensure local state synchronizes with external query resets.
+## 2024-05-24 - Memoizing derived state in live polling views
+**Learning:** Complex derived state involving mapping, filtering, or sorting of large arrays can cause performance bottlenecks (dropped frames) when placed inside components that re-render frequently due to polling hooks. React will recalculate the entire derived state on every render, even if the underlying data hasn't changed.
+**Action:** Always wrap complex derived state generation with `React.useMemo` when working in components that frequently poll or subscribe to live data. Ensure the dependency array includes all relevant source data arrays to trigger recalculation only when necessary.
