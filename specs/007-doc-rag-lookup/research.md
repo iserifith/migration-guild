@@ -89,7 +89,17 @@ ingestion proves unreliable for common cases, but is out of v1 scope.
 **Decision**: The ingestion agent's harness is a dedicated config setting
 (`ingestion.harness`, default `"opencode"`), independent of the workspace's
 primary `harness` setting used for Migrate/Critic/Planner. v1 does not inherit
-`config.harness` for this agent.
+`config.harness` for this agent. **`env.AGENT_CMD` still overrides this the
+same way it overrides every other agent dispatch** — ingestion resolves its
+harness through the existing `resolveHarness(config, root, env)` in
+`harness.ts`, called with an effective config whose `harness` field is
+`config.ingestion.harness` instead of `config.harness`, not a separate
+resolution path. `resolveHarness()` already checks `env.AGENT_CMD` first,
+before consulting `config.harness` (`harness.ts:20-22`), so this preserves
+Constitution Principle VII's "`AGENT_CMD` as the escape hatch for custom
+binaries" (`constitution.md:157`) for ingestion exactly as it does for every
+other agent — an operator running a custom harness binary is never silently
+downgraded to `opencode` for ingestion specifically.
 
 **Rationale**: FR-014a requires the ingestion agent to use its harness's
 *already-existing* native web tools rather than the feature building its own.
