@@ -42,10 +42,26 @@ export function loadPersona(agentName, cwd = process.cwd()) {
   return text.trim();
 }
 
+// 007-doc-rag-lookup: the guild-docs MCP server (version-locked doc lookups)
+// is registered only for Migrate/Critic-launching personas. The ingestion
+// agent writes to .guild/index.db directly and does not need it
+// (contracts/mcp-tool-contract.md "Harness wiring").
+export const DOC_MCP_AGENTS = new Set(["code-writer-agent", "test-writer-agent", "review-agent"]);
+
+export function docMcpServerBlock(env = process.env, cwd = process.cwd()) {
+  const serverScript = path.resolve(cwd, "migration", "mcp-doc-server", "server.ts");
+  const indexDbPath = env.GUILD_INDEX_DB_PATH || path.resolve(cwd, ".guild", "index.db");
+  return {
+    type: "local",
+    command: ["node", "--import", "tsx", serverScript],
+    environment: { GUILD_INDEX_DB_PATH: indexDbPath },
+  };
+}
+
 // Write a temporary OpenCode config exposing only the configured provider.
 // The same object is also supplied as OPENCODE_CONFIG_CONTENT so its empty
 // plugin/instruction lists and permissions win over global and project config.
-export function writeProviderConfig(model, env = process.env, readOnly = false) {
+export function writeProviderConfig(model, env = process.env, readOnly = false, options = {}) {
   const baseURL = env.AGENT_PROVIDER_BASE_URL || "https://api.openai.com/v1";
   const apiKeyEnv = env.AGENT_PROVIDER_API_KEY_ENV || "OPENAI_API_KEY";
   const models = {};
@@ -67,6 +83,11 @@ export function writeProviderConfig(model, env = process.env, readOnly = false) 
       },
     },
   };
+  // 007-doc-rag-lookup (T010): register the guild-docs MCP server only for
+  // Migrate/Critic-launching personas.
+  if (options.agent && DOC_MCP_AGENTS.has(options.agent)) {
+    config.mcp = { "guild-docs": docMcpServerBlock(env, options.cwd) };
+  }
   const dir = mkdtempSync(path.join(os.tmpdir(), "guild-opencode-"));
   const file = path.join(dir, "opencode.json");
   writeFileSync(file, JSON.stringify(config, null, 2));
@@ -191,7 +212,7 @@ export function buildOpencodeInvocation(argv, options = {}) {
   const persona = loadPersona(parsed.agent, options.cwd);
   const claimHandoff = buildClaimHandoff(env);
   const fullPrompt = [persona, claimHandoff, parsed.prompt].filter(Boolean).join("\n\n---\n\n");
-  const runtimeConfig = writeProviderConfig(parsed.model, env, parsed.readOnly);
+  const runtimeConfig = writeProviderConfig(parsed.model, env, parsed.readOnly, { agent: parsed.agent, cwd: options.cwd ?? process.cwd() });
   const args = ["run", "--pure", "--auto", "--format", "json"];
   if (parsed.model) args.push("-m", `${PROVIDER_ID}/${parsed.model}`);
   args.push(fullPrompt);

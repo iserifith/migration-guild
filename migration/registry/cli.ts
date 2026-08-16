@@ -58,6 +58,8 @@ import {
   listDispositions,
   upsertProposedDisposition,
 } from "./commands/dispositions";
+import { getIndexDb } from "../index-db/connection";
+import { upsertDocumentationEntry } from "../index-db/commands/entries";
 
 import {
   addApprovedCompanionOutput,
@@ -107,8 +109,7 @@ function run(fn: () => unknown): void {
 const program = new Command();
 program
   .name("registry")
-  .description("Migration artifact registry CLI")
-  .version("0.1.0");
+  .description("Migration artifact registry CLI");
 program.option(
   "--db <path>",
   "Path to registry.db (overrides REGISTRY_DB env)",
@@ -1046,6 +1047,41 @@ program
   .command("locked-dependency-set")
   .description("Print the deterministic locked dependency set (confirmed rows only, ORDER BY library_name ASC) — the artifact consumed by the version-locked doc-RAG proposal (FR-009)")
   .action(() => run(() => getLockedDependencySet(db())));
+
+// ─── 007-doc-rag-lookup: index-doc-entry write path ─────────────────────────
+// The doc-ingestion agent shells out to this command to record each extracted
+// entry (contracts/ingestion-cli-contract.md). The write path enforces
+// FR-003a: entries without a verifiable source_url AND verbatim source_excerpt
+// are rejected here, not merely discouraged in the agent persona.
+
+program
+  .command("index-doc-entry")
+  .description("Record one version-pinned documentation entry into .guild/index.db (007-doc-rag-lookup; agent-facing write path, FR-003a enforced)")
+  .requiredOption("--library <name>", "Canonical library coordinates")
+  .requiredOption("--version <v>", "Locked library version")
+  .requiredOption("--symbol-kind <kind>", "class | method")
+  .requiredOption("--symbol-name <name>", "Fully-qualified class name, or Class#method")
+  .option("--signature <sig>", "Method signature (overload disambiguation, FR-011)")
+  .requiredOption("--description <text>", "What the API does")
+  .option("--return-type <t>", "Method return type")
+  .requiredOption("--source-url <url>", "Authoritative source URL (FR-003a)")
+  .requiredOption("--source-excerpt <text>", "Verbatim excerpt copied from the source (FR-003a)")
+  .option("--ingestion-run-id <id>", "Ingestion run this entry belongs to")
+  .option("--supersedes-version <v>", "Prior indexed version whose rows are deleted in the same transaction")
+  .option("--index-db <path>", "Path to index.db (overrides GUILD_INDEX_DB_PATH env)")
+  .action((opts) => run(() => upsertDocumentationEntry(getIndexDb(opts.indexDb), {
+    libraryName: opts.library,
+    libraryVersion: opts.version,
+    symbolKind: opts.symbolKind,
+    symbolName: opts.symbolName,
+    signature: opts.signature,
+    description: opts.description,
+    returnType: opts.returnType,
+    sourceUrl: opts.sourceUrl,
+    sourceExcerpt: opts.sourceExcerpt,
+    ingestionRunId: opts.ingestionRunId,
+    supersedesVersion: opts.supersedesVersion,
+  })));
 
 program
   .command("record-scope-decision")
