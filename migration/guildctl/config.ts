@@ -318,7 +318,15 @@ function ensureLinkOrJunction(linkPath: string, targetPath: string): void {
 
 export function scaffoldWorkspaceLinks(root: string, toolkitRoot = findToolkitRoot()): void {
   for (const name of ["migration", "package", "stacks"]) {
-    ensureLinkOrJunction(path.join(root, name), path.join(toolkitRoot, name));
+    const linkPath = path.join(root, name);
+    // A self-contained workspace (produced by setup.ts or a distributed kit)
+    // already carries real migration/ package/ stacks/ dirs — leave them as-is
+    // instead of requiring a sibling toolkit-root checkout to link against.
+    if (fs.existsSync(linkPath)) {
+      const stat = fs.lstatSync(linkPath);
+      if (stat.isDirectory() && !stat.isSymbolicLink()) continue;
+    }
+    ensureLinkOrJunction(linkPath, path.join(toolkitRoot, name));
   }
 }
 
