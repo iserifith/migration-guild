@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { DONE_STATUSES, STATUS_COLOR_FALLBACK, STATUS_COLORS } from "../constants";
 import type { WavePlanEntry } from "../types";
 import { EmptyState, ErrorState, LoadingState } from "./ViewState";
@@ -13,7 +14,9 @@ export default function WavePlan({
   error: Error | null;
   onRetry: () => void;
 }) {
-  const sorted = [...entries].sort((a, b) => a.wave - b.wave);
+  // ⚡ Bolt: memoize sorting to prevent unnecessary O(n log n) recalculations
+  // on every render, especially since this component receives live polled data.
+  const sorted = useMemo(() => [...entries].sort((a, b) => a.wave - b.wave), [entries]);
 
   if (loading) {
     return <LoadingState resource="wave plan" />;

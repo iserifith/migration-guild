@@ -7,3 +7,7 @@
 ## 2024-05-29 - Memoize derived data in polling-based components
 **Learning:** Components wrapping live polling hooks (like `useSociety` and `useEvents`, polling every 5s) were transforming raw arrays into expensive view shapes (like `MissionControlData` and `SocietyViewData`) inline on every render. Because the view components (`MissionControlView` and `SocietyViewContent`) were not wrapped in `React.memo`, these derived objects forced deep re-renders of complex dashboards every 5 seconds, causing background UI jank.
 **Action:** When a parent component receives data from polling hooks and maps it into large layout prop objects, wrap the derivation in `React.useMemo` and the view component in `React.memo`. This ensures polling ticks that return identical data references (or just tick timers) don't trigger cascading DOM diffs.
+
+## 2024-05-24 - [Memoize Live Data Derivations]
+**Learning:** Components consuming live, polled data (e.g., from `useLoadableData`) can suffer from severe bottlenecking if derived state computations, such as sorting arrays, are executed on every render.
+**Action:** Always wrap `O(n log n)` or complex mapping/filtering operations with `useMemo` when working with data injected from polling hooks.
