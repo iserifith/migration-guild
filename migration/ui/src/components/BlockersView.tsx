@@ -216,6 +216,7 @@ export default function BlockersView({
                   disabled={blockersPage <= 1}
                   onClick={() => onBlockerQueryChange({ page: blockersPage - 1 })}
                   type="button"
+                  title={blockersPage <= 1 ? "First page reached" : "Previous page"}
                 >
                   Previous
                 </button>
@@ -224,6 +225,7 @@ export default function BlockersView({
                   disabled={blockersTotalPages != null ? blockersPage >= blockersTotalPages : blockers.length < blockersPageSize}
                   onClick={() => onBlockerQueryChange({ page: blockersPage + 1 })}
                   type="button"
+                  title={(blockersTotalPages != null ? blockersPage >= blockersTotalPages : blockers.length < blockersPageSize) ? "Last page reached" : "Next page"}
                 >
                   Next
                 </button>
@@ -381,6 +383,7 @@ export default function BlockersView({
                   disabled={issuesPage <= 1}
                   onClick={() => onIssueQueryChange({ page: issuesPage - 1 })}
                   type="button"
+                  title={issuesPage <= 1 ? "First page reached" : "Previous page"}
                 >
                   Previous
                 </button>
@@ -389,6 +392,7 @@ export default function BlockersView({
                   disabled={issuesTotalPages != null ? issuesPage >= issuesTotalPages : issues.length < issuesPageSize}
                   onClick={() => onIssueQueryChange({ page: issuesPage + 1 })}
                   type="button"
+                  title={(issuesTotalPages != null ? issuesPage >= issuesTotalPages : issues.length < issuesPageSize) ? "Last page reached" : "Next page"}
                 >
                   Next
                 </button>
