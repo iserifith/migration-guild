@@ -48,6 +48,16 @@ jobs:
         run: npm install
         working-directory: migration/ui
 
+      # dist/setup.js and migration/dist are consumed by migration/test's
+      # build-dist and runInstall legacy-source tests — build them before
+      # running the suite so those tests see the real build artifacts.
+      - name: Build setup.ts
+        run: npm run build
+
+      - name: Build migration (registry CLI)
+        run: npm run build
+        working-directory: migration
+
       - name: Test migration (registry CLI)
         run: npm test
         working-directory: migration
