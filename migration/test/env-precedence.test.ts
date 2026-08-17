@@ -11,6 +11,7 @@ import {
   loadGuildEnvironment,
   hasAmbientEnvFlag,
   resolveEnvPrecedenceMode,
+  envDivergences,
   type EnvDivergence,
 } from "../guildctl/env";
 import { resolveAgentLaunch, toResolvedRuntimeReport } from "../guildctl/harness";
@@ -142,6 +143,61 @@ test("GUILD_ENV_PRECEDENCE=ambient keeps the ambient value", () => {
     assert.equal(result.mode, "ambient");
     assert.equal(target["AGENT_CMD"], "/from/ambient");
     assert.equal(result.origin["AGENT_CMD"], "ambient");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an empty .env value does not discard a working ambient credential (Fail-Closed)", () => {
+  const root = workspaceWithEnv("guild-env-empty-but-defined-", "NINE_ROUTER_API_KEY=\n");
+  try {
+    const target: NodeJS.ProcessEnv = {};
+    const result = loadGuildEnvironment({
+      cwd: root,
+      ambient: { NINE_ROUTER_API_KEY: "<working-credential>" },
+      target,
+      argv: [],
+    });
+
+    // Fail-Closed: the empty .env value must not overwrite the working
+    // ambient credential; the resolved value is the working one.
+    assert.equal(target["NINE_ROUTER_API_KEY"], "<working-credential>");
+    assert.equal(result.origin["NINE_ROUTER_API_KEY"], "ambient");
+
+    // The empty-but-defined case is surfaced in the divergence set.
+    // (NINE_ROUTER_API_KEY is a secret, so its recorded project/ambient
+    // values are redacted — we assert only the structural flag + winner.)
+    const divergence = divergenceFor(result.divergences, "NINE_ROUTER_API_KEY");
+    assert.ok(divergence, "the empty-but-defined variable is reported");
+    assert.equal(divergence.emptyButDefined, true);
+    assert.equal(divergence.winner, "ambient");
+    // The recorded load exposes the same entry.
+    assert.ok(envDivergences().find((d) => d.variable === "NINE_ROUTER_API_KEY" && d.emptyButDefined === true));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an unset key and an empty key produce distinct divergence shapes", () => {
+  const root = workspaceWithEnv("guild-env-unset-vs-empty-", "EMPTY_KEY=\n");
+  try {
+    const target: NodeJS.ProcessEnv = {};
+    const result = loadGuildEnvironment({
+      cwd: root,
+      ambient: { EMPTY_KEY: "ambient-value", UNSET_KEY: "ambient-value" },
+      target,
+      argv: [],
+    });
+
+    const empty = divergenceFor(result.divergences, "EMPTY_KEY");
+    assert.ok(empty, "the empty-defined key is reported");
+    assert.equal(empty.emptyButDefined, true);
+    assert.equal(empty.projectValue, "");
+
+    // A key absent from the .env but present in ambient is not a project-file
+    // divergence at all, so it has no emptyButDefined flag.
+    const unset = divergenceFor(result.divergences, "UNSET_KEY");
+    assert.equal(unset, undefined);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

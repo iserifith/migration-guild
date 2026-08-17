@@ -136,7 +136,32 @@ const MAPPING_CASES: Array<{
     response: { bodyText: "<html>503 upstream</html>" },
     verdict: "fail",
     stage: "response",
-    reason: /malformed/i,
+    reason: /response shape unexpected/,
+  },
+  {
+    // US4 / F-1.2: extra/unknown fields on the envelope are tolerated, and a
+    // non-OpenAI minor shape (choices[].text) still yields a pass.
+    name: "extra envelope fields and minor non-OpenAI shape are tolerated",
+    response: {
+      body: {
+        id: "chatcmpl-1",
+        object: "chat.completion",
+        created: 1700000000,
+        model: "rootsys-1",
+        usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+        choices: [{ index: 0, finish_reason: "stop", text: "pong" }],
+      },
+    },
+    verdict: "pass",
+  },
+  {
+    // US4 / F-1.2: choices[].delta.content (a stream-like chunk echoed in a
+    // non-streamed response) is accepted as the completion text.
+    name: "delta.content nested shape is tolerated",
+    response: {
+      body: { choices: [{ delta: { role: "assistant", content: "pong" } }] },
+    },
+    verdict: "pass",
   },
   {
     name: "empty completion",
@@ -584,3 +609,56 @@ for (const blocking of ["fail", "unvalidated"] as const) {
     }
   });
 }
+
+// ─── US4 (FR-010..FR-012, F-1.2): completion shape tolerance + raw-body excerpt ──
+
+test("T041: completionText tolerates extra/unknown envelope fields and nested shapes", async () => {
+  const ok = await preflight([{ body: {
+    id: "cmpl-9",
+    object: "chat.completion",
+    created: 1700000000,
+    model: "rootsys-1",
+    usage: { prompt_tokens: 1, total_tokens: 2 },
+    system_fingerprint: "fp-abc",
+    choices: [{ index: 0, finish_reason: "stop", text: "pong" }],
+  } }]);
+  assert.equal(ok.result.verdict, "pass", JSON.stringify(ok.result));
+});
+
+test("T042: a malformed body fails with 'response shape unexpected' and a redacted excerpt, never 'malformed response body'", async () => {
+  const { result } = await preflight([{ bodyText: "not json at all <html>oops</html>" }]);
+  assert.equal(result.verdict, "fail");
+  assert.equal(result.failedStage, "response");
+  assert.ok(result.reason, "a reason is reported");
+  assert.match(result.reason!, /response shape unexpected/);
+  assert.doesNotMatch(result.reason!, /provider returned a malformed response body/);
+  assert.match(result.reason!, /body excerpt:/);
+});
+
+test("T043: the malformed-body excerpt redacts the credential value (FR-019)", async () => {
+  // The credential value sits in the env, but a provider could echo it back in
+  // a garbage body. Confirm it never survives into the reported reason.
+  const echoed = `oops ${CREDENTIAL_VALUE} leaked`;
+  const { result, calls } = await preflight([{ bodyText: echoed }]);
+  assert.equal(result.verdict, "fail");
+  assert.doesNotMatch(result.reason ?? "", new RegExp(CREDENTIAL_VALUE));
+  assert.match(result.reason ?? "", /<redacted>/);
+  // The credential must also never have been sent in a way that leaks into the
+  // call record's plaintext body (it rides the Authorization header, not body).
+  assert.equal(calls.length, 1);
+});
+
+test("T044: a reachable provider that answers with an unparseable body is distinguished from one that is unreachable", async () => {
+  const shape = await preflight([{ bodyText: "not json at all" }]);
+  assert.match(shape.result.reason ?? "", /response shape unexpected/);
+  assert.doesNotMatch(shape.result.reason ?? "", /provider unreachable/);
+
+  const unreachable = await preflight([{ networkError: "ECONNREFUSED rootsys.cloud:443" }]);
+  assert.match(unreachable.result.reason ?? "", /provider unreachable/);
+  assert.doesNotMatch(unreachable.result.reason ?? "", /response shape unexpected/);
+});
+
+test("T045: a delta.content shape (streamed chunk echoed non-streamed) passes and reports the completion", async () => {
+  const { result } = await preflight([{ body: { choices: [{ delta: { content: "pong" } }] } }]);
+  assert.equal(result.verdict, "pass", JSON.stringify(result));
+});

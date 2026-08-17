@@ -82,7 +82,20 @@ export interface AgentRunResult {
   prompt: string;
   logFile?: string;
   exitCode: number;
+  /**
+   * The harness CLI's captured stdout+stderr when the run failed (FR-013 /
+   * US5 #121). Passed through VERBATIM and uncapped here; callers that surface
+   * it in a message cap it (slice(0,512)) — no provider/harness branching
+   * (constitution VII: the stderr passes through untouched). Empty when the
+   * run had no observable output or exited 0.
+   */
+  capturedOutput?: string;
+  /** The harness that was launched (e.g. "opencode", "codex", "custom"). */
+  harness?: string;
 }
+
+/** Max characters of harness output surfaced in a failure message (US5 #121). */
+export const HARNESS_OUTPUT_CAP = 512;
 
 /**
  * Decide how to spawn the agent CLI cross-platform.
@@ -367,7 +380,10 @@ export function summarizeRunFailures(results: AgentRunResult[]): string | null {
       const logNote = result.logFile
         ? ` log=${path.relative(process.cwd(), result.logFile) || result.logFile}`
         : "";
-      return `${result.agent} exit=${result.exitCode}${logNote}`;
+      const harnessName = result.harness ?? "harness";
+      const captured = (result.capturedOutput ?? "").slice(0, HARNESS_OUTPUT_CAP);
+      const capturedNote = captured ? `\n    ${harnessName} (exit ${result.exitCode}) output:\n${captured}` : "";
+      return `${result.agent} exit=${result.exitCode}${logNote}${capturedNote}`;
     })
     .join("; ");
 
@@ -577,6 +593,18 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   proc.stdout?.on("data", bumpActivity);
   proc.stderr?.on("data", bumpActivity);
 
+  // US5 (#121): capture the harness CLI's raw stdout+stderr so a failure can
+  // surface its words verbatim (constitution VII — neither stderr nor stdout
+  // is sanitised or branched on by provider/harness). Kept uncapped here; the
+  // message path caps it at HARNESS_OUTPUT_CAP.
+  let capturedOutput = "";
+  const capture = (chunk: Buffer | string): void => {
+    capturedOutput += chunk.toString();
+  };
+  proc.stdout?.on("data", capture);
+  proc.stderr?.on("data", capture);
+  const harnessName = launch.harness.name;
+
   return new Promise((resolve) => {
     let settled = false;
     let timedOut = false;
@@ -780,6 +808,8 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
         prompt,
         logFile,
         exitCode: finalExitCode,
+        capturedOutput,
+        harness: harnessName,
       };
 
       if (logStream) {

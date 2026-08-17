@@ -44,6 +44,8 @@ export interface EnvDivergence {
   ambientValue: string;
   winner: "project-file" | "ambient";
   secret: boolean;
+  /** True when the project `.env` defined the variable as empty but the ambient environment held a working value — Fail-Closed kept the ambient value (US1/#119). */
+  emptyButDefined?: boolean;
 }
 
 export interface EnvLoadResult {
@@ -176,12 +178,20 @@ export function loadGuildEnvironment(options: LoadEnvironmentOptions = {}): EnvL
     const ambientValue = ambient[variable];
     if (ambientValue === undefined || ambientValue === projectValue) continue;
     const secret = isSensitiveEnvName(variable);
+    // A project `.env` that defines a credential as empty (e.g.
+    // `NINE_ROUTER_API_KEY=`) but no longer supplies it while the surrounding
+    // shell still holds a working value. Fail-Closed (constitution VI): keep
+    // the ambient value rather than discarding it into a silent 401, and flag
+    // the empty-but-defined case so it is visible to operator tooling (US1/#119).
+    const emptyButDefined = projectValue === "" && ambientValue !== undefined && ambientValue !== "";
+    const winner = emptyButDefined ? "ambient" : (mode === "ambient" ? "ambient" : "project-file");
     divergences.push({
       variable,
       projectValue: secret ? REDACTED : projectValue,
       ambientValue: secret ? REDACTED : ambientValue,
-      winner: mode === "ambient" ? "ambient" : "project-file",
+      winner,
       secret,
+      ...(emptyButDefined ? { emptyButDefined: true } : {}),
     });
   }
   divergences.sort((a, b) => a.variable.localeCompare(b.variable));
@@ -192,7 +202,11 @@ export function loadGuildEnvironment(options: LoadEnvironmentOptions = {}): EnvL
   const origin: EnvOriginMap = {};
   for (const [key, value] of Object.entries(fileValues)) {
     const ambientValue = ambient[key];
-    const fileWins = ambientValue === undefined || (mode === "project" && key in project);
+    // Fail-Closed (constitution VI): an empty project `.env` value must not
+    // discard a working ambient value. When the file value is empty but the
+    // ambient environment holds a working (non-empty) value, keep the ambient
+    // value rather than overwriting the credential with an empty string (US1/#119).
+    const fileWins = value !== "" && (ambientValue === undefined || (mode === "project" && key in project));
     if (fileWins) {
       target[key] = value;
       origin[key] = "project-file";

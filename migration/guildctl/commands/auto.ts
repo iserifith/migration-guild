@@ -424,6 +424,16 @@ function scriptedWorker(
     child.stdout?.pipe(process.stdout);
     child.stderr?.pipe(process.stderr);
 
+    // US5 (#121): also buffer the harness CLI's raw stdout+stderr so a non-zero
+    // exit can surface its words verbatim — no provider/harness branching
+    // (constitution VII: the stderr passes through untouched). Capped at 512.
+    let harnessOutput = "";
+    const captureHarnessOut = (chunk: Buffer | string): void => {
+      harnessOutput += chunk.toString();
+    };
+    child.stdout?.on("data", captureHarnessOut);
+    child.stderr?.on("data", captureHarnessOut);
+
     const producerAgent = phase === "repair" ? "remediation-agent" : "code-writer-agent";
     const outcome = await enforceSpawnLimits(child, limitPhaseForAutoWorker(phase), cfg);
     if (outcome.firingLimit) {
@@ -437,7 +447,12 @@ function scriptedWorker(
       throw new Error(`${phase} worker failed to start: ${outcome.spawnError}`);
     }
     if (outcome.exitCode !== 0) {
-      throw new Error(`${phase} worker exited with code ${outcome.exitCode ?? 1}`);
+      const code = outcome.exitCode ?? 1;
+      const tail = harnessOutput.slice(0, 512);
+      throw new Error(
+        `${phase} worker (harness ${harness.name}) exited with code ${code}` +
+        (tail ? `:\n${tail}` : ""),
+      );
     }
   };
 }

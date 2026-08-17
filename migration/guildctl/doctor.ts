@@ -1,6 +1,8 @@
 import * as fs from "fs";
 import * as path from "path";
 import type Database from "better-sqlite3";
+import { type GuildConfig } from "./config";
+import { checkHarness, resolveAgentLaunch } from "./harness";
 
 export type CheckStatus = "pass" | "warn" | "fail";
 
@@ -19,6 +21,8 @@ interface PipelineCheckContext {
   db: Database.Database;
   workspaceRoot: string;
   danglingClaimThresholdMs?: number;
+  /** The resolved Guild configuration, used to probe the active harness's CLI. */
+  config?: GuildConfig;
 }
 
 function count(db: Database.Database, sql: string, params: unknown[] = []): number {
@@ -56,6 +60,32 @@ function parseRegistryTimestamp(raw: string): number {
 export function runPipelineStateChecks(ctx: PipelineCheckContext): CheckResult[] {
   const { db, workspaceRoot } = ctx;
   const checks: CheckResult[] = [];
+
+  // ── Harness CLI present (US3 / #126) ────────────────────────────────────────
+  // Preflight's resolution stage already probes a *config-sourced* harness
+  // (it has a bundled adapter to reach). A custom/AGENT_CMD harness ships no
+  // adapter, so preflight deliberately skips it and the live provider request
+  // is the only proof. doctor must not green-light a harness whose program is
+  // missing or unreachable, so we probe it here. Resolution is free and needs
+  // only `config`; an unconfigured workspace simply yields a pass (nothing to
+  // check). This runs before the tableExists early-return so a fresh installer
+  // who has not run inventory yet still learns their harness is broken.
+  if (ctx.config) {
+    try {
+      const resolution = resolveAgentLaunch({ config: ctx.config, root: workspaceRoot });
+      if (resolution.harness.source === "environment") {
+        const probe = checkHarness(resolution.harness);
+        if (probe.ok) {
+          checks.push({ status: "pass", message: `active harness: ${resolution.harness.name} reachable` });
+        } else {
+          checks.push({ status: "fail", message: probe.message });
+        }
+      }
+    } catch {
+      // Resolution itself failed (e.g. unknown harness) — preflight reports
+      // that under "Runtime path:"; no second failure here.
+    }
+  }
 
   // ── 8. SQLite integrity (run first — everything else assumes a healthy db) ──
   try {

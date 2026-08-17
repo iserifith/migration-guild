@@ -223,7 +223,7 @@ program
     let stateFailed = false;
     try {
       process.stdout.write("\nPipeline state:\n");
-      const stateChecks = runPipelineStateChecks({ db: db(), workspaceRoot: workspaceRoot() });
+      const stateChecks = runPipelineStateChecks({ db: db(), workspaceRoot: workspaceRoot(), config: cfg });
       for (const check of stateChecks) {
         const icon = check.status === "pass" ? "✓" : check.status === "warn" ? "⚠" : "✗";
         process.stdout.write(`${icon} ${check.message}\n`);

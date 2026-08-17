@@ -222,6 +222,25 @@ Set `AGENT_CMD=/path/to/your/agent` to use any CLI that accepts the harness cont
 
 You can mix harnesses per workspace. Set `harness: goose` in `.guild/config.yaml` for the default, then override per-run with `AGENT_CMD` if a specific agent needs opencode.
 
+## Harness selection precedence
+
+The active harness resolves in this order (first match wins):
+
+1. `GUILDCTL_HARNESS` environment variable (highest priority).
+2. `harness:` in `.guild/config.yaml` (project config).
+3. `opencode` (built-in default).
+
+`AGENT_CMD` is independent of the above: when set, it is always selected as a
+`custom` harness regardless of `GUILDCTL_HARNESS` or `harness:`. An empty or
+whitespace-only `GUILDCTL_HARNESS` is ignored and falls through to config, then
+the opencode default.
+
+> **The selected harness CLI must be installed.** `guildctl doctor` probes the
+> resolved harness program and **fails closed** if it is missing or unreachable
+> (e.g. `active harness: goose (goose is missing or unreachable)`), even before
+> the registry tables exist — so a fresh installer learns their harness is
+> broken up front rather than mid-pipeline.
+
 ## Troubleshooting
 
 ### Goose not found
