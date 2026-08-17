@@ -169,7 +169,7 @@ async function runInstall() {
   console.log("╚══════════════════════════════════════╝\n");
 
   let framework: string;
-  let repoUrl: string;
+  let repoUrl = "";
   let legacyPath: string | undefined;
 
   const cliFramework = flag("--framework");
@@ -202,7 +202,20 @@ async function runInstall() {
     }
     console.log(`\n✓ Target framework: ${framework}\n`);
 
-    repoUrl = (await ask(rl, "Legacy repo URL (leave blank to skip): ")).trim();
+    console.log("How do you want to supply your legacy source?\n");
+    console.log("  1. Legacy repo URL (git clone)");
+    console.log("  2. Local legacy directory path");
+    console.log("  (leave blank to skip — legacy/ will be empty)\n");
+    const sourceChoice = (await ask(rl, "Enter number [1]: ")).trim();
+    const sourceMode = sourceChoice === "2" ? 2 : 1;
+    if (sourceMode === 2) {
+      const suppliedPath = (await ask(rl, "Local legacy directory path: ")).trim();
+      if (suppliedPath) {
+        legacyPath = suppliedPath;
+      }
+    } else {
+      repoUrl = (await ask(rl, "Legacy repo URL (leave blank to skip): ")).trim();
+    }
     rl.close();
   }
 
@@ -275,19 +288,34 @@ async function runInstall() {
       console.error(`  You can clone manually: git clone ${repoUrl} legacy/`);
     }
   } else if (legacyPath) {
-    console.log(`\nCopying legacy source from ${legacyPath}...`);
-    try {
-      const legacyDir = path.join(CWD, "legacy");
-      const files = copyDir(legacyPath, legacyDir, [".git"]);
-      console.log(`✓ ${files.length} files copied into legacy/`);
-      total += files.length;
-    } catch (err) {
-      console.error(`✗ Copy failed: ${(err as Error).message}`);
+    // Fail-closed: a missing/invalid local path is NOT silently treated as a
+    // resolved legacy source — surface a clear error and drop legacyPath so the
+    // FR-007 no-legacy warning still fires (US3 FR-012).
+    if (!fs.existsSync(legacyPath) || !fs.statSync(legacyPath).isDirectory()) {
+      console.error(`✗ Legacy path not found: ${legacyPath}`);
+      console.error(`  Provide an existing directory containing your legacy source.`);
+      legacyPath = undefined;
+    } else {
+      console.log(`\nCopying legacy source from ${legacyPath}...`);
+      try {
+        const legacyDir = path.join(CWD, "legacy");
+        const files = copyDir(legacyPath, legacyDir, [".git"]);
+        console.log(`✓ ${files.length} files copied into legacy/`);
+        total += files.length;
+      } catch (err) {
+        console.error(`✗ Copy failed: ${(err as Error).message}`);
+        legacyPath = undefined;
+      }
     }
   }
 
   console.log(`\nDone. ${total} file(s) installed.`);
   const hasLegacy = repoUrl || legacyPath;
+  if (!hasLegacy) {
+    console.log(`\n⚠ WARNING: No legacy source was provided`);
+    console.log(`legacy/ is empty (0 files).`);
+    console.log(`  Supply a legacy repo URL or local directory path so migration has input.`);
+  }
   console.log(`\nNext steps:`);
   if (!hasLegacy) console.log(`  1. Copy your legacy Java source into legacy/`);
   const n = hasLegacy ? 1 : 2;
