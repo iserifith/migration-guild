@@ -220,13 +220,23 @@ export function releaseTask(
 ): Artifact {
   validateId(id);
   const artifact = db
-    .prepare("SELECT status FROM artifacts WHERE id = ?")
-    .get(id) as Pick<Artifact, "status"> | undefined;
+    .prepare("SELECT status, claimed_by FROM artifacts WHERE id = ?")
+    .get(id) as Pick<Artifact, "status" | "claimed_by"> | undefined;
   if (!artifact) throw new RegistryError(2, `Artifact not found: "${id}"`);
-  if (artifact.status !== "in-progress") {
+  // US3 / #124: accept the abandoned-claim "stuck" case — `claimed_by` set but
+  // `status='pending'` — as a releasable state. A claim an agent crashed holding
+  // may never have been promoted to `in-progress`, yet it is still evidence of an
+  // abandoned claim that must be recoverable without human intervention (Principle
+  // III). `planned` + unclaimed is still refused (no claim to release).
+  const isStuck =
+    artifact.status === "in-progress" ||
+    (artifact.status === "pending" && artifact.claimed_by != null);
+  if (!isStuck) {
     throw new RegistryError(
       1,
-      `Cannot release "${id}": status is "${artifact.status}", expected "in-progress".`,
+      `Cannot release "${id}": status is "${artifact.status}"${
+        artifact.claimed_by == null ? ", not claimed" : ""
+      }, expected "in-progress" or "claimed-pending".`,
     );
   }
   if (!getActiveClaimByArtifactId(db, id)) {
