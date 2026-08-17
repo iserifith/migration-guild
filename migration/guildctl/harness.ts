@@ -21,7 +21,25 @@ export function resolveHarness(config: GuildConfig, root: string, env: NodeJS.Pr
     return { name: "custom", command: env.AGENT_CMD, targetCommand: env.AGENT_CMD, source: "environment" };
   }
 
+  // GUILDCTL_HARNESS wins over config.harness and the default, so an operator
+  // can pin a harness for a single run without editing Guild configuration.
+  // An empty string is treated as unset (env vars can be present-but-empty);
+  // config.harness then applies, falling back to "opencode".
+  const envHarness = env.GUILDCTL_HARNESS?.trim();
+  if (envHarness) {
+    return resolveBundledHarness(envHarness, root);
+  }
+
   const name = config.harness || "opencode";
+  return resolveBundledHarness(name, root);
+}
+
+/**
+ * Resolve one of the bundled harness names (opencode, goose, codex, copilot)
+ * to its resolution. Unknown names throw so an operator learns the supported
+ * set rather than launching something that does not exist.
+ */
+function resolveBundledHarness(name: string, root: string): HarnessResolution {
   if (name === "opencode") {
     return { name, command: bundledFile(root, path.join("harness", "opencode.mjs")), targetCommand: "opencode", source: "config" };
   }
@@ -141,7 +159,13 @@ export function resolveAgentLaunch(opts: ResolveAgentLaunchOptions): ResolvedRun
 
   const divergences: ConfigDivergence[] = [];
   if (harness.name !== declaredHarness) {
-    divergences.push({ setting: "harness", declaredValue: declaredHarness, resolvedValue: harness.name, source: originOf("AGENT_CMD") });
+    // The key names *which* override drove the divergence, so an operator
+    // learns which variable (and therefore which file or shell) to edit. A
+    // custom harness comes from AGENT_CMD; a pinned bundled harness from
+    // GUILDCTL_HARNESS. Both read their own env-origin entry; AGENT_CMD's
+    // existing `source: "project-file"` assertion is never touched.
+    const originVar = harness.name === "custom" ? "AGENT_CMD" : "GUILDCTL_HARNESS";
+    divergences.push({ setting: "harness", declaredValue: declaredHarness, resolvedValue: harness.name, source: originOf(originVar) });
   }
   if (model !== declaredModel) {
     // A per-phase model or a provider route selection is project configuration

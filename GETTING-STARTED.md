@@ -75,6 +75,29 @@ when ambient precedence is intentional. Divergences are reported at run start an
 are redacted. In particular, a workspace `.env` value for `AGENT_CMD` now wins over an exported
 ambient `AGENT_CMD`; this can change which harness is launched.
 
+> **Empty vs unset `.env` credentials (#119).** A blank value in `.env` (e.g. `OPENROUTER_API_KEY=`)
+> is treated as *defined-but-empty*, **not** as a directive to wipe a working ambient credential. The
+> runner keeps the ambient value and reports the divergence — so an empty `.env` line never silently
+> discards a credential your shell already provided. Set the value for real, or delete the line
+> entirely, to let the ambient value through unremarked.
+
+---
+
+### Harness selection precedence
+
+The active harness resolves in this order (first match wins):
+
+1. `GUILDCTL_HARNESS` environment variable (highest priority).
+2. `harness:` in `.guild/config.yaml` (project config).
+3. `opencode` (built-in default).
+
+`AGENT_CMD` is independent of the above and, when set, is always selected as a `custom` harness.
+An empty/whitespace `GUILDCTL_HARNESS` falls through to config, then the opencode default.
+
+> **The selected harness CLI must be installed.** `guildctl doctor` probes the resolved harness
+> program and **fails closed** if it is missing or unreachable — run `guildctl doctor` after setup
+> to confirm your harness is healthy before starting the pipeline.
+
 ---
 
 ### Effective time limits

@@ -114,8 +114,17 @@ function failureStageFor(status: number, bodyText: string): PreflightStageId {
 }
 
 function completionText(parsed: unknown): string {
-  const choice = (parsed as any)?.choices?.[0];
-  const content = choice?.message?.content ?? choice?.text ?? "";
+  if (!parsed || typeof parsed !== "object") return "";
+  const data = parsed as Record<string, any>;
+  // Extra/unknown fields on the envelope are tolerated; only the nested path
+  // carrying the text is consulted, and a minor non-OpenAI shape (choices[].text
+  // or choices[].delta.content) is accepted too.
+  const choice = data?.choices?.[0];
+  const content =
+    choice?.message?.content
+    ?? choice?.text
+    ?? choice?.delta?.content
+    ?? (typeof data?.content === "string" ? data.content : "");
   return typeof content === "string" ? content : "";
 }
 
@@ -251,7 +260,7 @@ export async function runPreflight(opts: PreflightOptions): Promise<PreflightRes
   }
   if (outcome.kind === "error") {
     const message = outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
-    return liveFailure("response", redactCredential(`provider request failed: ${truncate(message)}`, credentialValue));
+    return liveFailure("response", redactCredential(`provider unreachable: ${truncate(message)}`, credentialValue));
   }
 
   const response = outcome.response!;
@@ -274,7 +283,14 @@ export async function runPreflight(opts: PreflightOptions): Promise<PreflightRes
   try {
     parsed = JSON.parse(bodyText);
   } catch {
-    return liveFailure("response", "provider returned a malformed response body");
+    // FR-016/F-1.2: distinguish a reachable provider that answered with a body
+    // we cannot parse ("response shape unexpected") from a provider we could not
+    // reach at all ("provider unreachable"), and surface a redacted, capped
+    // excerpt of the offending body so an operator can debug without leaking
+    // secrets. `truncate` already collapses whitespace; cap at 512 here so the
+    // excerpt stays bounded even when raw body is large.
+    const excerpt = truncate(redactCredential(bodyText, credentialValue), 512);
+    return liveFailure("response", `provider response shape unexpected; body excerpt: ${excerpt}`);
   }
 
   if (!completionText(parsed).trim()) {
