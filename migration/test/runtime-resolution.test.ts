@@ -298,6 +298,102 @@ test("resolveHarness keeps its existing contract so current callers are unaffect
   }
 });
 
+// ─── US2 (FR-004..FR-006): GUILDCTL_HARNESS precedence ────────────────────────
+
+test("GUILDCTL_HARNESS overrides config.harness without editing Guild configuration", () => {
+  const root = makeTempDir("guild-runtime-guildctl-harness-");
+  try {
+    const resolved = resolveHarness(config({ harness: "codex" }), root, { GUILDCTL_HARNESS: "opencode" });
+    assert.equal(resolved.name, "opencode");
+    assert.equal(resolved.source, "config");
+    assert.ok(resolved.command.endsWith(path.join("harness", "opencode.mjs")));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("GUILDCTL_HARNESS beats the opencode default and leaves config.harness untouched", () => {
+  const root = makeTempDir("guild-runtime-guildctl-default-");
+  try {
+    const resolved = resolveHarness(config(), root, { GUILDCTL_HARNESS: "goose" });
+    assert.equal(resolved.name, "goose");
+    assert.equal(resolved.source, "config");
+    assert.ok(resolved.command.endsWith(path.join("harness", "goose.mjs")));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an unset or empty GUILDCTL_HARNESS falls back to config.harness then the opencode default", () => {
+  const root = makeTempDir("guild-runtime-guildctl-unset-");
+  try {
+    assert.equal(resolveHarness(config({ harness: "codex" }), root, {}).name, "codex");
+    assert.equal(resolveHarness(config(), root, { GUILDCTL_HARNESS: "" }).name, "opencode");
+    assert.equal(resolveHarness(config(), root, { GUILDCTL_HARNESS: "   " }).name, "opencode");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("GUILDCTL_HARNESS and AGENT_CMD are independent overrides; AGENT_CMD still wins as custom", () => {
+  const root = makeTempDir("guild-runtime-guildctl-vs-agentcmd-");
+  try {
+    const both = resolveHarness(config(), root, { GUILDCTL_HARNESS: "goose", AGENT_CMD: "/opt/custom/agent" });
+    assert.equal(both.name, "custom");
+    assert.equal(both.source, "environment");
+    // GUILDCTL_HARNESS alone (no AGENT_CMD) resolves the bundled harness.
+    const onlyGuildctl = resolveHarness(config(), root, { GUILDCTL_HARNESS: "goose" });
+    assert.equal(onlyGuildctl.name, "goose");
+    assert.equal(onlyGuildctl.source, "config");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("GUILDCTL_HARNESS with an unknown value throws like any unknown harness", () => {
+  const root = makeTempDir("guild-runtime-guildctl-unknown-");
+  try {
+    assert.throws(
+      () => resolveHarness(config(), root, { GUILDCTL_HARNESS: "nope" }),
+      /Unknown harness/,
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a GUILDCTL_HARNESS divergence is keyed via originOf, leaving the AGENT_CMD source intact", () => {
+  const root = makeTempDir("guild-runtime-guildctl-divergence-");
+  try {
+    const resolved = resolveAgentLaunch({
+      config: config(),
+      root,
+      env: { GUILDCTL_HARNESS: "goose", EXAMPLE_PRIVATE_API_KEY: CREDENTIAL_VALUE },
+      envOrigin: { GUILDCTL_HARNESS: "project-file" },
+    });
+    const divergence = resolved.divergences.find((d) => d.setting === "harness");
+    assert.ok(divergence, "a GUILDCTL_HARNESS override diverges from the declared harness");
+    assert.equal(divergence.declaredValue, "opencode");
+    assert.equal(divergence.resolvedValue, "goose");
+    assert.equal(divergence.source, "project-file");
+
+    // The AGENT_CMD case still keys its divergence off AGENT_CMD, never GUILDCTL_HARNESS.
+    const agentCmd = resolveAgentLaunch({
+      config: config(),
+      root,
+      env: { AGENT_CMD: "/opt/custom/agent", EXAMPLE_PRIVATE_API_KEY: CREDENTIAL_VALUE },
+      envOrigin: { AGENT_CMD: "project-file" },
+    });
+    const agentDivergence = agentCmd.divergences.find((d) => d.setting === "harness");
+    assert.ok(agentDivergence);
+    assert.equal(agentDivergence.declaredValue, "opencode");
+    assert.equal(agentDivergence.resolvedValue, "custom");
+    assert.equal(agentDivergence.source, "project-file");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("the runner launches through resolveAgentLaunch, so its env matches the resolved one", async () => {
   const db = createDb();
   const workDir = makeTempDir("guild-runtime-runner-");
