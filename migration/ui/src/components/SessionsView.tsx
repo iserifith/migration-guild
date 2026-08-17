@@ -179,6 +179,7 @@ export default function SessionsView({
             disabled={!canPageBackward}
             onClick={() => onQueryChange({ page: page - 1 })}
             type="button"
+            title={!canPageBackward ? "First page reached" : "Previous page"}
           >
             Previous
           </button>
@@ -187,6 +188,7 @@ export default function SessionsView({
             disabled={!canPageForward}
             onClick={() => onQueryChange({ page: page + 1 })}
             type="button"
+            title={!canPageForward ? "Last page reached" : "Next page"}
           >
             Next
           </button>
