@@ -668,7 +668,8 @@ program
   .option("-p, --parallel <n>", "Number of parallel sessions (migrate / review)", parseInt)
   .option("-w, --wave <n>", "Only migrate artifacts in this wave number (migrate only)", parseInt)
   .action(async (phase: string | undefined, opts) => {
-    switch (phase) {
+    try {
+      switch (phase) {
       case "init": {
         const cfg = resolveGuildConfig({ cwd: initRoot(), profile: program.opts()["profile"] as string | undefined });
         scaffoldDefaultPrompts(cfg);
@@ -716,6 +717,10 @@ program
       default:
         process.stderr.write(`\n  ✗ Unknown phase: "${phase}". Valid: init, inventory, scope, plan, bootstrap, migrate, review, remediate, repair\n\n`);
         process.exit(1);
+      }
+    } catch (err) {
+      process.stderr.write(`${(err as Error)?.message ?? String(err)}\n`);
+      process.exitCode = 1;
     }
   });
 
