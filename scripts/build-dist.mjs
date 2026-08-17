@@ -2,6 +2,7 @@
 
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
+import fsSync from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -146,13 +147,24 @@ async function assembleTarball() {
   await fs.rm(buildDir, { recursive: true, force: true });
   await fs.mkdir(buildDir, { recursive: true });
 
-  await Promise.all([
+  const copyJobs = [
     fs.copyFile(path.join(repoRoot, "dist", "setup.js"), path.join(buildDir, "setup.js")),
     fs.copyFile(path.join(repoRoot, "README.md"), path.join(buildDir, "README.md")),
     fs.copyFile(path.join(repoRoot, "GETTING-STARTED.md"), path.join(buildDir, "GETTING-STARTED.md")),
-    fs.copyFile(path.join(repoRoot, "AGENTS.md"), path.join(buildDir, "AGENTS.md")),
-    fs.cp(path.join(repoRoot, "docs"), path.join(buildDir, "docs"), { recursive: true })
-  ]);
+    fs.copyFile(path.join(repoRoot, "AGENTS.md"), path.join(buildDir, "AGENTS.md"))
+  ];
+
+  // Repo-root docs/ is optional; mirror the .env.example ENOENT-skip precedent so
+  // the build does not crash when docs/ is absent (FR-001..FR-004). Only the
+  // "directory does not exist" case is skipped; any other copy error still throws.
+  const docsSrc = path.join(repoRoot, "docs");
+  if (fsSync.existsSync(docsSrc)) {
+    copyJobs.push(fs.cp(docsSrc, path.join(buildDir, "docs"), { recursive: true }));
+  } else {
+    console.log("  • docs/ not found at repo root — skipping (FR-003)");
+  }
+
+  await Promise.all(copyJobs);
 
   const packagedDir = path.join(buildDir, "package");
   await copyFilteredDirectory(path.join(repoRoot, "package"), packagedDir);
