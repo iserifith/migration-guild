@@ -46,7 +46,7 @@ Scope: kit runtime fixes across `migration/guildctl/` (env/harness/preflight/doc
 ### Implementation for US2
 
 - [ ] [T023] [P1] [US2] In `migration/guildctl/harness.ts` `resolveHarness()` (lines 19–24) insert `GUILDCTL_HARNESS` branch: `const name = env.GUILDCTL_HARNESS || config.harness || "opencode"` (AGENT_CMD branch unchanged) — FR-004 (migration/guildctl/harness.ts)
-- [ ] [T024] [P1] [US2] In `migration/guildctl/harness.ts` `resolveAgentLaunch()` (lines 142–145) set harness divergence `source:"environment"` and `resolvedValue`/`declaredValue` when env-sourced — FR-005 (migration/guildctl/harness.ts)
+- [ ] [T024] [P1] [US2] In `migration/guildctl/harness.ts` `resolveAgentLaunch()` (lines 142–145) key the harness divergence on `env.GUILDCTL_HARNESS` via the existing `originOf()`/`envOrigin` path (do NOT widen `ConfigDivergenceSource` = `"ambient" | "project-file" | "config"`, harness.ts line 45); set `declaredValue`/`resolvedValue`; MUST NOT flip the existing passing assertion `divergence.source === "project-file"` at `runtime-resolution.test.ts:409` (which supplies `origin: { AGENT_CMD: "project-file" }`) — FR-005 (migration/guildctl/harness.ts)
 - [ ] [T025] [P1] [US2] Confirm unknown-value path reuses existing named throw (line 37) listing goose/opencode/codex/copilot — FR-006 (no new branch) (migration/guildctl/harness.ts)
 - [ ] [T026] [P1] [US2] Verify T020/T021/T022 now pass by running `migration/test/runtime-resolution.test.ts`; done when all three new cases green and existing AGENT_CMD/default assertions unaffected (migration/test/runtime-resolution.test.ts)
 
@@ -65,7 +65,7 @@ Scope: kit runtime fixes across `migration/guildctl/` (env/harness/preflight/doc
 
 ### Implementation for US3
 
-- [ ] [T032] [P1] [US3] In `migration/guildctl/doctor.ts` `runPipelineStateChecks()` (lines 56–247) import `resolveAgentLaunch`/`checkHarness` and invoke `checkHarness(resolution.harness)` at top, pushing a `fail`/`pass` `CheckResult` reusing `checkHarness`'s message — FR-007 (migration/guildctl/doctor.ts)
+- [ ] [T032] [P1] [US3] In `migration/guildctl/doctor.ts` `runPipelineStateChecks()` (lines 56–247) import `resolveAgentLaunch`/`checkHarness` and `PipelineCheckContext` (doctor.ts lines 18–22; ensure `cli.ts:226` passes `config` into the context). Invoke `checkHarness(resolution.harness)` at the **top of the function, BEFORE the `tableExists` early-return (lines 73–76)** so a fresh workspace (no registry db) is still covered; push a `fail`/`pass` `CheckResult` reusing `checkHarness`'s message — FR-007. Scope to the custom/AGENT_CMD harness case (the config-sourced case is already covered by the preflight delegation in `doctor`); do not duplicate that path (migration/guildctl/doctor.ts, migration/guildctl/cli.ts)
 - [ ] [T033] [P1] [US3] In launch path `migration/guildctl/commands/auto.ts` (lines 395–440) and `migration/guildctl/runner.ts` (`spawnAgent`) consult `checkHarness(launch.harness)` once before spawning; if `!ok`, throw named `active harness: <name> (<command> missing or unreachable)` at the boundary instead of mid-run exit 1 — FR-008 (migration/guildctl/commands/auto.ts, migration/guildctl/runner.ts)
 - [ ] [T034] [P1] [US3] Verify T030/T031 now pass; done when doctor-pipeline-state missing-harness finding is non-green and no existing check in that file is broken (migration/test/doctor-pipeline-state.test.ts)
 
@@ -104,13 +104,13 @@ Scope: kit runtime fixes across `migration/guildctl/` (env/harness/preflight/doc
 
 ### Implementation for US5
 
-- [ ] [T052] [P2] [US5] In `migration/guildctl/commands/auto.ts` harness spawn (lines 395–440) buffer stdout/stderr instead of piping only to terminal; on `exitCode !== 0` throw `${phase} worker (${harness.name}) exited with code ${exitCode}: ${stdoutStderr}` with verbatim captured text — FR-011 (migration/guildctl/commands/auto.ts)
+- [ ] [T052] [P2] [US5] In `migration/guildctl/commands/auto.ts` harness spawn (lines 395–440) buffer stdout/stderr instead of piping only to terminal; cap the surface at `stdoutStderr.slice(0,512)` (matches the 512-char raw-body cap in preflight.ts lines 101–105) and on `exitCode !== 0` throw `${phase} worker (${harness.name}) exited with code ${exitCode}: ${stdoutStderr}` with verbatim captured text — FR-011 (migration/guildctl/commands/auto.ts)
 - [ ] [T053] [P2] [US5] In `migration/guildctl/runner.ts` `spawnAgent` thread captured stdout+stderr through result/error so `summarizeRunFailures` (runner.ts lines 360–376) can include it; no provider/harness branch — FR-012 (migration/guildctl/runner.ts)
 - [ ] [T054] [P2] [US5] Verify T050/T051 now pass; done when harness stdout+stderr surfaces verbatim and working-provider case is unaffected (migration/test/harness-stderr.test.ts)
 
 **Checkpoint**: US5 independently functional — underlying harness stderr is surfaced with harness name + exit code, no bare exit code.
 
-## Phase 6 — Documentation (INCREMENTAL, FR-013)
+## Phase 6 — Documentation (INCREMENTAL, FR-013 — MUST in spec, delivered as SHOULD-for-MVP)
 
 **Purpose**: document corrected precedence/behavior so onboarding matches runtime.
 
@@ -127,7 +127,7 @@ Scope: kit runtime fixes across `migration/guildctl/` (env/harness/preflight/doc
 - [ ] [T072] [P1] [US3] Run `npm test`; confirm `doctor-pipeline-state.test.ts` green + boundary check (SC-003) (migration/test/)
 - [ ] [T073] [P1] [US4] Run `npm test`; confirm `preflight-resolved-path.test.ts` green (SC-004) (migration/test/)
 - [ ] [T074] [P2] [US5] Run `npm test`; confirm `harness-stderr.test.ts` green (SC-005) (migration/test/)
-- [ ] [T075] [P1] [US1] Regression guard (SC-006): assert existing cases in `runtime-resolution.test.ts`, `env-precedence.test.ts`, `preflight-resolved-path.test.ts`, `doctor-pipeline-state.test.ts` remain green after precedence/divergence/error-surfacing changes (migration/test/)
+- [ ] [T075] [P1] [US1] Regression guard (SC-006): assert existing cases in `runtime-resolution.test.ts`, `env-precedence.test.ts`, `preflight-resolved-path.test.ts`, `doctor-pipeline-state.test.ts`, and `harness-selection.test.ts` (which directly tests `resolveHarness()`/`checkHarness()`, incl. the AGENT_CMD divergence `source === "project-file"` at line 409 and the "doctor harness check flags a missing selected command" case) remain green after precedence/divergence/error-surfacing changes (migration/test/)
 - [ ] [T076] [P1] [US1] Full `npm test` in `migration/` passes end-to-end with all five new/extended suites; report any broken pre-existing case (migration/)
 
 ## Dependencies & Execution Order
@@ -149,5 +149,5 @@ Scope: kit runtime fixes across `migration/guildctl/` (env/harness/preflight/doc
 - Phase 6 docs are independent of Phase 5 implementation and can run alongside it once US1/US2/US3 behavior is settled.
 
 ### MVP vs Incremental Boundaries
-- **MVP** = Phase 0 + Phase 1 (US1) + Phase 2 (US2) + Phase 3 (US3) + Phase 4 (US4) + Phase 7 verify (T070–T073, T075–T076). Satisfies SC-001..SC-004, SC-006. Approvable on its own.
+- **MVP** = Phase 0 + Phase 1 (US1) + Phase 2 (US2) + Phase 3 (US3) + Phase 4 (US4) + Phase 7 verify (T070–T073, T075–T076). Satisfies SC-001..SC-004, SC-006. Approvable on its own. (FR-013 docs is a MUST in the spec but intentionally delivered in the Incremental/docs step — SHOULD-for-MVP milestone; SC-007 is verified by maintainer read-through, no automated gate.)
 - **INCREMENTAL** = Phase 5 (US5, P2) harness-stderr surfacing (SC-005) + Phase 6 docs (FR-013, SC-007) + T074. Sequenced after MVP; deeper no-model-refresh mode is OUT of scope.

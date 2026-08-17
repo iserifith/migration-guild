@@ -270,3 +270,135 @@ mapped task. 2 BLOCKER, 4 ISSUE, 4 NIT findings.
   B1/B2 clear.
 
 Would you like concrete remediation edits drafted for B1 and B2 (the two blockers)?
+
+---
+
+## Re-check after remediation (2026-08-17)
+
+Re-verified every finding below against the remediated `spec.md`/`plan.md`/`tasks.md` AND the
+actual current source (`migration/guildctl/{harness,env,doctor,cli,preflight,runner}.ts` on this
+branch — unmodified by this remediation pass, as expected, since only the spec artifacts changed).
+9 of 10 findings CLEAR. 1 (I3) PARTIALLY CLEARS.
+
+### B1 — BLOCKER: CLEARED
+
+`spec.md` FR-005 now explicitly states `ConfigDivergenceSource` (`"ambient" | "project-file" |
+"config"`) "is explicitly NOT widened" and requires keying the GUILDCTL_HARNESS divergence via the
+same `originOf()`/`envOrigin` path used for `AGENT_CMD`, disambiguated **before** the source is
+chosen (spec.md FR-005; plan.md US2 "Change — environment divergence"; tasks.md T024). Verified
+against actual `harness.ts`:
+- `ConfigDivergenceSource` is still the unwidened 3-member union (harness.ts:45) — the fix doesn't
+  require touching it.
+- `originOf()` (harness.ts:140) is a per-variable lookup (`envOrigin[variable] ?? "ambient"`) and
+  the existing `AGENT_CMD` divergence already keys off it as `originOf("AGENT_CMD")`
+  (harness.ts:144). Keying the new case as `originOf("GUILDCTL_HARNESS")` instead is mechanically
+  independent of the `AGENT_CMD` key, so it cannot retroactively change what
+  `runtime-resolution.test.ts:409` asserts for the `AGENT_CMD`/`origin: { AGENT_CMD: "project-file"
+  }` case — the two keys read different map entries. Buildable as specified; no type change and no
+  regression path to :409 remains in the described approach.
+
+### B2 — BLOCKER: CLEARED
+
+`spec.md` "Source context" (harness.ts bullet) now correctly states `checkHarness()` "is already
+invoked by preflight's resolution stage for the config-sourced harness... before the offline
+branch" and scopes the remaining #126 gap to the AGENT_CMD/custom-harness case + the phase-launch
+boundary. Verified directly against source:
+- `preflight.ts:180-181`: `if (resolution.harness.source === "config") { const probe =
+  (opts.checkAdapter ?? checkHarness)(resolution.harness); ... }`, and the `offline` branch is at
+  `preflight.ts:199` — confirms the check fires before offline short-circuit, exactly as the
+  corrected premise states.
+- `cli.ts:212-221` confirms `doctor` delegates to `runPreflight({ config: cfg, root: cfg.guildRoot,
+  offline: preflightOffline(opts.offline) })`, so the above preflight-side check does cover
+  `doctor --offline` for the config-sourced case, as claimed.
+
+`tasks.md` T032 now specifies all three previously-missing pieces, each verified against current
+line numbers:
+- `PipelineCheckContext` extension: doctor.ts:18-22 currently has `{ db, workspaceRoot,
+  danglingClaimThresholdMs? }` — no `config` field, confirming the gap T032 now calls out.
+- `cli.ts:226` threading: confirmed the current call is exactly `const stateChecks =
+  runPipelineStateChecks({ db: db(), workspaceRoot: workspaceRoot() });` at cli.ts:226, with `cfg`
+  already in scope two lines above (cli.ts:217) — T032's instruction to thread `config` through
+  this call site is accurate and buildable.
+- Insertion point: doctor.ts:73-76 is confirmed to still be the `tableExists(db, "artifacts")`
+  early-return (`if (!tableExists(db, "artifacts")) { checks.push(...); return checks; }`). T032 now
+  says "at the top of the function, BEFORE the tableExists early-return (lines 73-76)" — the
+  self-contradictory "after line 76" placement from the prior plan.md is gone; plan.md's "Change A"
+  section now consistently says "BEFORE the tableExists early-return at line 73–76."
+
+### I1 — ISSUE: CLEARED
+
+`spec.md` FR-013 now reads "...written as a MUST for the feature, but delivered in the
+Incremental/docs step (SHOULD-for-MVP milestone; the MVP approval gate does not require it)."
+(spec.md FR-013). `plan.md`/`tasks.md` MVP boundary sections already excluded it and now say so
+consistently — no remaining contradiction between "MUST" and "excluded from the approvable MVP."
+
+### I2 — ISSUE: CLEARED
+
+`plan.md` "Open Questions" now reads: "Length cap for captured stderr / raw-body excerpt: pinned at
+**512 chars** for both... No open question remains." `tasks.md` T052 carries the same constant:
+`stdoutStderr.slice(0,512)`, explicitly matching the existing 512-char raw-body cap used in T044/
+preflight.ts. The cap is no longer open.
+
+### I3 — ISSUE: PARTIALLY CLEARS
+
+`tasks.md` T075 and `plan.md`'s "Regression guard (SC-006)" section (Testing Strategy) both now name
+`harness-selection.test.ts` in the guard file list, closing the actionable regression-coverage gap
+the finding was primarily about. **However**, `spec.md`'s own SC-006 text — one of the two locations
+the original finding's "Fix location" named — was not updated: `spec.md` SC-006 still reads "...no
+existing test in `runtime-resolution.test.ts`, `env-precedence.test.ts`,
+`preflight-resolved-path.test.ts`, or `doctor-pipeline-state.test.ts` is broken..." with no mention
+of `harness-selection.test.ts` (confirmed via direct read and grep — zero matches for
+"harness-selection" in spec.md). Since SC-006 is the mandatory-artifact success criterion (not just
+an implementation task), this is a residual, low-severity drift between spec.md and
+plan.md/tasks.md on the same guard-list. **Fix location (remaining)**: `spec.md` SC-006 — append
+`harness-selection.test.ts` to the named file list to match plan.md/tasks.md.
+
+### I4 — ISSUE: CLEARED
+
+`spec.md` lines 21-22 now cite: "`(the if (fileWins) block at line 196, with target[key] = value at
+line 197)`" and "`the workspace file is spread into fileValues via const fileValues = { ...project }
+at line 157 (where project was parsed at line 154)`." Verified against actual `env.ts`: line 154 is
+`const project = fs.existsSync(workspaceEnvPath) ? parseCandidate(workspaceEnvPath) : {};`, line 157
+is `const fileValues: Record<string, string> = { ...project };`, line 196 is `if (fileWins) {`, line
+197 is `target[key] = value;`. All four citations now match exactly; the previous line-165 and
+line-197-for-`if(fileWins)` errors are gone.
+
+### N1 — NIT: CLEARED
+
+`plan.md` US2 Testing Strategy bullet now reads: "`resolveHarness({ ...config, harness: "codex" },
+root, { GUILDCTL_HARNESS: "opencode" })` → `name === "opencode"` (env wins)." The garbled
+`"openai"`-equivalent aside is gone.
+
+### N2 — NIT: ACKNOWLEDGED (not a defect; no fix required)
+
+`spec.md` SC-007 now explicitly reads "...verified by a maintainer read-through (no automated gate —
+consistent with the Assumption that docs are a manual-verify step)," which documents the exact
+asymmetry the nit flagged rather than leaving it implicit. This was never blocking; the added phrase
+addresses the spirit of the note.
+
+### N3 — NIT: CLEARED
+
+`plan.md` US3 Change B now reads: "Before spawning (in `spawnAgent`, around runner.ts lines
+390–391, well before the spawn call at :541)." Verified against `runner.ts`: line 391 is `const
+agentCommand = launch.harness.command;` and line 541 is `const proc = spawn(agentSpawn.command,
+agentSpawn.args, {`. The citation no longer implies the spawn call is nearby.
+
+### N4 — NIT: CLEARED
+
+`spec.md` line 23 and `plan.md` line 14 (Summary) both now say "the harness-divergence block in
+`resolveAgentLaunch()` (lines 142–145)" rather than citing the range as if it were the whole
+function. Verified harness.ts:142-145 is exactly the `divergences: ConfigDivergence[] = []` /
+`if (harness.name !== declaredHarness) { ... }` block — matches the corrected description.
+
+### Updated Metrics
+
+- BLOCKER: 0 remaining open (2/2 cleared).
+- ISSUE: 3/4 fully cleared, 1/4 (I3) partially cleared (task-list fixed, spec.md SC-006 text still
+  pending a one-line addition).
+- NIT: 3/4 cleared, 1/4 (N2) acknowledged as addressed-in-spirit (never a hard defect).
+
+### Next Actions
+
+- No remaining BLOCKER — `/speckit-implement` is unblocked on US2 and US3.
+- Optional cleanup before implement (non-blocking): add `harness-selection.test.ts` to `spec.md`
+  SC-006's named file list to match `plan.md`/`tasks.md` (closes the residual half of I3).
