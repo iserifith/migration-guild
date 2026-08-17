@@ -289,3 +289,76 @@ test("doctor command exits non-zero when pipeline-state checks fail", () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+// ─── US3 (FR-007..FR-008): doctor surfaces a missing custom/AGENT_CMD harness ──
+
+function checkWithConfig(db: Database.Database, root: string, config: import("../guildctl/config").GuildConfig, thresholdMs?: number, extraEnv?: NodeJS.ProcessEnv) {
+  const original = { ...process.env };
+  if (extraEnv) Object.assign(process.env, extraEnv);
+  try {
+    return runPipelineStateChecks({ db, workspaceRoot: root, config, danglingClaimThresholdMs: thresholdMs });
+  } finally {
+    process.env = original;
+  }
+}
+
+function loadConfig(root: string): import("../guildctl/config").GuildConfig {
+  // Reuse the same YAML loader the CLI uses so the fixture config.yaml is real.
+  const { resolveGuildConfig } = require("../guildctl/config") as typeof import("../guildctl/config");
+  return resolveGuildConfig({ cwd: root });
+}
+
+test("doctor flags a custom harness (AGENT_CMD) whose program is missing or unreachable", () => {
+  const db = createDb();
+  const root = fixtureRoot();
+  try {
+    const cfg = loadConfig(root);
+    const missing = path.join(os.tmpdir(), `missing-harness-cli-${Date.now()}`);
+    const result = checkWithConfig(db, root, cfg, undefined, { AGENT_CMD: missing });
+    assert.ok(
+      result.some((r) => r.status === "fail" && /active harness: custom.*(missing or unreachable)/.test(r.message)),
+      messages(result),
+    );
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("doctor passes a custom harness whose program is reachable", () => {
+  const db = createDb();
+  const root = fixtureRoot();
+  try {
+    const cfg = loadConfig(root);
+    // `node` itself is always reachable, so a custom harness pointing at it
+    // passes the probe.
+    const result = checkWithConfig(db, root, cfg, undefined, { AGENT_CMD: process.execPath });
+    assert.ok(
+      result.some((r) => r.status === "pass" && /active harness: custom reachable/.test(r.message)),
+      messages(result),
+    );
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("doctor does not duplicate-check a config-sourced harness (preflight owns that)", () => {
+  const db = createDb();
+  const root = fixtureRoot();
+  try {
+    const cfg = loadConfig(root);
+    // No AGENT_CMD / GUILDCTL_HARNESS: this is the default bundled harness,
+    // which preflight already probes. doctor must NOT add its own duplicate
+    // harness finding — there should be zero harness findings here.
+    const result = checkWithConfig(db, root, cfg);
+    assert.equal(
+      result.filter((r) => /active harness/.test(r.message)).length,
+      0,
+      messages(result),
+    );
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
