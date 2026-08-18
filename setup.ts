@@ -322,12 +322,12 @@ async function runInstall() {
   console.log(`  ${n}. Install runtime dependencies (migration/ ships with the kit; this just adds node_modules):`);
   console.log(`       cd migration && npm install && cd ..`);
   console.log(`  ${n+1}. Scaffold the workspace config:`);
-  console.log(`       node migration/dist/guildctl/cli.js init`);
+  console.log(`       node migration/guildctl/dist/cli.js init`);
   console.log(`  ${n+2}. Configure your runtime — edit .guild/config.yaml (see GETTING-STARTED "Configure runtime").`);
   console.log(`  ${n+3}. Run the full migration pipeline:`);
-  console.log(`       node migration/dist/guildctl/cli.js run --parallel 3`);
+  console.log(`       node migration/guildctl/dist/cli.js run --parallel 3`);
   console.log(`  ${n+4}. Watch live progress (second terminal):`);
-  console.log(`       node migration/dist/guildctl/cli.js doctor\n`);
+  console.log(`       node migration/guildctl/dist/cli.js doctor\n`);
 }
 
 async function main() {

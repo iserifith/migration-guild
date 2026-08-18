@@ -36,7 +36,7 @@ cd migration && npm install && cd ..
 
 # 5. Scaffold the workspace config (.guild/config.yaml + prompt pack)
 #    REQUIRED — the CLI reads .guild/config.yaml, not any other file.
-node migration/dist/guildctl/cli.js init
+node migration/guildctl/dist/cli.js init
 
 # 6. Copy and fill in your .env
 cp .env.example .env
@@ -59,10 +59,10 @@ From the Migration Guild repository root, install both test suites and run them 
 
 ```bash
 # Should print the guildctl help text with no errors
-node migration/dist/guildctl/cli.js --help
+node migration/guildctl/dist/cli.js --help
 
 # Should return [] (empty — nothing migrated yet)
-node migration/dist/registry/cli.js list-artifacts
+node migration/registry/dist/cli.js list-artifacts
 ```
 
 ---
@@ -104,7 +104,7 @@ An empty/whitespace `GUILDCTL_HARNESS` falls through to config, then the opencod
 
 Each phase's wall-clock ceiling and inactivity timeout resolve through one precedence order,
 first match wins: **per-phase setting → environment override → project configuration → built-in
-default**. Run `node migration/dist/guildctl/cli.js limits` to see, per phase, which knob
+default**. Run `node migration/guildctl/dist/cli.js limits` to see, per phase, which knob
 governs, the effective value, and whether a floor was applied (5 minutes for analyze/test/
 code-writing/remediation, 1 minute for review/inventory). A kill message always names the knob
 that actually fired, so raising the wrong setting never silently does nothing. This is unrelated
@@ -116,19 +116,19 @@ to `auto-run --limit <n>`, which bounds the number of artifacts processed, not t
 
 ```bash
 # Run phase by phase (recommended for first run):
-node migration/dist/guildctl/cli.js run inventory
-node migration/dist/guildctl/cli.js run plan
-node migration/dist/guildctl/cli.js run bootstrap
-node migration/dist/guildctl/cli.js run migrate --parallel 3
-node migration/dist/guildctl/cli.js run review
+node migration/guildctl/dist/cli.js run inventory
+node migration/guildctl/dist/cli.js run plan
+node migration/guildctl/dist/cli.js run bootstrap
+node migration/guildctl/dist/cli.js run migrate --parallel 3
+node migration/guildctl/dist/cli.js run review
 
 # Or run all phases in one command:
-node migration/dist/guildctl/cli.js run --parallel 3
+node migration/guildctl/dist/cli.js run --parallel 3
 ```
 
 > **Monitor progress** — open a second terminal and run:
 > ```bash
-> node migration/dist/registry/cli.js serve
+> node migration/registry/dist/cli.js serve
 > # → open http://localhost:3322
 > ```
 
@@ -152,7 +152,7 @@ The CLI reads its runtime config from `.guild/config.yaml` (created by `guildctl
 from `guildctl.config.json`. Edit `.guild/config.yaml` and set the default profile plus the harness:
 
 ```yaml
-# .guild/config.yaml (created by `node migration/dist/guildctl/cli.js init`)
+# .guild/config.yaml (created by `node migration/guildctl/dist/cli.js init`)
 harness:
   type: openai-compatible        # how phases invoke the model runtime
 profiles:
@@ -173,7 +173,7 @@ For the migration pipeline, the phase keys are `analysis`, `test-writing`, and `
 You can set a per-phase model under `profiles.default` (e.g. `profiles.default.analysis.model`).
 The CLI loads `.env` automatically — no `export` or `source` needed.
 
-Run `node migration/dist/guildctl/cli.js config` to print the resolved config and confirm your
+Run `node migration/guildctl/dist/cli.js config` to print the resolved config and confirm your
 edits took effect. If `config` still shows stale defaults, you edited the wrong file — only
 `.guild/config.yaml` is read.
 
@@ -183,10 +183,10 @@ edits took effect. If `config` still shows stale defaults, you edited the wrong 
 
 | Problem | Fix |
 |---|---|
-| Agent left a file stuck | `node migration/dist/registry/cli.js release --id "<id>" --agent operator --reason "crashed"` |
+| Agent left a file stuck | `node migration/registry/dist/cli.js release --id "<id>" --agent operator --reason "crashed"` |
 | Background run failed or stalled and the next state is unclear | Run `agent --agent remediation-agent --model claude-sonnet-4.6 --yolo` |
-| Nothing to claim | `node migration/dist/registry/cli.js wave-plan` |
-| Files need rework | `node migration/dist/registry/cli.js list-artifacts --status needs-rework` |
+| Nothing to claim | `node migration/registry/dist/cli.js wave-plan` |
+| Files need rework | `node migration/registry/dist/cli.js list-artifacts --status needs-rework` |
 | OpenAI-compatible runtime env not picked up | Ensure `.env` is in the project root (`my-migration/`), not a subdirectory |
 
 Full CLI reference: see `README.md`.
