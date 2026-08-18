@@ -205,6 +205,8 @@ The adapter (`package/harness/goose.mjs`) does:
 
 **Best for:** Environments where codex is already installed and you want OpenAI's native tooling.
 
+**Provider requirements:** codex expects a provider whose `/v1/models` (and completion) responses match its expected schema. Providers that deviate make codex exit non-zero with the error on stderr — `guildctl` surfaces that captured stderr (capped) when an agent run fails, so the mismatch is visible instead of a bare exit code.
+
 ### Custom harness (`AGENT_CMD`)
 
 Set `AGENT_CMD=/path/to/your/agent` to use any CLI that accepts the harness contract (same `--agent`, `--model`, `--yolo`, `-p` flags). The custom command is responsible for persona loading and provider configuration.

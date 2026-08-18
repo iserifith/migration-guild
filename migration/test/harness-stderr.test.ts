@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
 import { spawnAgent, summarizeRunFailures, HARNESS_OUTPUT_CAP } from "../guildctl/runner";
+import type { AgentRunResult } from "../guildctl/runner";
+import { runInventory } from "../guildctl/commands/inventory";
 import { applySchema } from "../registry/db/schema";
+import { registerArtifact } from "../registry/commands/artifacts";
 
 function createDb(): Database.Database {
   const db = new Database(":memory:");
@@ -129,6 +132,77 @@ exit 0
     if (original == null) delete process.env["AGENT_CMD"];
     else process.env["AGENT_CMD"] = original;
     rmSync(workDir, { recursive: true, force: true });
+    db.close();
+  }
+});
+
+// The remaining #121 residual: the `guildctl run inventory` classify path used to
+// print a bare `✗ <batch> attempt <N> exited with code <code>` and never read
+// result.capturedOutput — so a codex /v1/models schema failure was invisible.
+// The path must surface the captured harness output excerpt, labeled with the
+// harness name and exit code, on every failed attempt (initial + retries).
+test("run inventory classify failure surfaces the captured harness stderr", async () => {
+  const db = createDb();
+  const repoRoot = path.resolve(__dirname, "..", "..");
+  const root = mkdtempSync(path.join(tmpdir(), "guildctl-inventory-stderr-"));
+  const stderrText = "codex error: unexpected response schema from GET /v1/models";
+  const auditSummary = {
+    artifact_count: 1,
+    jvm: { critical: 0, warnings: 0 },
+    dependencies: { total: 0, unresolved: 0 },
+    tools: [],
+  };
+  let stderrChunks = "";
+  const originalWrite = process.stderr.write;
+  cpSync(path.join(repoRoot, "stacks"), path.join(root, "stacks"), { recursive: true });
+  mkdirSync(path.join(root, ".guild"), { recursive: true });
+  writeFileSync(path.join(root, ".guild", "config.yaml"), `version: 1
+stack: java-spring
+inventory:
+  classificationBatchSize: 100
+  maxBatchRetries: 2
+`);
+  registerArtifact(db, {
+    id: "legacy-source:com.acme:Widget",
+    kind: "legacy-source",
+    tier: "first-class",
+    path: "legacy/src/main/java/com/acme/Widget.java",
+  });
+
+  try {
+    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+      stderrChunks += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString();
+      return true;
+    }) as typeof process.stderr.write;
+    await assert.rejects(() =>
+      runInventory(db, root, {
+        scanAndRegister: () => 0,
+        startPolling: () => () => undefined,
+        refreshCompatibilityAudits: () => auditSummary,
+        spawnAgent: async ({ agent, prompt }): Promise<AgentRunResult> => ({
+          runId: `${agent}-run`,
+          agent,
+          model: "m",
+          prompt,
+          logFile: "/tmp/x",
+          exitCode: 1,
+          capturedOutput: `${stderrText}\n`,
+          harness: "codex",
+        }),
+      }),
+    );
+
+    // 1 initial attempt + 2 retries = 3 failed classify calls, each surfacing
+    // the captured output excerpt — not just a bare exit code.
+    assert.match(stderrChunks, /exited with code 1/);
+    assert.match(stderrChunks, /failed after 2 retry\(ies\)/);
+    assert.match(stderrChunks, new RegExp(`codex \\(exit 1\\) output:`));
+    assert.match(stderrChunks, new RegExp(stderrText));
+    const excerpts = stderrChunks.split("codex (exit 1) output:").length - 1;
+    assert.equal(excerpts, 3, "every failed attempt (1 initial + 2 retries) surfaces the excerpt");
+  } finally {
+    process.stderr.write = originalWrite;
+    rmSync(root, { recursive: true, force: true });
     db.close();
   }
 });
