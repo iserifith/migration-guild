@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
-import { spawnAgent } from "../runner";
+import { spawnAgent, HARNESS_OUTPUT_CAP } from "../runner";
 import type { AgentRunResult } from "../runner";
 import { startPolling } from "../poller";
 import { printPhaseHeader, printEvent, printStatusSummary } from "../dashboard";
@@ -373,6 +373,15 @@ export async function runInventory(db: Database.Database, workspaceRoot = resolv
         });
         if (result.exitCode === 0) break;
         process.stderr.write(`  ✗ ${batchLabel} attempt ${attempt} exited with code ${result.exitCode}\n`);
+        // US5 (#121): surface the captured harness output (verbatin, capped) so a
+        // codex /v1/models schema failure is visible instead of a bare exit code.
+        // No provider/harness branching — constitution VII: stderr passes through
+        // untouched. Precedent: summarizeRunFailures in runner.ts:383-386.
+        const captured = (result.capturedOutput ?? "").slice(0, HARNESS_OUTPUT_CAP);
+        if (captured) {
+          const harnessName = result.harness ?? "harness";
+          process.stderr.write(`    ${harnessName} (exit ${result.exitCode}) output:\n${captured}\n`);
+        }
         if (attempt > maxBatchRetries) {
           failedBatches += 1;
           process.stderr.write(`  ✗ ${batchLabel} failed after ${maxBatchRetries} retry(ies)\n`);
