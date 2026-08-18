@@ -106,6 +106,14 @@ Instead:
 
 Use `package/mock/` for maintained sample content instead of recreating `legacy/` or `modern/` at the repo root.
 
+#### Run the repository test suites
+
+From the Migration Guild repository root, install both test suites and run them with one command:
+
+```bash
+(cd migration && npm install) && (cd migration/ui && npm install) && npm test
+```
+
 ### 4. Update installer behavior
 
 `setup.ts` is the installer source. It:
