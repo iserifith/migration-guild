@@ -288,27 +288,37 @@ export default function App() {
       </header>
 
       <nav className="tabs" role="tablist" aria-label="Primary navigation">
-        {TABS.map((t) => (
-          <div
-            key={t.id}
-            role="tab"
-            aria-selected={activeTabId === t.id}
-            tabIndex={0}
-            className={`tab ${activeTabId === t.id ? "active" : ""}`}
-            onClick={() => setActiveTabId(t.id)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setActiveTabId(t.id);
-              }
-            }}
-          >
-            {t.label}
-          </div>
-        ))}
+        {TABS.map((t) => {
+          const tabId = `tab-${t.id.replace(/\s+/g, "-").toLowerCase()}`;
+          return (
+            <div
+              key={t.id}
+              id={tabId}
+              role="tab"
+              aria-selected={activeTabId === t.id}
+              aria-controls="main-panel"
+              tabIndex={0}
+              className={`tab ${activeTabId === t.id ? "active" : ""}`}
+              onClick={() => setActiveTabId(t.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setActiveTabId(t.id);
+                }
+              }}
+            >
+              {t.label}
+            </div>
+          );
+        })}
       </nav>
 
-      <main className="main">
+      <main
+        className="main"
+        id="main-panel"
+        role="tabpanel"
+        aria-labelledby={`tab-${activeTabId.replace(/\s+/g, "-").toLowerCase()}`}
+      >
         {currentTab.render({
           artifacts,
           status,
