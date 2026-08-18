@@ -11,7 +11,9 @@ const repoRoot = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 // Copy a minimal, buildable kit root into a temp dir. We exclude large trees
 // (node_modules, legacy, modern) and reproduce just what build-dist.mjs needs:
 // README.md, GETTING-STARTED.md, AGENTS.md, .env.example, package/, migration/
-// (with a built migration/dist), stacks/, docs/ (optional), and dist/setup.js.
+// (with its own node_modules + migration/ui/node_modules so build-dist can
+// rebuild registry/dist, guildctl/dist, and ui-dist for real), stacks/,
+// docs/ (optional), and dist/setup.js.
 function stageKitRoot(includeDocs: boolean): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "mg-build-"));
   const copy = (rel: string) => {
@@ -36,17 +38,15 @@ function stageKitRoot(includeDocs: boolean): string {
   if (fs.existsSync(migrationNodeModules)) {
     fs.cpSync(migrationNodeModules, path.join(root, "migration", "node_modules"), { recursive: true });
   }
+  // migration/ui/node_modules provides vite/tsc etc. needed when build-dist
+  // self-rebuilds the Mission Control UI (`npm run build:ui`) inside the temp
+  // kit (scripts/build-dist.mjs Step 3/4, US2/#123).
+  const uiNodeModules = path.join(repoRoot, "migration", "ui", "node_modules");
+  if (fs.existsSync(uiNodeModules)) {
+    fs.cpSync(uiNodeModules, path.join(root, "migration", "ui", "node_modules"), { recursive: true });
+  }
   if (includeDocs) {
     copy("docs");
-  }
-
-  // Ship the already-built migration CLI (built once in the real repo root) so
-  // the temp kit has a working migration/dist without re-running tsc in a
-  // node_modules-less clone. build-dist.mjs consumes migration/dist into the
-  // tarball (scripts/build-dist.mjs:183).
-  const builtMigrationDist = path.join(repoRoot, "migration", "dist");
-  if (fs.existsSync(builtMigrationDist)) {
-    fs.cpSync(builtMigrationDist, path.join(root, "migration", "dist"), { recursive: true });
   }
 
   // build-dist.mjs's main() shells out to `npx tsup` to (re)build the kit before

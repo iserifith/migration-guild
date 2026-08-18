@@ -58,6 +58,12 @@ jobs:
         run: npm run build
         working-directory: migration
 
+      # migration/ui-dist is consumed by migration/test/registry-serve-ui-dir.test.ts
+      # (US2/#123) — build it before running the suite so that test sees the
+      # real built UI instead of asserting on a missing directory.
+      - name: Build migration/ui (ui-dist)
+        run: npm run build:ui
+
       - name: Test migration (registry CLI)
         run: npm test
         working-directory: migration

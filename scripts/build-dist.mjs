@@ -142,7 +142,7 @@ async function copyFilteredDirectory(sourceDir, destinationDir, rootDir = source
 }
 
 async function assembleTarball() {
-  console.log("▶ Step 3/3 — Assemble dist/migration-guild-kit.tar.gz");
+  console.log("▶ Step 4/4 — Assemble dist/migration-guild-kit.tar.gz");
 
   await fs.rm(buildDir, { recursive: true, force: true });
   await fs.mkdir(buildDir, { recursive: true });
@@ -180,7 +180,14 @@ async function assembleTarball() {
 
   // Self-contained kit: bundle the built migration CLI + stacks/ so a copied or
   // tarball workspace works without a sibling toolkit-root checkout (#115).
-  await copyFilteredDirectory(path.join(repoRoot, "migration", "dist"), path.join(buildDir, "migration", "dist"));
+  // The tsup pipeline (migration/tsup.config.ts) writes registry/dist and
+  // guildctl/dist — not migration/dist, which no build step ever creates — and
+  // the UI (migration/ui → migration/ui-dist, via the build:ui step above) is
+  // what registry/commands/serve.ts's UI_DIR (../../ui-dist relative to the
+  // packaged registry/dist/cli.js) actually expects to find (#123).
+  await copyFilteredDirectory(path.join(repoRoot, "migration", "registry", "dist"), path.join(buildDir, "migration", "registry", "dist"));
+  await copyFilteredDirectory(path.join(repoRoot, "migration", "guildctl", "dist"), path.join(buildDir, "migration", "guildctl", "dist"));
+  await copyFilteredDirectory(path.join(repoRoot, "migration", "ui-dist"), path.join(buildDir, "migration", "ui-dist"));
   await copyFilteredDirectory(path.join(repoRoot, "stacks"), path.join(buildDir, "stacks"));
 
   await fs.mkdir(path.join(packagedDir, "legacy"), { recursive: true });
@@ -205,13 +212,20 @@ async function main() {
   console.log("╚══════════════════════════════════════╝");
   console.log("");
 
-  console.log("▶ Step 1/3 — Build migration (tsup)");
+  console.log("▶ Step 1/4 — Build migration (tsup)");
   await run("npx", ["tsup"], { cwd: path.join(repoRoot, "migration") });
   console.log("  ✓ migration built");
 
-  console.log("▶ Step 2/3 — Build setup.ts (tsup)");
+  console.log("▶ Step 2/4 — Build setup.ts (tsup)");
   await run("npm", ["run", "build"], { cwd: repoRoot });
   console.log("  ✓ setup.js built");
+
+  console.log("▶ Step 3/4 — Build Mission Control UI (vite)");
+  // Not wrapped in a try/swallow: a failed UI build must fail the whole
+  // dist build (FR-006) the same way a failed tsup step does above — a
+  // silently-absent migration/ui-dist is exactly the #123 defect.
+  await run("npm", ["run", "build:ui"], { cwd: repoRoot });
+  console.log("  ✓ migration/ui-dist built");
 
   await assembleTarball();
 
