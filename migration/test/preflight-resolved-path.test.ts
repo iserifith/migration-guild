@@ -36,7 +36,7 @@ import {
  * network or on a machine-installed agent CLI.
  */
 
-const CREDENTIAL_ENV = "ROOTSYS_API_KEY";
+const CREDENTIAL_ENV = "OPENAI_API_KEY";
 const CREDENTIAL_VALUE = "sk-live-preflight-never-print-0123456789";
 
 function config(overrides: Partial<GuildConfig> = {}): GuildConfig {
@@ -119,14 +119,14 @@ const MAPPING_CASES: Array<{
   },
   {
     name: "model-not-found body under another status",
-    response: { status: 400, body: { error: { message: "The model `fiq/hy3-tencent` does not exist" } } },
+    response: { status: 400, body: { error: { message: "The model `gpt-4o-mini` does not exist" } } },
     verdict: "fail",
     stage: "model-availability",
     reason: /does not exist/i,
   },
   {
     name: "network error",
-    response: { networkError: "ECONNREFUSED rootsys.cloud:443" },
+    response: { networkError: "ECONNREFUSED api.openai.com:443" },
     verdict: "fail",
     stage: "response",
     reason: /ECONNREFUSED/,
@@ -147,7 +147,7 @@ const MAPPING_CASES: Array<{
         id: "chatcmpl-1",
         object: "chat.completion",
         created: 1700000000,
-        model: "rootsys-1",
+        model: "gpt-4o-mini",
         usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
         choices: [{ index: 0, finish_reason: "stop", text: "pong" }],
       },
@@ -186,11 +186,11 @@ for (const testCase of MAPPING_CASES) {
     if (testCase.reason) assert.match(result.reason ?? "", testCase.reason);
     // FR-012: one completion, never a second one to probe adapter fidelity.
     assert.equal(calls.length, 1);
-    assert.match(calls[0].url, /^https:\/\/rootsys\.cloud\/v1\//);
+    assert.match(calls[0].url, /^https:\/\/api\.openai\.com\/v1\//);
     assert.equal(calls[0].method, "POST");
     // FR-013: the resolved block is reported on pass and on fail alike.
     assert.equal(result.resolved?.model, DEFAULT_GUILD_CONFIG.model.model);
-    assert.equal(result.resolved?.providerBaseUrl, "https://rootsys.cloud/v1");
+    assert.equal(result.resolved?.providerBaseUrl, "https://api.openai.com/v1");
     assert.equal(result.resolved?.credentialEnv, CREDENTIAL_ENV);
   });
 }
@@ -345,12 +345,12 @@ test("divergences are reported even when the live check succeeds", async () => {
   assert.equal(result.verdict, "pass");
   const divergence = result.divergences.find((item) => item.setting === "model.base_url");
   assert.ok(divergence, "a resolved value differing from project configuration is always reported");
-  assert.equal(divergence.declaredValue, "https://rootsys.cloud/v1");
+  assert.equal(divergence.declaredValue, "https://api.openai.com/v1");
   assert.equal(divergence.resolvedValue, "https://ambient.example/v1");
 
   const json = preflightJson(result) as { divergences: Array<Record<string, string>> };
   assert.deepEqual(json.divergences, [
-    { setting: "model.base_url", declared: "https://rootsys.cloud/v1", resolved: "https://ambient.example/v1" },
+    { setting: "model.base_url", declared: "https://api.openai.com/v1", resolved: "https://ambient.example/v1" },
   ]);
   assert.match(renderPreflightReport(result), /model\.base_url/);
 });
@@ -528,7 +528,7 @@ function stubVerdict(verdict: PreflightResult["verdict"], failedStage?: Prefligh
     failedStage,
     resolved: {
       harness: { name: "opencode", command: "/kit/harness/opencode.mjs", targetCommand: "opencode", source: "config" },
-      providerBaseUrl: "https://rootsys.cloud/v1",
+      providerBaseUrl: "https://api.openai.com/v1",
       model: DEFAULT_GUILD_CONFIG.model.model,
       credentialEnv: CREDENTIAL_ENV,
       divergences: [],
@@ -617,7 +617,7 @@ test("T041: completionText tolerates extra/unknown envelope fields and nested sh
     id: "cmpl-9",
     object: "chat.completion",
     created: 1700000000,
-    model: "rootsys-1",
+    model: "gpt-4o-mini",
     usage: { prompt_tokens: 1, total_tokens: 2 },
     system_fingerprint: "fp-abc",
     choices: [{ index: 0, finish_reason: "stop", text: "pong" }],
@@ -653,7 +653,7 @@ test("T044: a reachable provider that answers with an unparseable body is distin
   assert.match(shape.result.reason ?? "", /response shape unexpected/);
   assert.doesNotMatch(shape.result.reason ?? "", /provider unreachable/);
 
-  const unreachable = await preflight([{ networkError: "ECONNREFUSED rootsys.cloud:443" }]);
+  const unreachable = await preflight([{ networkError: "ECONNREFUSED api.openai.com:443" }]);
   assert.match(unreachable.result.reason ?? "", /provider unreachable/);
   assert.doesNotMatch(unreachable.result.reason ?? "", /response shape unexpected/);
 });

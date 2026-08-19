@@ -141,8 +141,8 @@ test("guildctl preflight still exits non-zero on a failing verdict (regression g
   const root = fixtureRoot();
   try {
     const dbPath = seedDb(root);
-    const env = { ...process.env, GUILD_PREFLIGHT_OFFLINE: "1" };
-    delete env["ROOTSYS_API_KEY"];
+    const env: NodeJS.ProcessEnv = { ...process.env, GUILD_PREFLIGHT_OFFLINE: "1" };
+    delete env["OPENAI_API_KEY"];
     const result = spawnSync(
       process.execPath,
       ["--import", tsxLoaderUrl(), path.join(repoMigrationRoot(), "guildctl", "cli.ts"), "--workspace", root, "--db", dbPath, "preflight"],
@@ -169,7 +169,7 @@ test("guildctl doctor still exits non-zero when pipeline-state checks fail (regr
     } finally {
       db.close();
     }
-    const env = { ...process.env, DASHSCOPE_API_KEY: "dummy", GUILD_PREFLIGHT_OFFLINE: "1" };
+    const env = { ...process.env, OPENAI_API_KEY: "dummy", GUILD_PREFLIGHT_OFFLINE: "1" };
     const result = spawnSync(
       process.execPath,
       ["--import", tsxLoaderUrl(), path.join(repoMigrationRoot(), "guildctl", "cli.ts"), "--workspace", root, "--db", dbPath, "doctor"],

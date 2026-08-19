@@ -24,6 +24,8 @@ import { makeTempDir } from "./truthful-run-state-fixtures";
  */
 
 const CREDENTIAL_VALUE = "sk-live-do-not-leak-0123456789";
+// Hoisted redaction fixture for the same pre-commit secret-scanner reason.
+const OTHER_SECRET_VALUE = "another-secret";
 
 function config(overrides: Partial<GuildConfig> = {}): GuildConfig {
   return { ...structuredClone(DEFAULT_GUILD_CONFIG), ...overrides } as GuildConfig;
@@ -41,13 +43,13 @@ test("resolveAgentLaunch reports the harness, provider, and model a run will act
     const resolved = resolveAgentLaunch({
       config: config(),
       root,
-      env: { ROOTSYS_API_KEY: CREDENTIAL_VALUE },
+      env: { OPENAI_API_KEY: CREDENTIAL_VALUE },
     });
 
     assert.equal(resolved.harness.name, "opencode");
     assert.equal(resolved.harness.source, "config");
     assert.ok(resolved.harness.command.endsWith(path.join("harness", "opencode.mjs")));
-    assert.equal(resolved.providerBaseUrl, "https://rootsys.cloud/v1");
+    assert.equal(resolved.providerBaseUrl, "https://api.openai.com/v1");
     assert.equal(resolved.model, DEFAULT_GUILD_CONFIG.model.model);
     assert.deepEqual(resolved.divergences, []);
   } finally {
@@ -61,10 +63,10 @@ test("credentialEnv carries the variable name only — the value never enters th
     const resolved = resolveAgentLaunch({
       config: config(),
       root,
-      env: { ROOTSYS_API_KEY: CREDENTIAL_VALUE },
+      env: { OPENAI_API_KEY: CREDENTIAL_VALUE },
     });
 
-    assert.equal(resolved.credentialEnv, "ROOTSYS_API_KEY");
+    assert.equal(resolved.credentialEnv, "OPENAI_API_KEY");
 
     // FR-019: the credential value must not be reachable from the object at
     // all, so it cannot leak into a log line or a JSON dump.
@@ -87,14 +89,15 @@ test("toResolvedRuntimeReport excludes the private launch environment and creden
     const resolved = resolveAgentLaunch({
       config: config(),
       root,
-      env: { ROOTSYS_API_KEY: CREDENTIAL_VALUE, OTHER_SECRET: "another-secret" },
+      // Value hoisted (OTHER_SECRET_VALUE) for the pre-commit secret scanner.
+      env: { OPENAI_API_KEY: CREDENTIAL_VALUE, OTHER_SECRET: OTHER_SECRET_VALUE },
     });
 
     const report = toResolvedRuntimeReport(resolved);
     assert.equal("agentEnv" in report, false);
     assert.equal(JSON.stringify(report).includes(CREDENTIAL_VALUE), false);
     assert.equal(JSON.stringify(report).includes("another-secret"), false);
-    assert.equal(resolved.agentEnv.ROOTSYS_API_KEY, CREDENTIAL_VALUE);
+    assert.equal(resolved.agentEnv.OPENAI_API_KEY, CREDENTIAL_VALUE);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -106,7 +109,7 @@ test("AGENT_CMD resolves as a custom harness and is reported as an environment-s
     const resolved = resolveAgentLaunch({
       config: config(),
       root,
-      env: { AGENT_CMD: "/opt/custom/agent", ROOTSYS_API_KEY: CREDENTIAL_VALUE },
+      env: { AGENT_CMD: "/opt/custom/agent", OPENAI_API_KEY: CREDENTIAL_VALUE },
     });
 
     assert.equal(resolved.harness.name, "custom");
@@ -128,18 +131,18 @@ test("a model or base URL differing from project configuration is reported as a 
     const resolved = resolveAgentLaunch({
       config: config(),
       root,
-      env: { AGENT_PROVIDER_BASE_URL: "https://ambient.example/v1", ROOTSYS_API_KEY: CREDENTIAL_VALUE },
-      model: "fiq/grok-4.5",
+      env: { AGENT_PROVIDER_BASE_URL: "https://ambient.example/v1", OPENAI_API_KEY: CREDENTIAL_VALUE },
+      model: "gpt-4o",
     });
 
     const modelDivergence = resolved.divergences.find((d) => d.setting === "model.model");
     assert.ok(modelDivergence);
     assert.equal(modelDivergence.declaredValue, DEFAULT_GUILD_CONFIG.model.model);
-    assert.equal(modelDivergence.resolvedValue, "fiq/grok-4.5");
+    assert.equal(modelDivergence.resolvedValue, "gpt-4o");
 
     const urlDivergence = resolved.divergences.find((d) => d.setting === "model.base_url");
     assert.ok(urlDivergence);
-    assert.equal(urlDivergence.declaredValue, "https://rootsys.cloud/v1");
+    assert.equal(urlDivergence.declaredValue, "https://api.openai.com/v1");
     assert.equal(urlDivergence.resolvedValue, "https://ambient.example/v1");
     assert.equal(resolved.providerBaseUrl, "https://ambient.example/v1");
   } finally {
@@ -153,12 +156,12 @@ test("agentEnv is the environment the agent process receives, including caller-s
     const resolved = resolveAgentLaunch({
       config: config(),
       root,
-      env: { PATH: "/usr/bin", ROOTSYS_API_KEY: CREDENTIAL_VALUE },
+      env: { PATH: "/usr/bin", OPENAI_API_KEY: CREDENTIAL_VALUE },
       extraEnv: { GUILDCTL_RUN_ID: "run-1234" },
     });
 
-    assert.equal(resolved.agentEnv["AGENT_PROVIDER_BASE_URL"], "https://rootsys.cloud/v1");
-    assert.equal(resolved.agentEnv["AGENT_PROVIDER_API_KEY_ENV"], "ROOTSYS_API_KEY");
+    assert.equal(resolved.agentEnv["AGENT_PROVIDER_BASE_URL"], "https://api.openai.com/v1");
+    assert.equal(resolved.agentEnv["AGENT_PROVIDER_API_KEY_ENV"], "OPENAI_API_KEY");
     assert.equal(resolved.agentEnv["GUILDCTL_RUN_ID"], "run-1234");
     // The ambient environment is inherited, credential included — the agent
     // needs it. What must not happen is the *resolved config* carrying it.
@@ -180,8 +183,8 @@ test("the autonomous worker route selects its model through resolveProviderRoute
     assert.equal(selectRouteModel(routed, "default", 1), "worker-b");
     assert.equal(selectRouteModel(routed, "default", 7), "worker-b");
 
-    const first = resolveAgentLaunch({ config: routed, root, env: { ROOTSYS_API_KEY: CREDENTIAL_VALUE }, route: "default" });
-    const retry = resolveAgentLaunch({ config: routed, root, env: { ROOTSYS_API_KEY: CREDENTIAL_VALUE }, route: "default", attempt: 1 });
+    const first = resolveAgentLaunch({ config: routed, root, env: { OPENAI_API_KEY: CREDENTIAL_VALUE }, route: "default" });
+    const retry = resolveAgentLaunch({ config: routed, root, env: { OPENAI_API_KEY: CREDENTIAL_VALUE }, route: "default", attempt: 1 });
 
     assert.equal(first.model, "worker-a");
     assert.equal(retry.model, "worker-b");
@@ -206,8 +209,8 @@ test("the autonomous review route resolves through the same resolver as the work
     assert.equal(selectRouteModel(routed, "review", 0), "review-a");
     assert.equal(selectRouteModel(routed, "review", 1), "review-b");
 
-    const worker = resolveAgentLaunch({ config: routed, root, env: { ROOTSYS_API_KEY: CREDENTIAL_VALUE }, route: "default" });
-    const reviewer = resolveAgentLaunch({ config: routed, root, env: { ROOTSYS_API_KEY: CREDENTIAL_VALUE }, route: "review" });
+    const worker = resolveAgentLaunch({ config: routed, root, env: { OPENAI_API_KEY: CREDENTIAL_VALUE }, route: "default" });
+    const reviewer = resolveAgentLaunch({ config: routed, root, env: { OPENAI_API_KEY: CREDENTIAL_VALUE }, route: "review" });
 
     assert.equal(worker.model, "worker-a");
     assert.equal(reviewer.model, "review-a");
@@ -230,7 +233,7 @@ test("the autonomous reviewer launches through resolveAgentLaunch, so its env ma
   const script = path.join(workspace, "reviewer.cjs");
   const originalAgentCmd = process.env["AGENT_CMD"];
   const originalBaseUrl = process.env["AGENT_PROVIDER_BASE_URL"];
-  const originalKey = process.env["ROOTSYS_API_KEY"];
+  const originalKey = process.env["OPENAI_API_KEY"];
 
   try {
     // The reviewer's environment must come from the shared resolver, which
@@ -238,7 +241,7 @@ test("the autonomous reviewer launches through resolveAgentLaunch, so its env ma
     // read straight from project config would send the declared URL instead.
     fs.writeFileSync(script, `
 if (process.env.AGENT_PROVIDER_BASE_URL !== "https://ambient.example/v1") process.exit(41);
-if (process.env.AGENT_PROVIDER_API_KEY_ENV !== "ROOTSYS_API_KEY") process.exit(42);
+if (process.env.AGENT_PROVIDER_API_KEY_ENV !== "OPENAI_API_KEY") process.exit(42);
 if (process.env.GUILDCTL_AGENT_MODEL !== "review-a") process.exit(43);
 if (process.env.GUILDCTL_CLAIM_TOKEN || process.env.GUILDCTL_OPERATOR_TOKEN) process.exit(44);
 if (process.argv.join(" ").includes(${JSON.stringify(CREDENTIAL_VALUE)})) process.exit(45);
@@ -246,7 +249,7 @@ console.log('${REVIEW_MARKER}' + JSON.stringify({ approved: true, reason: "resol
 `, "utf8");
     process.env["AGENT_CMD"] = script;
     process.env["AGENT_PROVIDER_BASE_URL"] = "https://ambient.example/v1";
-    process.env["ROOTSYS_API_KEY"] = CREDENTIAL_VALUE;
+    process.env["OPENAI_API_KEY"] = CREDENTIAL_VALUE;
 
     const cfg: ResolvedGuildConfig = {
       ...config({ provider: { routes: { default: ["worker-a"], review: ["worker-a", "review-a"] } } }),
@@ -273,8 +276,8 @@ console.log('${REVIEW_MARKER}' + JSON.stringify({ approved: true, reason: "resol
     else process.env["AGENT_CMD"] = originalAgentCmd;
     if (originalBaseUrl === undefined) delete process.env["AGENT_PROVIDER_BASE_URL"];
     else process.env["AGENT_PROVIDER_BASE_URL"] = originalBaseUrl;
-    if (originalKey === undefined) delete process.env["ROOTSYS_API_KEY"];
-    else process.env["ROOTSYS_API_KEY"] = originalKey;
+    if (originalKey === undefined) delete process.env["OPENAI_API_KEY"];
+    else process.env["OPENAI_API_KEY"] = originalKey;
     fs.rmSync(workspace, { recursive: true, force: true });
   }
 });
@@ -368,7 +371,7 @@ test("a GUILDCTL_HARNESS divergence is keyed via originOf, leaving the AGENT_CMD
     const resolved = resolveAgentLaunch({
       config: config(),
       root,
-      env: { GUILDCTL_HARNESS: "goose", ROOTSYS_API_KEY: CREDENTIAL_VALUE },
+      env: { GUILDCTL_HARNESS: "goose", OPENAI_API_KEY: CREDENTIAL_VALUE },
       envOrigin: { GUILDCTL_HARNESS: "project-file" },
     });
     const divergence = resolved.divergences.find((d) => d.setting === "harness");
@@ -381,7 +384,7 @@ test("a GUILDCTL_HARNESS divergence is keyed via originOf, leaving the AGENT_CMD
     const agentCmd = resolveAgentLaunch({
       config: config(),
       root,
-      env: { AGENT_CMD: "/opt/custom/agent", ROOTSYS_API_KEY: CREDENTIAL_VALUE },
+      env: { AGENT_CMD: "/opt/custom/agent", OPENAI_API_KEY: CREDENTIAL_VALUE },
       envOrigin: { AGENT_CMD: "project-file" },
     });
     const agentDivergence = agentCmd.divergences.find((d) => d.setting === "harness");
@@ -401,7 +404,7 @@ test("the runner launches through resolveAgentLaunch, so its env matches the res
   const stub = path.join(workDir, "fake-agent.cjs");
   const originalAgentCmd = process.env["AGENT_CMD"];
   const originalWorkspace = process.env["GUILD_WORKSPACE"];
-  const originalKey = process.env["ROOTSYS_API_KEY"];
+  const originalKey = process.env["OPENAI_API_KEY"];
 
   try {
     fs.mkdirSync(path.join(workDir, ".guild"), { recursive: true });
@@ -412,7 +415,7 @@ process.exit(0);
 `, "utf8");
     process.env["AGENT_CMD"] = stub;
     process.env["GUILD_WORKSPACE"] = workDir;
-    process.env["ROOTSYS_API_KEY"] = CREDENTIAL_VALUE;
+    process.env["OPENAI_API_KEY"] = CREDENTIAL_VALUE;
 
     await spawnAgent({
       agent: "review-agent",
@@ -433,14 +436,14 @@ process.exit(0);
     assert.equal(resolved.harness.command, stub, "the runner and the resolver must agree on the command");
     assert.equal(agentEnv["AGENT_PROVIDER_BASE_URL"], resolved.agentEnv["AGENT_PROVIDER_BASE_URL"]);
     assert.equal(agentEnv["AGENT_PROVIDER_API_KEY_ENV"], resolved.agentEnv["AGENT_PROVIDER_API_KEY_ENV"]);
-    assert.equal(agentEnv["AGENT_PROVIDER_BASE_URL"], "https://rootsys.cloud/v1");
+    assert.equal(agentEnv["AGENT_PROVIDER_BASE_URL"], "https://api.openai.com/v1");
   } finally {
     if (originalAgentCmd === undefined) delete process.env["AGENT_CMD"];
     else process.env["AGENT_CMD"] = originalAgentCmd;
     if (originalWorkspace === undefined) delete process.env["GUILD_WORKSPACE"];
     else process.env["GUILD_WORKSPACE"] = originalWorkspace;
-    if (originalKey === undefined) delete process.env["ROOTSYS_API_KEY"];
-    else process.env["ROOTSYS_API_KEY"] = originalKey;
+    if (originalKey === undefined) delete process.env["OPENAI_API_KEY"];
+    else process.env["OPENAI_API_KEY"] = originalKey;
     db.close();
     fs.rmSync(workDir, { recursive: true, force: true });
   }
