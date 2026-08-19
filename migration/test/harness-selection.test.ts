@@ -29,5 +29,7 @@ test("doctor harness check flags a missing selected command", () => {
   const resolution = { name: "custom", command: path.join(os.tmpdir(), "missing-harness-command"), targetCommand: "", source: "environment" as const };
   const result = checkHarness(resolution);
   assert.equal(result.ok, false);
-  assert.match(result.message, /active harness: custom.*missing or unreachable/);
+  // US4 (#148, FR-009): the spawn-error branch now names the real cause —
+  // the program could not be started — instead of "missing or unreachable".
+  assert.match(result.message, /active harness: custom.*failed to start/);
 });

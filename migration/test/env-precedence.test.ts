@@ -229,16 +229,16 @@ test("the --ambient-env flag keeps the ambient value and is read from raw argv",
 test("the divergence set is computed before either side is applied and reported in both modes", () => {
   const root = workspaceWithEnv(
     "guild-env-divergence-",
-    "AGENT_PROVIDER_BASE_URL=https://rootsys.cloud/v1\n",
+    "AGENT_PROVIDER_BASE_URL=https://api.openai.com/v1\n",
   );
   try {
-    const ambient = { AGENT_PROVIDER_BASE_URL: "https://api.openai.com/v1" };
+    const ambient = { AGENT_PROVIDER_BASE_URL: "https://ambient.example/v1" };
 
     const projectMode = loadGuildEnvironment({ cwd: root, ambient, target: {}, argv: [] });
     const projectDivergence = divergenceFor(projectMode.divergences, "AGENT_PROVIDER_BASE_URL");
     assert.ok(projectDivergence, "the divergence is reported when the project file wins");
-    assert.equal(projectDivergence.projectValue, "https://rootsys.cloud/v1");
-    assert.equal(projectDivergence.ambientValue, "https://api.openai.com/v1");
+    assert.equal(projectDivergence.projectValue, "https://api.openai.com/v1");
+    assert.equal(projectDivergence.ambientValue, "https://ambient.example/v1");
     assert.equal(projectDivergence.winner, "project-file");
 
     // The ambient opt-in changes the winner, not whether the divergence is
@@ -251,8 +251,8 @@ test("the divergence set is computed before either side is applied and reported 
     });
     const ambientDivergence = divergenceFor(ambientMode.divergences, "AGENT_PROVIDER_BASE_URL");
     assert.ok(ambientDivergence, "the divergence is reported when the ambient value wins");
-    assert.equal(ambientDivergence.projectValue, "https://rootsys.cloud/v1");
-    assert.equal(ambientDivergence.ambientValue, "https://api.openai.com/v1");
+    assert.equal(ambientDivergence.projectValue, "https://api.openai.com/v1");
+    assert.equal(ambientDivergence.ambientValue, "https://ambient.example/v1");
     assert.equal(ambientDivergence.winner, "ambient");
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -260,21 +260,21 @@ test("the divergence set is computed before either side is applied and reported 
 });
 
 test("a sensitive variable reports both values as <redacted> while the name and winner remain", () => {
-  const root = workspaceWithEnv("guild-env-secret-", `ROOTSYS_API_KEY=${CREDENTIAL_VALUE}\nPLAIN_SETTING=file\n`);
+  const root = workspaceWithEnv("guild-env-secret-", `OPENAI_API_KEY=${CREDENTIAL_VALUE}\nPLAIN_SETTING=file\n`);
   try {
     // One definition of "secret" governs evidence logs, preflight, and this
     // report — the predicate is imported, not re-spelled.
-    assert.equal(isSensitiveEnvName("ROOTSYS_API_KEY"), true);
+    assert.equal(isSensitiveEnvName("OPENAI_API_KEY"), true);
     assert.equal(isSensitiveEnvName("PLAIN_SETTING"), false);
 
     const result = loadGuildEnvironment({
       cwd: root,
-      ambient: { ROOTSYS_API_KEY: AMBIENT_CREDENTIAL, PLAIN_SETTING: "ambient" },
+      ambient: { OPENAI_API_KEY: AMBIENT_CREDENTIAL, PLAIN_SETTING: "ambient" },
       target: {},
       argv: [],
     });
 
-    const secret = divergenceFor(result.divergences, "ROOTSYS_API_KEY");
+    const secret = divergenceFor(result.divergences, "OPENAI_API_KEY");
     assert.ok(secret);
     assert.equal(secret.secret, true);
     assert.equal(secret.projectValue, "<redacted>");
@@ -294,7 +294,7 @@ test("a sensitive variable reports both values as <redacted> while the name and 
     );
     assert.equal(rendered.includes(CREDENTIAL_VALUE), false);
     assert.equal(rendered.includes(AMBIENT_CREDENTIAL), false);
-    assert.equal(rendered.includes("ROOTSYS_API_KEY"), true);
+    assert.equal(rendered.includes("OPENAI_API_KEY"), true);
     assert.equal(JSON.stringify(result.divergences).includes(CREDENTIAL_VALUE), false);
     assert.equal(JSON.stringify(result.divergences).includes(AMBIENT_CREDENTIAL), false);
   } finally {
@@ -431,7 +431,7 @@ test("an absent workspace .env still prints the run-start line", () => {
 
     const output = lines.join("");
     assert.equal(countRuntimeLines(output), 1);
-    assert.match(output, /runtime: harness=opencode provider=https:\/\/rootsys\.cloud\/v1 model=/);
+    assert.match(output, /runtime: harness=opencode provider=https:\/\/api\.openai\.com\/v1 model=/);
     // No divergences means nothing beyond the resolved provider/model line.
     assert.equal(output.includes("environment:"), false);
   } finally {
@@ -446,7 +446,7 @@ test("the run-start line and the launch handed to spawnAgent come from one resol
     const resolution = resolveAndReportRuntime({
       config: config(),
       root,
-      env: { AGENT_CMD: "/opt/custom/agent", ROOTSYS_API_KEY: CREDENTIAL_VALUE },
+      env: { AGENT_CMD: "/opt/custom/agent", OPENAI_API_KEY: CREDENTIAL_VALUE },
       envLoad: { mode: "project", divergences: [], origin: { AGENT_CMD: "project-file" }, workspaceEnvPath: path.join(root, ".env"), filesApplied: [] },
       write: (text) => lines.push(text),
     });
@@ -534,7 +534,7 @@ test("a manual phase emits exactly one run-start line and launches with that res
   const stub = path.join(root, "phase-agent.cjs");
   const originalAgentCmd = process.env["AGENT_CMD"];
   const originalWorkspace = process.env["GUILD_WORKSPACE"];
-  const originalKey = process.env["ROOTSYS_API_KEY"];
+  const originalKey = process.env["OPENAI_API_KEY"];
 
   try {
     fs.writeFileSync(stub, "process.exit(0);\n", "utf8");
@@ -543,7 +543,7 @@ test("a manual phase emits exactly one run-start line and launches with that res
     // environment it beat.
     fs.writeFileSync(path.join(root, ".env"), `AGENT_CMD=${stub}\n`, "utf8");
     process.env["AGENT_CMD"] = "/ambient/agent";
-    process.env["ROOTSYS_API_KEY"] = CREDENTIAL_VALUE;
+    process.env["OPENAI_API_KEY"] = CREDENTIAL_VALUE;
     process.env["GUILD_WORKSPACE"] = root;
 
     const load = loadGuildEnvironment({ cwd: root, ambient: { ...process.env }, target: process.env, argv: [] });
@@ -588,8 +588,8 @@ test("a manual phase emits exactly one run-start line and launches with that res
     else process.env["AGENT_CMD"] = originalAgentCmd;
     if (originalWorkspace === undefined) delete process.env["GUILD_WORKSPACE"];
     else process.env["GUILD_WORKSPACE"] = originalWorkspace;
-    if (originalKey === undefined) delete process.env["ROOTSYS_API_KEY"];
-    else process.env["ROOTSYS_API_KEY"] = originalKey;
+    if (originalKey === undefined) delete process.env["OPENAI_API_KEY"];
+    else process.env["OPENAI_API_KEY"] = originalKey;
     db.close();
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -636,7 +636,7 @@ test("the autonomous queue emits exactly one run-start line before dispatch", as
 // ─── E. Reproducibility (SC-003) ─────────────────────────────────────────────
 
 test("identical checkouts with differing ambient environments resolve the same provider and model", () => {
-  const envFile = "AGENT_PROVIDER_BASE_URL=https://rootsys.cloud/v1\nAGENT_CMD=/checkout/agent\n";
+  const envFile = "AGENT_PROVIDER_BASE_URL=https://api.openai.com/v1\nAGENT_CMD=/checkout/agent\n";
   const machineA = workspaceWithEnv("guild-env-sc003-a-", envFile);
   const machineB = workspaceWithEnv("guild-env-sc003-b-", envFile);
   try {
@@ -661,7 +661,7 @@ test("identical checkouts with differing ambient environments resolve the same p
     assert.equal(resolvedA.providerBaseUrl, resolvedB.providerBaseUrl);
     assert.equal(resolvedA.model, resolvedB.model);
     assert.equal(resolvedA.harness.command, resolvedB.harness.command);
-    assert.equal(resolvedA.providerBaseUrl, "https://rootsys.cloud/v1");
+    assert.equal(resolvedA.providerBaseUrl, "https://api.openai.com/v1");
   } finally {
     fs.rmSync(machineA, { recursive: true, force: true });
     fs.rmSync(machineB, { recursive: true, force: true });
@@ -726,12 +726,12 @@ test("the environment divergence block is bounded, names both values, and states
   const divergences: EnvDivergence[] = [
     {
       variable: "AGENT_PROVIDER_BASE_URL",
-      projectValue: "https://rootsys.cloud/v1",
-      ambientValue: "https://api.openai.com/v1",
+      projectValue: "https://api.openai.com/v1",
+      ambientValue: "https://ambient.example/v1",
       winner: "project-file",
       secret: false,
     },
-    { variable: "ROOTSYS_API_KEY", projectValue: "<redacted>", ambientValue: "<redacted>", winner: "project-file", secret: true },
+    { variable: "OPENAI_API_KEY", projectValue: "<redacted>", ambientValue: "<redacted>", winner: "project-file", secret: true },
   ];
   const root = makeTempDir("guild-env-render-");
   try {
@@ -741,8 +741,8 @@ test("the environment divergence block is bounded, names both values, and states
     ));
 
     assert.match(output, /environment: 2 divergence\(s\) between \.env and the inherited environment/);
-    assert.match(output, /AGENT_PROVIDER_BASE_URL\s+\.env=https:\/\/rootsys\.cloud\/v1\s+ambient=https:\/\/api\.openai\.com\/v1\s+→ \.env wins/);
-    assert.match(output, /ROOTSYS_API_KEY\s+\.env=<redacted>\s+ambient=<redacted>\s+→ \.env wins/);
+    assert.match(output, /AGENT_PROVIDER_BASE_URL\s+\.env=https:\/\/api\.openai\.com\/v1\s+ambient=https:\/\/ambient\.example\/v1\s+→ \.env wins/);
+    assert.match(output, /OPENAI_API_KEY\s+\.env=<redacted>\s+ambient=<redacted>\s+→ \.env wins/);
     assert.equal(countRuntimeLines(output), 1);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

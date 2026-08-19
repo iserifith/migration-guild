@@ -279,7 +279,7 @@ test("doctor command exits non-zero when pipeline-state checks fail", () => {
       encoding: "utf8",
       // doctor now delegates its runtime checks to preflight; offline keeps
       // this pipeline-state assertion hermetic (no live provider request).
-      env: { ...process.env, DASHSCOPE_API_KEY: "dummy", GUILD_PREFLIGHT_OFFLINE: "1" },
+      env: { ...process.env, OPENAI_API_KEY: "dummy", GUILD_PREFLIGHT_OFFLINE: "1" },
     });
     const output = result.stdout + result.stderr;
     assert.notEqual(result.status, 0, output);
@@ -308,7 +308,7 @@ function loadConfig(root: string): import("../guildctl/config").GuildConfig {
   return resolveGuildConfig({ cwd: root });
 }
 
-test("doctor flags a custom harness (AGENT_CMD) whose program is missing or unreachable", () => {
+test("doctor flags a custom harness (AGENT_CMD) whose program fails to start", () => {
   const db = createDb();
   const root = fixtureRoot();
   try {
@@ -316,7 +316,9 @@ test("doctor flags a custom harness (AGENT_CMD) whose program is missing or unre
     const missing = path.join(os.tmpdir(), `missing-harness-cli-${Date.now()}`);
     const result = checkWithConfig(db, root, cfg, undefined, { AGENT_CMD: missing });
     assert.ok(
-      result.some((r) => r.status === "fail" && /active harness: custom.*(missing or unreachable)/.test(r.message)),
+      // US4 (#148, FR-009): spawn-error wording — the program itself could not
+      // be launched, distinguished from a non-zero adapter exit.
+      result.some((r) => r.status === "fail" && /active harness: custom.*(failed to start)/.test(r.message)),
       messages(result),
     );
   } finally {
