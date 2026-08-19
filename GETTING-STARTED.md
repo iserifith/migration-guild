@@ -29,6 +29,14 @@ node ../__GUILDCTL_KIT_BUILD__/setup.js
 
 #    Non-interactive alternative:
 node ../__GUILDCTL_KIT_BUILD__/setup.js --framework "Spring Boot 3.x" --legacy-url https://github.com/your-org/your-repo
+#    Local-directory alternative (no git clone):
+node ../__GUILDCTL_KIT_BUILD__/setup.js --legacy-path /path/to/your/legacy/code
+
+> **Interactive prompts require a TTY.** With no `--framework`/`--legacy-url`/`--legacy-path`
+> flags, the wizard reads answers from stdin — including when stdin is a closed or non-TTY
+> pipe. Running it headless (`setup.js < /dev/null`, from CI, or with stdin detached) makes
+> every prompt resolve to its default/blank answer instead of hanging. Pass the flags for
+> scripted installs.
 
 # 4. Install runtime dependencies
 #    migration/ ships with the kit; this only installs its node_modules.
@@ -138,8 +146,8 @@ node migration/guildctl/dist/cli.js run --parallel 3
 
 ## Configure OpenAI-compatible runtime
 
-The CLI reads its runtime config from `.guild/config.yaml` (created by `guildctl init`), **not**
-from `guildctl.config.json`. Edit `.guild/config.yaml` and set the default profile plus the harness:
+The CLI reads its runtime config **not** from `guildctl.config.json` (deleted; nothing reads it) but from
+`.guild/config.yaml` (created by `guildctl init`). Edit `.guild/config.yaml` and set the default profile plus the harness:
 
 ```yaml
 # .guild/config.yaml (created by `node migration/guildctl/dist/cli.js init`)

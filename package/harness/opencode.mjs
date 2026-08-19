@@ -8,7 +8,7 @@
 //      capture token usage from opencode JSON events, and return the child's exit code.
 //
 // Unlike codex (which now only speaks the OpenAI "responses" API), opencode
-// drives OpenAI-compatible chat/completions endpoints (e.g. DashScope) via
+// drives OpenAI-compatible chat/completions endpoints via
 // @ai-sdk/openai-compatible, so it works with non-OpenAI providers.
 
 import { spawn } from "node:child_process";

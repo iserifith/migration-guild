@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Migration Guild agent shim — adapts guildctl's agent interface to the
-// GitHub Copilot CLI driven against an OpenAI-compatible endpoint (DashScope).
+// GitHub Copilot CLI driven against an OpenAI-compatible endpoint (BYOK:
+// bring your own provider key and base URL).
 //
 // guildctl invokes:  <AGENT_CMD> --agent <name> --model <model> --yolo -p <prompt>
 // We translate that to a non-interactive Copilot run with BYOK env vars and
@@ -10,8 +11,8 @@
 // (runner.ts runs *.mjs through node directly — no shell, no arg mangling.)
 //
 // Env (set in the workspace .env):
-//   DASHSCOPE_API_KEY        required — provider key
-//   AGENT_PROVIDER_BASE_URL  optional — defaults to DashScope intl compatible-mode
+//   OPENAI_API_KEY           required — provider key (name it via AGENT_PROVIDER_API_KEY_ENV or the .guild/config.yaml profile's api_key_env)
+//   AGENT_PROVIDER_BASE_URL  optional — defaults to https://api.openai.com/v1
 //   COPILOT_CLI_ENTRY        optional — path to Copilot's index.js (auto-detected on win32)
 
 import { spawn } from "node:child_process";
@@ -62,9 +63,9 @@ function resolveCopilotEntry() {
 function main() {
   const { agent, model, prompt } = parseArgs(process.argv.slice(2));
 
-  const apiKey = process.env.DASHSCOPE_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    process.stderr.write("[agent-shim] DASHSCOPE_API_KEY is not set\n");
+    process.stderr.write("[agent-shim] OPENAI_API_KEY is not set\n");
     process.exit(1);
   }
   const entry = resolveCopilotEntry();
@@ -93,7 +94,7 @@ function main() {
     stdio: "inherit",
     env: {
       ...process.env,
-      COPILOT_PROVIDER_BASE_URL: process.env.AGENT_PROVIDER_BASE_URL || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      COPILOT_PROVIDER_BASE_URL: process.env.AGENT_PROVIDER_BASE_URL || "https://api.openai.com/v1",
       COPILOT_PROVIDER_API_KEY: apiKey,
       COPILOT_MODEL: model || process.env.COPILOT_MODEL || "deepseek-v4-pro",
       COPILOT_ALLOW_ALL: "1",

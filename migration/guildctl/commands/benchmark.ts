@@ -89,7 +89,7 @@ function copyWorkspace(kitRoot: string, fixture: string, mode: string): string {
   fs.cpSync(path.join(kitRoot, "package", "agents"), path.join(root, ".github", "agents"), { recursive: true });
   fs.cpSync(path.join(kitRoot, "package", "skills"), path.join(root, ".github", "skills"), { recursive: true });
   fs.cpSync(path.join(kitRoot, "package", "agent-instructions.md"), path.join(root, ".github", "agent-instructions.md"));
-  for (const name of ["guildctl.config.json", ".env.example", "agent-shim.mjs"] as const) {
+  for (const name of [".env.example", "agent-shim.mjs"] as const) {
     const source = path.join(kitRoot, "package", name);
     if (fs.existsSync(source)) fs.copyFileSync(source, path.join(root, name));
   }
