@@ -26,7 +26,7 @@ Research during this plan surfaced two corrections to the spec's own citations, 
 
 **Project Type**: CLI runtime library (`migration/guildctl/`, `migration/registry/`) + its packaging script (`scripts/build-dist.mjs`) + its regression suite (`migration/test/`) + shipped documentation (`README.md`, `GETTING-STARTED.md`, `DEVELOPMENT.md`, `.env.example`, `package/.env.example`).
 
-**Performance Goals**: None new. FR-001 adds ~63 KB (`package-lock.json`) + ~32 KB (`registry_schema.sql`) to the tarball — negligible against the existing `registry/dist` + `guildctl/dist` + `ui-dist` trees it ships beside (spec.md Assumptions).
+**Performance Goals**: None new. FR-001 adds ~71 KB (`package-lock.json`) + ~32 KB (`registry_schema.sql`) to the tarball — negligible against the existing `registry/dist` + `guildctl/dist` + `ui-dist` trees it ships beside (spec.md Assumptions).
 
 **Constraints**: Per constitution Principle VII (Pluggable Stacks, Neutral Providers), the seeded default provider profile must not be vendor-specific — the generic OpenAI-compatible default (`https://api.openai.com/v1`, `OPENAI_API_KEY`) satisfies this more directly than either issue-offered direction (matching an undocumented `private-relay` default, or matching the previously-shipped DashScope docs) since neither of those is vendor-neutral. Per Principle VI (Fail-Closed Automation), `checkHarness`'s existing behavior of failing closed on a missing/unreachable adapter is correct and must not change — only the diagnostic's accuracy improves (US4). Per Principle V (Tests Before Production Code), every FR below is gated by a new or updated `migration/test/*.test.ts` case, listed per story.
 
