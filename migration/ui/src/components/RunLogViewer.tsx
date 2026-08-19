@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "./ViewState";
 
 interface RunLogViewerProps {
@@ -18,8 +18,19 @@ export default function RunLogViewer({
   error,
   onRetry,
 }: RunLogViewerProps) {
-  const [query, setQuery] = useState("");
+  const [localQuery, setLocalQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [wrapLines, setWrapLines] = useState(true);
+
+  // ⚡ Bolt: debounce log filter to prevent blocking the main thread
+  // when typing into the filter input for large run logs.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(localQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [localQuery]);
+
   const logLines = useMemo(() => {
     if (!log?.trim()) {
       return [] as Array<{ number: number; text: string }>;
@@ -32,12 +43,12 @@ export default function RunLogViewer({
   }, [log]);
 
   const filteredLines = useMemo(() => {
-    const needle = query.trim().toLowerCase();
+    const needle = debouncedQuery.trim().toLowerCase();
     if (!needle) {
       return logLines;
     }
     return logLines.filter((line) => line.text.toLowerCase().includes(needle));
-  }, [logLines, query]);
+  }, [logLines, debouncedQuery]);
 
   if (selectedRunId == null) {
     return <EmptyState compact title="Select a run to view its log." />;
@@ -73,8 +84,8 @@ export default function RunLogViewer({
         <input
           aria-label="Run log filter"
           className="filter-input"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          value={localQuery}
+          onChange={(event) => setLocalQuery(event.target.value)}
           placeholder="Filter log lines"
           type="search"
         />
