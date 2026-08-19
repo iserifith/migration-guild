@@ -190,6 +190,15 @@ async function assembleTarball() {
   await copyFilteredDirectory(path.join(repoRoot, "migration", "ui-dist"), path.join(buildDir, "migration", "ui-dist"));
   await copyFilteredDirectory(path.join(repoRoot, "stacks"), path.join(buildDir, "stacks"));
 
+  // FR-003 (#148): ship the migration package manifest, its lockfile, and the
+  // registry schema verbatim so the kit's documented "cd migration && npm
+  // install" step works from the tarball alone — no sibling checkout needed.
+  // package-lock.json is required for the install to be reproducible offline-
+  // from-cache; registry_schema.sql is loaded by the packaged CLI at runtime.
+  await fs.copyFile(path.join(repoRoot, "migration", "package.json"), path.join(buildDir, "migration", "package.json"));
+  await fs.copyFile(path.join(repoRoot, "migration", "package-lock.json"), path.join(buildDir, "migration", "package-lock.json"));
+  await fs.copyFile(path.join(repoRoot, "migration", "registry_schema.sql"), path.join(buildDir, "migration", "registry_schema.sql"));
+
   await fs.mkdir(path.join(packagedDir, "legacy"), { recursive: true });
   await fs.mkdir(path.join(packagedDir, "modern"), { recursive: true });
   await fs.writeFile(path.join(packagedDir, "modern", ".gitkeep"), "");
