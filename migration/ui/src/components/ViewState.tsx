@@ -6,15 +6,21 @@ function StateCard({
   actions,
   compact = false,
   tone = "default",
+  role,
 }: {
   title: string;
   detail?: ReactNode;
   actions?: ReactNode;
   compact?: boolean;
   tone?: "default" | "error";
+  role?: "status" | "alert";
 }) {
   return (
-    <div className={`state-card ${compact ? "compact" : ""} ${tone}`}>
+    <div
+      className={`state-card ${compact ? "compact" : ""} ${tone}`}
+      role={role}
+      aria-live={role ? (role === "alert" ? "assertive" : "polite") : undefined}
+    >
       <div className="state-title">{title}</div>
       {detail ? <div className="state-detail">{detail}</div> : null}
       {actions ? <div className="state-actions">{actions}</div> : null}
@@ -29,7 +35,13 @@ export function LoadingState({
   resource: string;
   compact?: boolean;
 }) {
-  return <StateCard compact={compact} title={`Loading ${resource}...`} />;
+  return (
+    <StateCard
+      compact={compact}
+      title={`Loading ${resource}...`}
+      role="status"
+    />
+  );
 }
 
 export function EmptyState({
@@ -50,6 +62,7 @@ export function EmptyState({
       compact={compact}
       title={title}
       detail={detail}
+      role="status"
       actions={
         actionLabel && onAction ? (
           <button className="state-button" onClick={onAction} type="button">
@@ -78,6 +91,7 @@ export function ErrorState({
       tone="error"
       title={`Couldn't load ${resource}.`}
       detail={error.message}
+      role="alert"
       actions={
         <button className="state-button" onClick={onRetry} type="button">
           Retry {resource}
