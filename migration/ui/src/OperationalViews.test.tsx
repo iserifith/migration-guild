@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, act } from "@testing-library/react";
 import BlockersView from "./components/BlockersView";
 import RunsView from "./components/RunsView";
 import SessionsView from "./components/SessionsView";
@@ -11,12 +11,17 @@ vi.mock("./hooks", () => ({
 
 describe("operational tab views", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     vi.mocked(useRunLog).mockReturnValue({
       log: "first line\nsecond line",
       loading: false,
       error: null,
       reload: vi.fn(),
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("forwards run filter changes and shows server pagination counts", () => {
@@ -80,6 +85,11 @@ describe("operational tab views", () => {
 
     fireEvent.change(screen.getByLabelText(/run log filter/i), {
       target: { value: "second" },
+    });
+
+    // Wait for the 300ms debounce of the log filter
+    act(() => {
+      vi.advanceTimersByTime(300);
     });
 
     expect(screen.getByText("second line")).toBeInTheDocument();
