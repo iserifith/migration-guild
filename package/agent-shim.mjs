@@ -96,7 +96,7 @@ function main() {
       ...process.env,
       COPILOT_PROVIDER_BASE_URL: process.env.AGENT_PROVIDER_BASE_URL || "https://api.openai.com/v1",
       COPILOT_PROVIDER_API_KEY: apiKey,
-      COPILOT_MODEL: model || process.env.COPILOT_MODEL || "deepseek-v4-pro",
+      COPILOT_MODEL: model || process.env.COPILOT_MODEL || "gpt-4o-mini",
       COPILOT_ALLOW_ALL: "1",
     },
   });

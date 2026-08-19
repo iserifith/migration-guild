@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import * as fs from "fs";
 import * as path from "path";
 import { applySchema } from "./schema";
 import { resolveRegistryDbPath } from "../../guildctl/config";
@@ -17,6 +18,10 @@ export function getDb(dbPath?: string, workspaceRoot?: string): Database.Databas
   // Use || not ?? — empty string from REGISTRY_DB= in .env should fall back to default
   const resolved = dbPath || resolveRegistryDbPath({ workspaceRoot });
   if (_db && _dbPath === resolved) return _db;
+
+  if (resolved !== ":memory:") {
+    fs.mkdirSync(path.dirname(resolved), { recursive: true });
+  }
 
   const db = new Database(resolved);
   db.pragma("journal_mode = WAL");
