@@ -106,7 +106,7 @@ test("CLI warns when an explicit registry path points inside the toolkit checkou
     const result = spawnSync(process.execPath, ["--import", "tsx", cliPath, "--workspace", root, "--db", badDb, "status"], {
       cwd: migrationRoot,
       encoding: "utf8",
-      env: { ...process.env, DASHSCOPE_API_KEY: "dummy" },
+      env: { ...process.env, OPENAI_API_KEY: "dummy" },
     });
     assert.match(result.stderr, /WARNING: registry database resolves outside workspace/i);
     assert.match(result.stderr, /toolkit checkout/i);

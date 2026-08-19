@@ -190,6 +190,15 @@ async function assembleTarball() {
   await copyFilteredDirectory(path.join(repoRoot, "migration", "ui-dist"), path.join(buildDir, "migration", "ui-dist"));
   await copyFilteredDirectory(path.join(repoRoot, "stacks"), path.join(buildDir, "stacks"));
 
+  // FR-003 (#148): ship the migration package manifest, its lockfile, and the
+  // registry schema verbatim so the kit's documented "cd migration && npm
+  // install" step works from the tarball alone — no sibling checkout needed.
+  // package-lock.json is required for the install to be reproducible offline-
+  // from-cache; registry_schema.sql is loaded by the packaged CLI at runtime.
+  await fs.copyFile(path.join(repoRoot, "migration", "package.json"), path.join(buildDir, "migration", "package.json"));
+  await fs.copyFile(path.join(repoRoot, "migration", "package-lock.json"), path.join(buildDir, "migration", "package-lock.json"));
+  await fs.copyFile(path.join(repoRoot, "migration", "registry_schema.sql"), path.join(buildDir, "migration", "registry_schema.sql"));
+
   await fs.mkdir(path.join(packagedDir, "legacy"), { recursive: true });
   await fs.mkdir(path.join(packagedDir, "modern"), { recursive: true });
   await fs.writeFile(path.join(packagedDir, "modern", ".gitkeep"), "");
@@ -213,6 +222,13 @@ async function main() {
   console.log("");
 
   console.log("▶ Step 1/4 — Build migration (tsup)");
+  // FR-004 (#148): a fresh clone only runs the ROOT `npm install` before
+  // `npm run build:dist` — the nested migration/ and migration/ui/ installs
+  // are this script's job. Installing into an already-populated node_modules
+  // is a fast no-op, so this runs unconditionally; a genuinely broken install
+  // propagates through main().catch() exactly like a failed tsup/vite step
+  // (not wrapped in try/swallow — see the Step 3 comment for the same rule).
+  await run("npm", ["install"], { cwd: path.join(repoRoot, "migration") });
   await run("npx", ["tsup"], { cwd: path.join(repoRoot, "migration") });
   console.log("  ✓ migration built");
 
@@ -221,6 +237,9 @@ async function main() {
   console.log("  ✓ setup.js built");
 
   console.log("▶ Step 3/4 — Build Mission Control UI (vite)");
+  // FR-004 (#148): the UI build needs migration/ui/node_modules; install it
+  // here for the same fresh-clone reason as the Step 1 pre-install above.
+  await run("npm", ["install"], { cwd: path.join(repoRoot, "migration", "ui") });
   // Not wrapped in a try/swallow: a failed UI build must fail the whole
   // dist build (FR-006) the same way a failed tsup step does above — a
   // silently-absent migration/ui-dist is exactly the #123 defect.

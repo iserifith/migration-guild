@@ -13,7 +13,7 @@ Most agentic migration demos trust the model's self-report ("done ✅"). Migrati
 - **Blackboard architecture** — agents coordinate through a shared SQLite registry (WAL mode), not through chat. Atomic claims with lease tokens, heartbeats, and attempt counters make parallel agents safe.
 - **Four-phase pipeline** — `inventory` (scan & classify) → `plan` (dependency waves) → `migrate` (tests-first codegen) → `review` (independent critic + arbiter gate).
 - **Stack packs** — pluggable per-stack rules (`stacks/java-spring`, `stacks/python`): classification heuristics, framework mappings, audit rules, and scaffold templates.
-- **Provider-neutral** — any OpenAI-compatible endpoint (DashScope/Qwen, OpenRouter, OpenAI, local llama.cpp/LM Studio) or an agent CLI harness.
+- **Provider-neutral** — any OpenAI-compatible endpoint (OpenAI, OpenRouter, Azure OpenAI, local llama.cpp/LM Studio) or an agent CLI harness; the shipped default profile targets the OpenAI API (`OPENAI_API_KEY`).
 - **Mission Control UI** — a React dashboard over the registry: wave plans, live sessions, run logs, blockers.
 - **Tested where it hurts** — ~30 test files covering claim leases, evidence gates, arbiter verdicts, pipeline failures, and harness selection.
 
@@ -25,7 +25,7 @@ cd migration-guild
 npm install
 cd migration && npm install && npm run build && cd ..
 
-cp .env.example .env   # set your API key (DashScope / OpenRouter / OpenAI / local)
+cp .env.example .env   # set your API key (OPENAI_API_KEY by default; OpenRouter/local also work)
 
 node migration/dist/guildctl/cli.js --help
 ```
@@ -51,7 +51,7 @@ graph TB
 
     REG["Artifact Registry (SQLite)<br/>atomic claims · waves · status gates"]
     EV["Evidence Layer<br/>.guild/evidence · .guild/runs"]
-    LLM["LLM Provider<br/>(OpenAI-compatible — Qwen/DashScope default)"]
+    LLM["LLM Provider<br/>(OpenAI-compatible — any endpoint, default profile targets the OpenAI API)"]
 
     CTX & PLAN & ANA & TEST & CODE & REV & REM -.->|API| LLM
     CTX & PLAN & TEST & CODE & REV & REM --> REG
@@ -72,11 +72,11 @@ graph TB
 
 | Phase | Command | What must be true to pass |
 |---|---|---|
-| Inventory | `guildctl inventory` | Every file classified (kind, role, framework) with signals recorded |
-| Plan | `guildctl plan` | Dependency graph resolved; artifacts assigned to executable waves |
-| Migrate | `guildctl migrate` | Tests written first; code lands in `modern/`; evidence filed |
+| Inventory | `guildctl run inventory` | Every file classified (kind, role, framework) with signals recorded |
+| Plan | `guildctl run plan` | Dependency graph resolved; artifacts assigned to executable waves |
+| Migrate | `guildctl run migrate` | Tests written first; code lands in `modern/`; evidence filed |
 | Autonomous queue | `guildctl auto-run` | Dependency-ready artifacts run sequentially through bounded migrate, verify, repair, and independent review loops |
-| Review | `guildctl review` / `arbitrate` | Independent critic verdict; arbiter gate approves or sends to `needs-rework` |
+| Review | `guildctl run review` / `arbitrate` | Independent critic verdict; arbiter gate approves or sends to `needs-rework` |
 
 `guildctl status` and `guildctl watch` show live progress; `guildctl remediate` recovers stalled or failed artifacts.
 

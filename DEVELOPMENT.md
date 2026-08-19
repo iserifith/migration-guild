@@ -142,6 +142,14 @@ What they do:
 - `npm run build` compiles `setup.ts` to `dist/setup.js`
 - `npm run build:dist` runs the cross-platform dist builder, builds `migration/`, rebuilds `dist/setup.js`, then assembles `dist/__GUILDCTL_KIT_TGZ__`
 
+Install locations (all three, up front):
+
+- repo root: `npm install`
+- `migration/`: `cd migration && npm install`
+- `migration/ui/`: `cd migration/ui && npm install`
+
+`npm run build:dist` performs the two nested installs automatically before its `tsup` and `build:ui` steps, so a fresh clone only needs the root `npm install` before running it. The root `npm test` gate, however, runs the `migration/` and `migration/ui/` suites directly and needs all three installs done once (see "Run the repository test suites").
+
 ## Source of truth
 
 - `migration/` is the canonical source for CLI runtime code

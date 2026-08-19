@@ -197,8 +197,36 @@ export function checkHarness(resolution: HarnessResolution): { ok: boolean; mess
     encoding: "utf8",
     shell: process.platform === "win32" && !nodeShim,
   });
-  if (result.error || result.status !== 0) {
-    return { ok: false, message: `active harness: ${resolution.name} (${command} is missing or unreachable)` };
+  if (result.error) {
+    // FR-008 (#148) Scenario 3: the program itself could not be launched at all
+    // (ENOENT on the command, EACCES, ...) — a different failure than an
+    // adapter that started and then failed. Name the difference, and surface
+    // the spawn error's own message (trimmed, capped) instead of a generic
+    // "missing or unreachable" guess.
+    return { ok: false, message: `active harness: ${resolution.name} (${command} failed to start: ${capExcerpt(result.error.message)})` };
+  }
+  if (result.status !== 0) {
+    // FR-008 (#148) Scenario 1: the adapter exists and ran, and its own
+    // stderr/stdout says why it failed — surface that excerpt (stderr first,
+    // stdout as fallback, trimmed, capped) so e.g. an uninstalled Copilot CLI
+    // reports its real error instead of sending the user hunting for an
+    // agent-shim.mjs that is fine.
+    const excerpt = capExcerpt(`${result.stderr ?? ""}${result.stderr ? "" : result.stdout ?? ""}`);
+    return { ok: false, message: `active harness: ${resolution.name} (${command} exited ${result.status}${excerpt ? `: ${excerpt}` : ""})` };
   }
   return { ok: true, message: `active harness: ${resolution.name} (${resolution.source === "environment" ? "AGENT_CMD override" : resolution.command})` };
+}
+
+/**
+ * Trims and length-caps an adapter stdio excerpt for a checkHarness failure
+ * message. The cap mirrors runner.ts's HARNESS_OUTPUT_CAP contract (bounded
+ * output in user-facing failure messages) but keeps a local, tighter value:
+ * a `--version` probe failure never needs 512 chars to be diagnostic, and
+ * ~200 is plenty for the real causes this surfaces (module-not-found, EACCES,
+ * copilot-not-installed, ...).
+ */
+const CHECK_HARNESS_EXCERPT_CAP = 200;
+
+function capExcerpt(text: string): string {
+  return text.trim().slice(0, CHECK_HARNESS_EXCERPT_CAP);
 }

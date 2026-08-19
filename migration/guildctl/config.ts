@@ -51,22 +51,25 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   workspace: { name: "migration-guild-workspace", root: "." },
   database: { path: ".guild/registry.db" },
   model: {
-    model: "pvt/hy3-tencent",
-    base_url: "https://example-private.invalid/v1",
-    api_key_env: "EXAMPLE_PRIVATE_API_KEY",
+    // FR-006 (#148): generic OpenAI-compatible default — the same neutral
+    // endpoint the shipped .env.example documents, so a doc-following user's
+    // `doctor` never fails on a credential nobody told them to set.
+    model: "gpt-4o-mini",
+    base_url: "https://api.openai.com/v1",
+    api_key_env: "OPENAI_API_KEY",
     context_length: 131072,
   },
   provider: {
     routes: {
-      default: ["pvt/hy3-tencent", "pvt/deepseek-v4-pro", "pvt/grok-4.5"],
-      census: ["pvt/deepseek-v4-flash", "pvt/minimax-m3"],
-      review: ["pvt/gpt-5.5-review", "pvt/glm-5.2"],
+      default: ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"],
+      census: ["gpt-4.1-mini", "gpt-4o-mini"],
+      review: ["gpt-4o", "gpt-4.1-mini"],
     },
   },
   agents: {
-    default: { model: "deepseek-v4-pro", temperature: 0.2 },
-    cheap: { model: "deepseek-v4-flash", temperature: 0.2 },
-    reviewer: { model: "glm-5.1", temperature: 0.1 },
+    default: { model: "gpt-4o-mini", temperature: 0.2 },
+    cheap: { model: "gpt-4.1-mini", temperature: 0.2 },
+    reviewer: { model: "gpt-4o", temperature: 0.1 },
   },
   tools: { terminal: true, git: true, filesystem: true, web: false },
   prompts: { directory: ".guild/prompts", active_pack: "default" },
@@ -78,11 +81,12 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   verification: { budget_seconds: 120 },
   preflight: { budget_seconds: 30 },
   profiles: {
-    default: { base_url: "https://example-private.invalid/v1", model: "pvt/hy3-tencent", api_key_env: "EXAMPLE_PRIVATE_API_KEY" },
-    dashscope: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "deepseek-v4-pro", api_key_env: "DASHSCOPE_API_KEY" },
-    cheap: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "deepseek-v4-flash", api_key_env: "DASHSCOPE_API_KEY" },
-    reviewer: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "glm-5.1", api_key_env: "DASHSCOPE_API_KEY" },
-    qwen: { base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", model: "qwen3.7-max", api_key_env: "DASHSCOPE_API_KEY" },
+    // FR-006 (#148): profiles.default is the seeded OpenAI-compatible default;
+    // the DashScope-pointing dashscope/cheap/reviewer/qwen entries are removed
+    // (DashScope stays usable by explicit user configuration — it is simply no
+    // longer the shipped default anywhere). `local` is provider-neutral and
+    // stays.
+    default: { base_url: "https://api.openai.com/v1", model: "gpt-4o-mini", api_key_env: "OPENAI_API_KEY" },
     local: { base_url: "http://localhost:1234/v1", model: "qwen2.5-coder" },
   },
 };
