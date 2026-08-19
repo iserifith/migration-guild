@@ -7,3 +7,6 @@
 ## 2024-05-25 - Tooltips for disabled action buttons
 **Learning:** Adding a title attribute to explain why a button is disabled significantly improves UX. It provides context to the user who might be wondering why a button is not clickable. Similarly, providing tooltips for active but icon-like or ambiguous buttons, like pagination arrows, offers more context for assistive tech and power users.
 **Action:** When disabling actionable buttons like pagination arrows, always provide a title or tooltip explaining the condition (e.g., 'First page reached'). When the button is active, explain the action (e.g., 'Next page').
+## 2024-05-18 - Centralizing ARIA live regions for async states
+**Learning:** The application heavily abstracts async state rendering into `ViewState.tsx` (`LoadingState`, `EmptyState`, `ErrorState`).
+**Action:** By adding `role="status"` and `role="alert"` centrally to `StateCard`, we guarantee consistent screen reader announcements for all dynamic state changes across every tab without needing to sprinkle `aria-live` regions everywhere.
