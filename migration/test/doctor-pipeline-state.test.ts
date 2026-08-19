@@ -308,7 +308,7 @@ function loadConfig(root: string): import("../guildctl/config").GuildConfig {
   return resolveGuildConfig({ cwd: root });
 }
 
-test("doctor flags a custom harness (AGENT_CMD) whose program is missing or unreachable", () => {
+test("doctor flags a custom harness (AGENT_CMD) whose program fails to start", () => {
   const db = createDb();
   const root = fixtureRoot();
   try {
@@ -316,7 +316,9 @@ test("doctor flags a custom harness (AGENT_CMD) whose program is missing or unre
     const missing = path.join(os.tmpdir(), `missing-harness-cli-${Date.now()}`);
     const result = checkWithConfig(db, root, cfg, undefined, { AGENT_CMD: missing });
     assert.ok(
-      result.some((r) => r.status === "fail" && /active harness: custom.*(missing or unreachable)/.test(r.message)),
+      // US4 (#148, FR-009): spawn-error wording — the program itself could not
+      // be launched, distinguished from a non-zero adapter exit.
+      result.some((r) => r.status === "fail" && /active harness: custom.*(failed to start)/.test(r.message)),
       messages(result),
     );
   } finally {
