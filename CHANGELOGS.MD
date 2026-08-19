@@ -6,6 +6,31 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### August 19, 2026
+
+- Shipped five onboarding/kit-packaging fixes for Spec 012 (#148). (1) Kit packaging: the
+  `dist/migration-guild-kit.tar.gz` tarball now includes `migration/package.json`,
+  `migration/package-lock.json`, and `migration/registry_schema.sql`, so the documented
+  `cd migration && npm install` works from the tarball alone with no sibling checkout
+  (FR-001..FR-003). (2) Build self-sufficiency: `npm run build:dist` now performs its own
+  nested `migration/` and `migration/ui/` installs (instead of assuming a fully-installed
+  clone), and `DEVELOPMENT.md` documents all three install locations up front
+  (FR-004..FR-005). (3) Provider defaults: the seeded `DEFAULT_GUILD_CONFIG` profile changes
+  from an undocumented personal `rootsys`/DashScope profile to a generic OpenAI-compatible
+  default (`https://api.openai.com/v1` + `OPENAI_API_KEY`, DashScope-pointing
+  dashscope/cheap/reviewer/qwen entries removed — DashScope stays usable via explicit user
+  config), with `.env.example` and the shipped docs telling the same story
+  (FR-006..FR-007). (4) Doctor/harness diagnostics: `guildctl doctor`'s harness check
+  reports the adapter's actual stderr/stdout excerpt (trimmed, capped) when the adapter
+  exists but fails — and distinguishes "failed to start" from "exited N" — instead of the
+  generic "missing or unreachable" wording (FR-008..FR-009). (5) Docs + dead-file cleanup:
+  `--legacy-path` documented in GETTING-STARTED's Setup block, one canonical
+  `guildctl run <phase>` pipeline command form across README/GETTING-STARTED, the
+  interactive-only setup-wizard note, no DashScope-as-default in any shipped doc or
+  `package/` artifact, and the dead `guildctl.config.json` files (root + `package/`)
+  deleted along with their `benchmark.ts` copy-list entry (FR-010..FR-016). Full suite is
+  771/771 green (706 migration + 65 UI).
+
 ### August 16, 2026
 
 - Expanded the `package/mock/` fixture set for Spec 008 (#112): three additive,
