@@ -418,8 +418,14 @@ function validateCompanionPath(rawPath: string): string {
 export function deriveExpectedOutputPaths(artifact: Artifact, db?: Database.Database): string[] {
   const p = (artifact.path ?? "").replace(/\\/g, "/");
   let paths: string[];
-  const javaTest = p.match(/(?:^|\/)legacy\/.*?\/tests\/(?:core\/)?(.+)\.java$/i);
-  const javaSource = javaTest ? null : p.match(/(?:^|\/)legacy\/.*?\/src\/(.+)\.java$/i);
+  // The path between `legacy/` and the `src`/`tests` marker is an optional
+  // module segment (e.g. `legacy/<module>/src/...`) — some legacy trees are
+  // single-module and mirror straight off `legacy/` with no module dir at all
+  // (e.g. `legacy/src/main/java/...`). `(?:.*\/)?` matches either shape.
+  // `src\/test\/java\/` covers the standard Maven/Gradle test layout; the
+  // `tests\/(?:core\/)?` alternative covers the legacy jforum-style layout.
+  const javaTest = p.match(/(?:^|\/)legacy\/(?:.*\/)?(?:tests\/(?:core\/)?|src\/test\/java\/)(.+)\.java$/i);
+  const javaSource = javaTest ? null : p.match(/(?:^|\/)legacy\/(?:.*\/)?src\/(?:main\/java\/)?(.+)\.java$/i);
   if (javaTest) {
     const relativeClass = javaTest[1];
     paths = [

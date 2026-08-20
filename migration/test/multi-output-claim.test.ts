@@ -35,13 +35,13 @@ function registerPlanned(db: Database.Database, id: string): void {
     id,
     kind: "legacy-source",
     tier: "first-class",
-    path: `legacy/src/main/java/${id.replaceAll(":", "/")}.java`,
+    path: `legacy/other/${id.replaceAll(":", "/")}.java`,
   });
   setArtifactWave(db, id, 1);
   setArtifactStatus(db, id, "planned");
 }
 
-const DERIVED_MODERN_PATH = "modern/src/main/java/legacy-source/com.acme/MultiOutput.java";
+const DERIVED_MODERN_PATH = "modern/other/legacy-source/com.acme/MultiOutput.java";
 
 // ─── deriveExpectedOutputPaths unions companion outputs ──────────────────────
 
@@ -88,7 +88,7 @@ test("deriveExpectedOutputPaths deduplicates companion paths already in the norm
   const id = "legacy-source:com.acme:Dedup";
   try {
     registerPlanned(db, id);
-    const derivedModern = "modern/src/main/java/legacy-source/com.acme/Dedup.java";
+    const derivedModern = "modern/other/legacy-source/com.acme/Dedup.java";
     addApprovedCompanionOutput(db, {
       artifactId: id,
       outputPath: derivedModern,
@@ -319,7 +319,7 @@ test("deriveExpectedOutputPaths with multiple companion outputs", () => {
   const id = "legacy-source:com.acme:MultiComp";
   try {
     registerPlanned(db, id);
-    const derivedModern = "modern/src/main/java/legacy-source/com.acme/MultiComp.java";
+    const derivedModern = "modern/other/legacy-source/com.acme/MultiComp.java";
     addApprovedCompanionOutput(db, {
       artifactId: id,
       outputPath: "modern/src/FooTest.java",
