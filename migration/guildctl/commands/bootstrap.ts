@@ -59,8 +59,24 @@ function commonPrefix(modules: string[][]): string[] {
   return prefix;
 }
 
+// Java reserved words (and literals) that are illegal as identifiers — a package
+// segment or app name derived from module/class names can collide with these.
+const JAVA_RESERVED_WORDS = new Set([
+  "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char", "class",
+  "const", "continue", "default", "do", "double", "else", "enum", "extends", "final",
+  "finally", "float", "for", "goto", "if", "implements", "import", "instanceof", "int",
+  "interface", "long", "native", "new", "package", "private", "protected", "public",
+  "return", "short", "static", "strictfp", "super", "switch", "synchronized", "this",
+  "throw", "throws", "transient", "try", "void", "volatile", "while", "true", "false",
+  "null", "var", "yield", "record", "sealed", "permits",
+]);
+
+function sanitizePackageSegment(part: string): string {
+  return JAVA_RESERVED_WORDS.has(part) ? `${part}pkg` : part;
+}
+
 function sanitizePackage(input: string, fallback: string): string {
-  const cleaned = input.split(".").map((part) => part.toLowerCase().replace(/[^a-z0-9_]/g, "")).filter(Boolean);
+  const cleaned = input.split(".").map((part) => sanitizePackageSegment(part.toLowerCase().replace(/[^a-z0-9_]/g, ""))).filter(Boolean);
   return cleaned.length > 0 ? cleaned.join(".") : fallback;
 }
 
@@ -87,8 +103,19 @@ function maybeWriteFile(filePath: string, content: string, workspaceRoot: string
   created.push(path.relative(workspaceRoot, filePath) || filePath);
 }
 
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Markers are bare identifiers (e.g. "Application"), not delimited placeholders, so a
+// plain substring replace corrupts real API names that merely contain the marker as a
+// substring (e.g. "SpringApplication", "@SpringBootApplication"). Word-boundary matching
+// only replaces the marker when it stands alone as its own identifier.
 function render(template: string, replacements: Array<[string, string]>): string {
-  return replacements.reduce((content, [marker, value]) => content.replaceAll(marker, value), template);
+  return replacements.reduce((content, [marker, value]) => {
+    const pattern = new RegExp(`\\b${escapeRegExp(marker)}\\b`, "g");
+    return content.replace(pattern, value);
+  }, template);
 }
 
 function hasSource(dirPath: string, extension: string): boolean {
