@@ -112,7 +112,7 @@ function ingestionPrompt(libraryName: string, libraryVersion: string, runId: str
     `1. Find the authoritative documentation source for ${libraryName}@${libraryVersion} (official Javadoc/site for that exact version — never a different version).`,
     `2. Extract the principal class- and method-level entries with descriptions and signatures.`,
     `3. Record each entry via the registry CLI write path:`,
-    `   node migration/dist/registry/cli.js index-doc-entry --library ${JSON.stringify(libraryName)} --version ${JSON.stringify(libraryVersion)} \\`,
+    `   node migration/registry/dist/cli.js index-doc-entry --library ${JSON.stringify(libraryName)} --version ${JSON.stringify(libraryVersion)} \\`,
     `     --symbol-kind <class|method> --symbol-name <name> [--signature <sig>] \\`,
     `     --description <text> [--return-type <t>] --source-url <url> --source-excerpt <verbatim text> \\`,
     `     --ingestion-run-id ${runId}${indexDbFlag}`,

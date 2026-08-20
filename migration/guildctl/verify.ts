@@ -7,6 +7,7 @@ import type Database from "better-sqlite3";
 import { deriveExpectedOutputPaths } from "../registry/commands/claim";
 import { addVerifierRuntimeEvidence } from "../registry/commands/evidence";
 import { getVerification, setVerification } from "../registry/commands/verification";
+import { withVerifySlot } from "../registry/commands/verifySlot";
 import type {
   AcceptanceEvidence,
   Artifact,
@@ -32,6 +33,8 @@ export interface VerifyOptions {
   outputDir: string;
   runId?: string | null;
   operatorToken?: string | null;
+  /** Resolved Guild config; supplies the verify-concurrency slot bound (US5 / #151). */
+  config?: Pick<GuildConfig, "verification">;
 }
 
 export interface VerifyResult {
@@ -137,11 +140,19 @@ export async function runVerify(
     let stdout = "";
     let stderr = "";
     try {
-      const result = await execAsync(command, {
-        cwd: opts.workspaceRoot,
-        env: scrubVerificationEnv(process.env),
-        maxBuffer: 10 * 1024 * 1024,
-      });
+      // US5 (#151) / T023: hold one bounded verify slot across the spawned
+      // command so no more than `verification.max_concurrent` verify
+      // subprocesses are live at once; released in a `finally` inside
+      // withVerifySlot on settle.
+      const result = await withVerifySlot(
+        db,
+        { runId: opts.runId ?? null, artifactId: opts.artifactId, config: opts.config },
+        () => execAsync(command, {
+          cwd: opts.workspaceRoot,
+          env: scrubVerificationEnv(process.env),
+          maxBuffer: 10 * 1024 * 1024,
+        }),
+      );
       stdout = redactSecrets(result.stdout);
       stderr = redactSecrets(result.stderr);
     } catch (error) {
@@ -331,6 +342,23 @@ export interface ArtifactVerificationOptions {
   agentReportedUnverifiable?: boolean;
   /** When false the record is computed but not written (used by callers that persist separately). */
   persist?: boolean;
+  /**
+   * Resolved Guild config; supplies `verification.max_concurrent` /
+   * `budget_seconds` for the bounded verify-concurrency slot (US5 / #151).
+   * Optional so existing callers that never spawn a check are unaffected.
+   */
+  config?: Pick<GuildConfig, "verification">;
+  /**
+   * When true, and the check actually executes with a `runId`/`operatorToken`
+   * supplied, a signed `runtime` acceptance-evidence record is written
+   * alongside the verification record — the same shape `guildctl verify
+   * --command` produces — so the outcome can back an arbitration approval.
+   * Defaults to false: callers that only want the verification bookkeeping
+   * (e.g. `verifyAtClaimClose`) are unaffected.
+   */
+  recordEvidence?: boolean;
+  /** Directory the evidence log is written to. Defaults to `<workspaceRoot>/.guild/evidence/runtime`. */
+  evidenceOutputDir?: string;
 }
 
 export interface ArtifactVerificationOutcome {
@@ -343,6 +371,8 @@ export interface ArtifactVerificationOutcome {
   durationMs: number | null;
   /** False when the check was skipped (no pack check, unavailable, incomplete tree). */
   ranCheck: boolean;
+  /** Signed runtime evidence produced when `recordEvidence` was requested and the check ran; empty otherwise. */
+  evidence: AcceptanceEvidence[];
 }
 
 const DEFAULT_VERIFICATION_BUDGET_MS = 120_000;
@@ -429,6 +459,61 @@ async function executeCheck(
 }
 
 /**
+ * Write a signed `runtime` acceptance-evidence record for a stack check that
+ * actually executed, mirroring what `runVerify` writes per `--command`. Only
+ * called when the caller opted in via `recordEvidence` and supplied a run
+ * credential; returns `null` otherwise (or when the process never produced an
+ * exit code, e.g. it was killed).
+ */
+function recordStackCheckEvidence(
+  db: Database.Database,
+  opts: ArtifactVerificationOptions,
+  check: PerArtifactVerify,
+  argv: string[],
+  execution: CheckExecution,
+  pass: 0 | 1,
+): AcceptanceEvidence | null {
+  if (!opts.recordEvidence || !opts.runId || !opts.operatorToken || execution.exitCode == null) return null;
+  const command = redactSecrets(`${check.cmd} ${argv.join(" ")}`.trim());
+  const output = redactSecrets(execution.output);
+  const outputDir = opts.evidenceOutputDir ?? path.join(opts.workspaceRoot, ".guild", "evidence", "runtime");
+  fs.mkdirSync(outputDir, { recursive: true });
+  const log = [
+    `command: ${command}`,
+    `exit_code: ${execution.exitCode}`,
+    `duration_ms: ${execution.durationMs}`,
+    "",
+    "output:",
+    output,
+  ].join("\n");
+  const logSha256 = sha256(log);
+  const logPath = path.join(outputDir, `${Date.now()}-${randomUUID().slice(0, 8)}-stack-verify.log`);
+  fs.writeFileSync(logPath, log, "utf8");
+  const authenticity = signRuntimeEvidence({
+    artifactId: opts.artifactId,
+    runId: opts.runId,
+    command,
+    exitCode: execution.exitCode,
+    pass,
+    logSha256,
+  }, opts.operatorToken);
+  return addVerifierRuntimeEvidence(db, {
+    artifactId: opts.artifactId,
+    runId: opts.runId,
+    producedBy: "guildctl-verify-stack",
+    command,
+    exitCode: execution.exitCode,
+    pass,
+    summary: pass === 1 ? `Stack verification passed: ${check.id}` : `Stack verification failed: ${check.id}`,
+    outputPath: logPath,
+    outputExcerpt: excerpt(output),
+    logSha256,
+    durationMs: execution.durationMs,
+    authenticity,
+  });
+}
+
+/**
  * Run the stack pack's bounded per-artifact check and record the outcome.
  *
  * Outcome mapping follows contracts/stack-pack-verify.md. No outcome blocks the
@@ -446,7 +531,13 @@ export async function runArtifactVerification(
   const finish = (
     state: VerificationState,
     reason: VerificationReason | null,
-    extra: { detail?: string | null; scope?: string[]; durationMs?: number | null; ranCheck?: boolean } = {},
+    extra: {
+      detail?: string | null;
+      scope?: string[];
+      durationMs?: number | null;
+      ranCheck?: boolean;
+      evidence?: AcceptanceEvidence[];
+    } = {},
   ): ArtifactVerificationOutcome => {
     const outcome: ArtifactVerificationOutcome = {
       state,
@@ -457,6 +548,7 @@ export async function runArtifactVerification(
       budgetMs,
       durationMs: extra.durationMs ?? null,
       ranCheck: extra.ranCheck ?? false,
+      evidence: extra.evidence ?? [],
     };
     if (opts.persist !== false) {
       setVerification(db, {
@@ -537,7 +629,18 @@ export async function runArtifactVerification(
   }
 
   fs.mkdirSync(workingDir, { recursive: true });
-  const execution = await executeCheck(opts.check, argv, workingDir, budgetMs);
+  // US5 (#151) / T023: hold one bounded verify slot for the lifetime of the
+  // spawned check, so no more than `verification.max_concurrent` verify
+  // subprocesses are live at once. The slot is released in a `finally` inside
+  // withVerifySlot even when the check times out, errors, or the budget kills
+  // its process group. Skipping the no-check / unavailable-tool / incomplete-
+  // tree paths above is intentional — those never spawn a subprocess, so they
+  // must not consume a slot.
+  const execution = await withVerifySlot(
+    db,
+    { runId: opts.runId ?? null, artifactId: opts.artifactId, config: opts.config },
+    () => executeCheck(opts.check!, argv, workingDir, budgetMs),
+  );
   const coveredScope = [...scope.ownOutputPaths, ...scope.dependencyPaths];
 
   if (execution.timedOut) {
@@ -557,18 +660,22 @@ export async function runArtifactVerification(
 
   const passCodes = opts.check.pass_exit_codes ?? [0];
   if (execution.exitCode != null && passCodes.includes(execution.exitCode)) {
+    const evidence = recordStackCheckEvidence(db, opts, opts.check, argv, execution, 1);
     return finish("verified", null, {
       scope: coveredScope,
       durationMs: execution.durationMs,
       ranCheck: true,
+      evidence: evidence ? [evidence] : [],
     });
   }
 
+  const failureEvidence = recordStackCheckEvidence(db, opts, opts.check, argv, execution, 0);
   return finish("verification-failed", "check-failed", {
     detail: redactSecrets(`exit ${execution.exitCode}: ${excerpt(execution.output)}`),
     scope: coveredScope,
     durationMs: execution.durationMs,
     ranCheck: true,
+    evidence: failureEvidence ? [failureEvidence] : [],
   });
 }
 
@@ -638,6 +745,7 @@ export async function verifyAtClaimClose(
       operatorToken: opts.operatorToken,
       claimId: opts.claimId,
       claimToken: opts.claimToken,
+      config: opts.config,
     });
     return getVerification(db, opts.artifactId);
   } catch {

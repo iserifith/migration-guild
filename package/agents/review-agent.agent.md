@@ -106,7 +106,7 @@ You are a Java migration reviewer. Your job is to review migrated code and its t
      grep -rEn '(com\.google\.guava|org\.apache\.commons)([A-Za-z0-9_.#]+)' \
        modern/src --include="*.java" | sed -E 's/.*([a-z]+\.[a-z.]+:[a-z.]+).*//'
      ```
-     (use the real locked keep-set from `node migration/dist/registry/cli.js
+     (use the real locked keep-set from `node migration/registry/dist/cli.js
      locked-dependency-set` to seed the prefix list; the scan above is a hint,
      not the authoritative source of truth).
 
@@ -114,7 +114,7 @@ You are a Java migration reviewer. Your job is to review migrated code and its t
 
 1. List migrated artifacts to review:
    ```bash
-   node migration/dist/registry/cli.js list-artifacts --status migrated
+   node migration/registry/dist/cli.js list-artifacts --status migrated
    ```
 2. Read the migrated file and its associated tests.
 3. Read the legacy source for comparison.
@@ -129,11 +129,11 @@ You are a Java migration reviewer. Your job is to review migrated code and its t
 6. Record the verdict in the registry:
    ```bash
    # If ready for human review:
-   node migration/dist/registry/cli.js set-artifact-status --id "<id>" --status reviewed
+   node migration/registry/dist/cli.js set-artifact-status --id "<id>" --status reviewed
 
    # If issues need fixing:
-   node migration/dist/registry/cli.js set-artifact-status --id "<id>" --status needs-rework
-   node migration/dist/registry/cli.js append-event \
+   node migration/registry/dist/cli.js set-artifact-status --id "<id>" --status needs-rework
+   node migration/registry/dist/cli.js append-event \
      --id "<id>" --type reviewed --agent review-agent \
      --summary "<summary of findings>"
    ```

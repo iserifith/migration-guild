@@ -469,6 +469,13 @@ export function claimArtifactById(
     runId?: string;
     model?: string;
     fromStatus?: Status;
+    /**
+     * US3 (#155): resume may reclaim an artifact from more than one prior
+     * status (e.g. `planned` and `blocked`). When provided, this set replaces
+     * the single `fromStatus` eligibility check; the artifact's current status
+     * must be one of these. `fromStatus` remains the single-status shorthand.
+     */
+    fromStatuses?: Status[];
     leaseMinutes?: number;
     /** read from process.env by the caller when binding to a pre-claim */
     envArtifactId?: string;
@@ -495,7 +502,11 @@ export function claimArtifactById(
   }
 
   const owner = opts.ownerId ?? opts.agent;
-  const fromStatus = opts.fromStatus ?? "planned";
+  // US3 (#155): an explicit eligible-set wins; otherwise fall back to the
+  // single `fromStatus` (default `planned`). `fromStatus` is preserved as the
+  // recorded `claimed_from`/release-return value for the claim lifecycle.
+  const fromStatus = opts.fromStatus ?? opts.fromStatuses?.[0] ?? "planned";
+  const eligibleFromStatuses = opts.fromStatuses ?? [fromStatus];
 
   return db.transaction((): ClaimedArtifact => {
     const artifact = db
@@ -541,10 +552,10 @@ export function claimArtifactById(
       );
     }
 
-    if (artifact.status !== fromStatus) {
+    if (!eligibleFromStatuses.includes(artifact.status)) {
       throw new RegistryError(
         3,
-        `Artifact "${requestedId}" has status "${artifact.status}", expected "${fromStatus}". ` +
+        `Artifact "${requestedId}" has status "${artifact.status}", expected one of [${eligibleFromStatuses.join(", ")}]. ` +
           `Refusing claim.`,
       );
     }
@@ -566,12 +577,12 @@ export function claimArtifactById(
           claimed_at = datetime('now'),
           claimed_from = @claimed_from,
           updated_at = datetime('now')
-      WHERE id = @id AND status = @from_status
+      WHERE id = @id AND status = @current_status
     `).run({
       id: requestedId,
       claimed_by: owner,
-      claimed_from: fromStatus,
-      from_status: fromStatus,
+      claimed_from: artifact.status,
+      current_status: artifact.status,
     });
     if (update.changes !== 1) {
       throw new RegistryError(3, `Failed to claim "${requestedId}": status changed concurrently.`);
@@ -594,7 +605,9 @@ export function claimArtifactById(
       run_id: opts.runId ?? null,
       owner_id: owner,
       agent: opts.agent,
-      from_status: fromStatus,
+      // The claim records the status the artifact was actually reclaimed from
+      // (US3), so a later release/expire returns it to the correct prior state.
+      from_status: artifact.status,
       claim_token: claimToken,
       attempt_no: attemptRow.attempt_no + 1,
       expected_output_paths: JSON.stringify(deriveExpectedOutputPaths(artifact, db)),
@@ -609,7 +622,7 @@ export function claimArtifactById(
       artifact_id: requestedId,
       agent: opts.agent,
       model: opts.model ?? null,
-      summary: `Claimed by ${owner} (from ${fromStatus}) [explicit id]`,
+      summary: `Claimed by ${owner} (from ${artifact.status}) [explicit id]`,
       event_data: JSON.stringify({
         claim_id: claimId,
         run_id: opts.runId ?? null,

@@ -10,6 +10,55 @@ import {
 } from "./claim";
 import { resetVerification } from "./verification";
 
+/**
+ * US4 (#156): true when a warden `filesystem-violation` restore for this claim
+ * touched one of the artifact's own `expected_output_paths`. Such an artifact
+ * must never be recorded `migrated` — the workspace no longer holds the output
+ * the status would claim was delivered.
+ */
+function wardenRestoredOwnOutput(
+  db: Database.Database,
+  artifactId: string,
+  claimId: string,
+): boolean {
+  const claimRow = db
+    .prepare("SELECT expected_output_paths FROM artifact_claims WHERE claim_id = ?")
+    .get(claimId) as { expected_output_paths: string | null } | undefined;
+  if (!claimRow?.expected_output_paths) return false;
+  let ownOutputs: string[];
+  try {
+    ownOutputs = JSON.parse(claimRow.expected_output_paths) as string[];
+  } catch {
+    return false;
+  }
+  if (!Array.isArray(ownOutputs) || ownOutputs.length === 0) return false;
+  const ownSet = new Set(ownOutputs);
+  const events = db
+    .prepare(
+      `SELECT event_data FROM events
+       WHERE artifact_id = ? AND type = 'filesystem-violation'
+       ORDER BY rowid DESC LIMIT 20`,
+    )
+    .all(artifactId) as Array<{ event_data: string | null }>;
+  for (const event of events) {
+    if (!event.event_data) continue;
+    try {
+      const data = JSON.parse(event.event_data) as {
+        claim_id?: string | null;
+        violations?: Array<{ path?: string }>;
+      };
+      if (data.claim_id !== claimId) continue;
+      if (data.violations?.some((violation) => violation.path && ownSet.has(violation.path))) {
+        return true;
+      }
+    } catch {
+      // An unparseable event payload is not evidence of an own-output restore.
+    }
+  }
+  return false;
+}
+
+
 export interface RegisterArtifactOptions {
   id: string;
   kind: Kind;
@@ -84,6 +133,24 @@ export function setArtifactStatus(
       .get(id) as Pick<Artifact, "status" | "claimed_by" | "claimed_at" | "claimed_from"> | undefined;
     if (!artifact) {
       throw new RegistryError(2, `Artifact not found: "${id}"`);
+    }
+
+    // US4 (#156): before persisting a `migrated` write that completes a claim,
+    // refuse to do so when the warden's restore for that claim reverted the
+    // artifact's own claimed output — the workspace no longer holds the output
+    // the status would claim was delivered. Throw so the caller routes to the
+    // existing failed/needs-redelivery path instead of recording `migrated`.
+    if (
+      status === "migrated" &&
+      opts.claimId &&
+      opts.claimToken &&
+      wardenRestoredOwnOutput(db, id, opts.claimId)
+    ) {
+      throw new RegistryError(
+        3,
+        `Refusing to record "${id}" as migrated: the warden restored this artifact's own claimed ` +
+          `output mid-migrate, so the workspace no longer holds the delivered output.`,
+      );
     }
 
     if (status === "in-progress") {

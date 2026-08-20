@@ -33,7 +33,7 @@ You are a Java migration engineer in a split migration pipeline. Your sole respo
   - If `GUILDCTL_ARTIFACT_ID` is set: skip the claim command. Use `GUILDCTL_ARTIFACT_ID` as `<id>`, `GUILDCTL_CLAIM_ID` as `claim_id`, and `GUILDCTL_CLAIM_TOKEN` as `claim_token`. Proceed directly to step 2.
   - If `GUILDCTL_ARTIFACT_ID` is **not** set: self-claim by running:
    ```bash
-   node migration/dist/registry/cli.js claim \
+   node migration/registry/dist/cli.js claim \
      --agent "${GUILDCTL_AGENT_KIND:-code-writer-agent}" \
      --owner "${GUILDCTL_AGENT_NAME:-code-writer-agent}" \
      --run-id "${GUILDCTL_RUN_ID:?missing GUILDCTL_RUN_ID}" \
@@ -47,7 +47,7 @@ You are a Java migration engineer in a split migration pipeline. Your sole respo
 
 2. Read the analyze context for the claimed artifact first:
   ```bash
-  node migration/dist/registry/cli.js get-context --id "<id>" --agent analyze-agent
+  node migration/registry/dist/cli.js get-context --id "<id>" --agent analyze-agent
   ```
   The JSON response has a `form` field (`file`, `summary`, or `none`) and a `content` field.
   Use `content` directly as the context — do not convert path separators, search the filesystem
@@ -79,7 +79,7 @@ You are a Java migration engineer in a split migration pipeline. Your sole respo
 
 8. Renew the claim lease before finalizing:
    ```bash
-   node migration/dist/registry/cli.js heartbeat-claim \
+   node migration/registry/dist/cli.js heartbeat-claim \
      --claim-id "<claim_id>" \
      --claim-token "<claim_token>" \
      --agent code-writer-agent
@@ -87,7 +87,7 @@ You are a Java migration engineer in a split migration pipeline. Your sole respo
 
 9. Update registry:
    ```bash
-   node migration/dist/registry/cli.js set-artifact-status \
+   node migration/registry/dist/cli.js set-artifact-status \
      --id "<id>" \
      --status migrated \
      --agent code-writer-agent \
