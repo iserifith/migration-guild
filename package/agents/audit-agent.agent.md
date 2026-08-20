@@ -212,7 +212,7 @@ For each finding, create a registry entry so it can be fixed in the next migrati
 
 ### 1. For each misplaced test fixture (7 Critical)
 ```bash
-node migration/dist/registry/cli.js create-artifact \
+node migration/registry/dist/cli.js create-artifact \
   --path "modern/src/main/java/<full/path/FileName>.java" \
   --artifact-type "fix-misplaced-fixture" \
   --category "code-quality" \
@@ -222,7 +222,7 @@ node migration/dist/registry/cli.js create-artifact \
 
 ### 2. For the Defaultr mutation bug (1 Critical)
 ```bash
-node migration/dist/registry/cli.js create-artifact \
+node migration/registry/dist/cli.js create-artifact \
   --path "modern/src/main/java/com/bazaarvoice/jolt/Defaultr.java" \
   --artifact-type "fix-mutation-bug" \
   --category "correctness" \
@@ -232,7 +232,7 @@ node migration/dist/registry/cli.js create-artifact \
 
 ### 3. For dead code (1 Critical)
 ```bash
-node migration/dist/registry/cli.js create-artifact \
+node migration/registry/dist/cli.js create-artifact \
   --path "modern/src/main/java/<path/to/DeadClass>.java" \
   --artifact-type "delete-dead-code" \
   --category "cleanup" \
@@ -242,7 +242,7 @@ node migration/dist/registry/cli.js create-artifact \
 
 ### 4. For build scope issues (1 Warning)
 ```bash
-node migration/dist/registry/cli.js create-artifact \
+node migration/registry/dist/cli.js create-artifact \
   --path "modern/build.gradle" \
   --artifact-type "fix-build-scope" \
   --category "build" \
@@ -252,7 +252,7 @@ node migration/dist/registry/cli.js create-artifact \
 
 ### 5. For view-regeneration findings (per hit)
 ```bash
-node migration/dist/registry/cli.js create-artifact \
+node migration/registry/dist/cli.js create-artifact \
   --path "<modern/path/to/ViewArtifact.java|.jsp|.xhtml>" \
   --artifact-type "replace-view-with-api-contract" \
   --category "view-regeneration" \
@@ -261,15 +261,15 @@ node migration/dist/registry/cli.js create-artifact \
 ```
 For purely-presentational views with no behavior, mark `skipped` instead and append an event:
 ```bash
-node migration/dist/registry/cli.js set-artifact-status --id "<id>" --status skipped \
-  && node migration/dist/registry/cli.js append-event \
+node migration/registry/dist/cli.js set-artifact-status --id "<id>" --status skipped \
+  && node migration/registry/dist/cli.js append-event \
        --id "<id>" --type reviewed --agent audit-agent \
        --summary "view-dropped-presentational: layout-only JSP/JSF/Struts view, no scriptlet/EL/backing-bean behavior to extract"
 ```
 
 ### 5b. For view-logic-placement findings (per hit, Warning)
 ```bash
-node migration/dist/registry/cli.js create-artifact \
+node migration/registry/dist/cli.js create-artifact \
   --path "<modern/path/to/HandlerArtifact.java>" \
   --artifact-type "extract-view-logic-to-module" \
   --category "view-logic-placement" \
@@ -279,7 +279,7 @@ node migration/dist/registry/cli.js create-artifact \
 
 ### 6. For missing tests on core classes (Critical)
 ```bash
-node migration/dist/registry/cli.js create-artifact \
+node migration/registry/dist/cli.js create-artifact \
   --path "modern/src/test/java/<package>/<ClassName>Test.java" \
   --artifact-type "add-test" \
   --category "test-coverage" \
@@ -289,7 +289,7 @@ node migration/dist/registry/cli.js create-artifact \
 
 ### 7. Assign all to next wave and run migration
 ```bash
-node migration/dist/registry/cli.js list-ready
+node migration/registry/dist/cli.js list-ready
 # All new audit entries will appear ready
 
 # Then migrate via Migration Guild:

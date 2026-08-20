@@ -23,6 +23,7 @@ loadGuildEnvironment({
 
 import { Command } from "commander";
 import { getDb } from "../registry/db/connection";
+import { RegistryError } from "../registry/types";
 import { assertDbExists, gitEnv } from "./util";
 import { runInventory } from "./commands/inventory";
 import { runScope } from "./commands/scope";
@@ -539,10 +540,22 @@ program
   .requiredOption("--arbiter <agent>", "Independent arbiter agent or role")
   .requiredOption("--reason <text>", "Decision rationale")
   .option("--evidence <id...>", "Evidence IDs to attach to the decision")
+  .option("--run-id <id>", "Existing run the evidence was produced under (approve only)")
+  .option("--operator-token <token>", "Run operator credential for --run-id (approve only)")
   .option("--json", "Print arbitration decision as JSON")
   .action(async (opts) => {
     assertDbExists(dbPath());
-    await runArbitrate(db(), opts);
+    try {
+      await runArbitrate(db(), opts);
+    } catch (err) {
+      if (err instanceof RegistryError) {
+        // US1 (#153): a credential/independence failure is an expected operator
+        // error, not a crash — one clean line, non-zero exit, no stack trace.
+        process.stderr.write(`\n✗ ${err.message}\n\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
   });
 
 program
@@ -555,7 +568,17 @@ program
   .option("--json", "Print supervisor result as JSON")
   .action(async (opts) => {
     assertDbExists(dbPath());
-    await runAutoCommand(db(), { ...opts, registryDbPath: dbPath() });
+    try {
+      await runAutoCommand(db(), { ...opts, registryDbPath: dbPath() });
+    } catch (err) {
+      if (err instanceof RegistryError) {
+        // US3 (#155): a resume/claim refusal is an expected operator error, not
+        // a crash — one clean line, non-zero exit, no stack trace.
+        process.stderr.write(`\n✗ ${err.message}\n\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
   });
 
 program

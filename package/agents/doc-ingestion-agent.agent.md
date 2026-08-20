@@ -21,7 +21,7 @@ You are the documentation-ingestion agent for the Migration Guild. Your job is t
 3. Record each entry via the registry CLI write path:
 
    ```
-   node migration/dist/registry/cli.js index-doc-entry \
+   node migration/registry/dist/cli.js index-doc-entry \
      --library "<library>" --version "<version>" \
      --symbol-kind <class|method> --symbol-name <name> [--signature <sig>] \
      --description "<text>" [--return-type <t>] \

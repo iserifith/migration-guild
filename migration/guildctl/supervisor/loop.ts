@@ -64,6 +64,26 @@ async function defaultWorker(): Promise<void> {
   throw new Error("guildctl auto requires a worker implementation in this build path");
 }
 
+/**
+ * US2 (#154) / T009: the event type a remediation pass appends to declare "no
+ * defect was found — do not re-loop verify/repair for this cause." When this
+ * signal is present for an artifact, the supervisor treats the artifact as
+ * terminal (operator-visible) instead of dispatching another verify attempt.
+ */
+export const REMEDIATION_CONFIRMED_NO_DEFECT = "remediation-confirmed-no-defect" as const;
+
+/**
+ * True when a `remediation-confirmed-no-defect` event exists for the artifact —
+ * the supervisor's cue to stop the blocked-verify re-loop and surface the
+ * artifact to the operator instead of re-running verify.
+ */
+export function hasRemediationConfirmedNoDefect(db: Database.Database, artifactId: string): boolean {
+  const row = db
+    .prepare("SELECT 1 AS x FROM events WHERE artifact_id = ? AND type = ? LIMIT 1")
+    .get(artifactId, REMEDIATION_CONFIRMED_NO_DEFECT) as { x: number } | undefined;
+  return row != null;
+}
+
 export const highRiskDriftKinds: ReadonlySet<DeltaKind> = new Set([
   "private-constructor-added",
   "field-became-final",
@@ -436,17 +456,40 @@ export async function runAuto(
     outputDir: opts.outputDir ?? `${opts.workspaceRoot}/.guild/evidence`,
     runId,
     operatorToken: operator.token,
+    config: autoConfig,
   }));
 
   let attempts = 0;
   try {
+    // US2 (#154) / T009: a remediation pass that appended
+    // `remediation-confirmed-no-defect` for this artifact has already declared
+    // the blocked-verify cause resolved-without-a-defect. The supervisor MUST
+    // NOT dispatch another verify/repair loop for the same unresolved cause —
+    // surface the artifact in a terminal, operator-visible state instead.
+    if (hasRemediationConfirmedNoDefect(db, opts.artifactId)) {
+      appendEvent(db, {
+        id: opts.artifactId,
+        type: "blocked",
+        agent: "guildctl-auto",
+        summary:
+          "Remediation confirmed no defect for this artifact; the supervisor is not " +
+          "re-running verify/repair. Surface for operator attention.",
+      });
+      finishRun(db, { runId, exitCode: 1, reason: "remediation-confirmed-no-defect: operator attention required" });
+      return { status: "blocked", runId, attempts };
+    }
+
     let fromStatus: "planned" | "migrated" = "planned";
     let phase: "migrate" | "repair" = "migrate";
     let reviewReason: string | undefined;
     if (opts.resume) {
       const latest = latestRuntimeEvidence(db, opts.artifactId);
       const artifact = db.prepare("SELECT status FROM artifacts WHERE id = ?").get(opts.artifactId) as { status: string } | undefined;
-      if (artifact?.status === "migrated" && latest?.pass !== 0) {
+      // US3 (#155): a blocked artifact is resume-eligible. Treat it exactly
+      // like a migrated-without-failing-evidence resume: re-verify, then drive
+      // review/arbitration from the verifier outcome — no claim from
+      // `planned`, so no raw "expected \"planned\"" RegistryError.
+      if (artifact?.status === "blocked" || (artifact?.status === "migrated" && latest?.pass !== 0)) {
         const verification = await verifier();
         if (!verification.pass) {
           const failureText = verification.evidence.map((item) => item.output_excerpt ?? item.summary).join("\n");
@@ -503,6 +546,18 @@ export async function runAuto(
             });
           }
 
+          // US3 (#155): a blocked artifact whose resume re-verification passed
+          // has its blocked cause cleared by the verifier. Restore it to
+          // `migrated` so independent review and arbitration operate on the
+          // migrated proposal (arbitration requires `migrated`).
+          if (artifact?.status === "blocked") {
+            setArtifactStatus(db, opts.artifactId, "migrated", {
+              agent: "guildctl-resume",
+              runId,
+              operatorToken: operator.token,
+              reason: "Resume re-verification passed; blocked artifact restored to migrated for review",
+            });
+          }
           const reviewResult = await guardedIndependentReview(db, opts, review, {
             artifactId: opts.artifactId,
             runId,
@@ -566,6 +621,11 @@ export async function runAuto(
         ownerId: claimOwner,
         runId,
         fromStatus,
+        // US3 (#155): on resume, a blocked artifact that needs a repair attempt
+        // is reclaimed from `blocked` as well as the phase's own from-status.
+        fromStatuses: opts.resume
+          ? Array.from(new Set<typeof fromStatus | "blocked">([fromStatus, "blocked"]))
+          : undefined,
       });
       const allowedPaths = parseAllowedPaths(claim);
       const snapshot = snapshotWorkspaceForWardenWithExclusions(opts.workspaceRoot, wardenExcludedPaths);

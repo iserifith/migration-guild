@@ -3,11 +3,13 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
-import { resolveGuildConfig, resolveProviderRoute, resolveTerminationGraceMs, resolveWorkspaceRoot } from "../config";
+import { resolveGuildConfig, resolveProviderRoute, resolveTerminationGraceMs, resolveVerificationBudgetMs, resolveWorkspaceRoot } from "../config";
 import { resolveAgentLaunch, type HarnessResolution } from "../harness";
 import { AutonomousLimitError, formatLimitTerminationNote, limitPhaseForAutoWorker, resolveEffectiveLimit, type EffectiveLimit } from "../limits";
 import { terminateProcessGroup, type ProcessGroupTerminationResult } from "../util";
 import { runAuto, type AutoResult, type AutoReviewDecision, type AutoReviewInput, type AutoWorkerInput } from "../supervisor/loop";
+import { loadActiveStack, resolvePerArtifactVerify } from "../stack";
+import { runArtifactVerification, type ArtifactVerificationOutcome } from "../verify";
 
 /**
  * T047: ceiling/inactivity enforcement around an autonomous spawn, resolved
@@ -467,13 +469,41 @@ export async function runAutoCommand(db: Database.Database, opts: AutoCliOptions
   if (!opts.registryDbPath || !path.isAbsolute(opts.registryDbPath)) {
     throw new Error("guildctl auto requires the resolved absolute registry DB path for exact worker handoff");
   }
+  const explicitCommands = commands(opts);
+  // US2 (#154) / T012: when the operator passes no --command, the verify step
+  // resolves from the active stack pack's `verify.per_artifact` check (e.g.
+  // javac-scope-compile for java-spring) — never a hardcoded `npm test`. The
+  // check is resolved once per auto invocation and handed to the supervisor as
+  // an injected verifier; the loop itself stays unchanged.
+  const verifyOverride = explicitCommands.length > 0 ? undefined : (() => {
+    let check;
+    try {
+      check = resolvePerArtifactVerify(loadActiveStack(cfg, workspaceRoot));
+    } catch {
+      // No pack, unknown pack, or a malformed verify block: a missing check is
+      // not a failed verification — runArtifactVerification maps it to an
+      // *unverified* outcome rather than blocking.
+      check = undefined;
+    }
+    return async () => {
+      const outcome: ArtifactVerificationOutcome = await runArtifactVerification(db, {
+        artifactId: opts.artifact,
+        workspaceRoot,
+        check,
+        budgetMs: resolveVerificationBudgetMs(cfg, process.env, check?.budget_seconds),
+        config: cfg,
+      });
+      return { pass: outcome.state === "verified", evidence: [] };
+    };
+  })();
   const result = await runAuto(db, {
     artifactId: opts.artifact,
     workspaceRoot,
-    commands: commands(opts).length > 0 ? commands(opts) : ["npm test"],
+    commands: explicitCommands.length > 0 ? explicitCommands : [],
     maxAttempts: opts.maxAttempts,
     resume: opts.resume,
     producerModel: lastProducerModel,
+    verify: verifyOverride,
     worker: scriptedWorker(workspaceRoot, cfg, (model) => { lastProducerModel = model; }, opts.registryDbPath),
     review: harnessReviewer(workspaceRoot, cfg, () => lastProducerModel),
   });

@@ -39,6 +39,7 @@ const VALID_EVENT_TYPES: readonly EventType[] = [
   "filesystem-violation",
   "thread-created",
   "dependency-strategy-set",
+  "remediation-confirmed-no-defect",
 ];
 
 export interface AppendEventOptions {

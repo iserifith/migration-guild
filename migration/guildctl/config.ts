@@ -31,7 +31,7 @@ export interface GuildConfig {
   // termination_grace_seconds bounds the graceful→forced escalation window.
   agent_limits: { inactivity_timeout_seconds: number; ceiling_seconds: number; termination_grace_seconds: number };
   // Wall-clock budget for one bounded per-artifact verification check.
-  verification: { budget_seconds: number };
+  verification: { budget_seconds: number; max_concurrent?: number };
   // Shared wall-clock budget for live preflight; CLI --budget-seconds may override it per invocation.
   preflight: { budget_seconds: number };
   profiles: Record<string, JsonMap>;
@@ -78,6 +78,9 @@ export const DEFAULT_GUILD_CONFIG: GuildConfig = {
   migration: { default_mode: "init", require_evidence_before_intent: true, max_autonomous_steps: 3 },
   inventory: { classificationBatchSize: 100, maxBatchRetries: 2 },
   agent_limits: { inactivity_timeout_seconds: 120, ceiling_seconds: 1800, termination_grace_seconds: 5 },
+  // verification.max_concurrent is intentionally omitted: resolveVerifyMaxConcurrent
+  // defaults it to max(os.cpus().length - 1, 1) so the verify ceiling scales with
+  // the host (US5 / #151). An operator can still pin it via config or env.
   verification: { budget_seconds: 120 },
   preflight: { budget_seconds: 30 },
   profiles: {
@@ -427,6 +430,26 @@ export function resolveVerificationBudgetMs(
   }
   const configured = config.verification?.budget_seconds ?? DEFAULT_GUILD_CONFIG.verification.budget_seconds;
   return positiveNumber(env["GUILDCTL_VERIFY_BUDGET_SECONDS"], configured) * 1000;
+}
+
+/**
+ * Upper bound on concurrently-live verify subprocesses (US5 / #151).
+ * Precedence: GUILDCTL_VERIFY_MAX_CONCURRENT → `verification.max_concurrent`
+ * → built-in default of `max(os.cpus().length - 1, 1)`, so the ceiling scales
+ * with the host while always leaving one core free. Always a positive integer.
+ */
+function defaultVerifyMaxConcurrent(): number {
+  return Math.max((os.cpus()?.length ?? 2) - 1, 1);
+}
+
+export function resolveVerifyMaxConcurrent(
+  config: Pick<GuildConfig, "verification"> = DEFAULT_GUILD_CONFIG,
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const configured = config.verification?.max_concurrent ?? defaultVerifyMaxConcurrent();
+  const raw = env["GUILDCTL_VERIFY_MAX_CONCURRENT"];
+  const value = raw != null && raw !== "" ? Number(raw) : configured;
+  return Number.isFinite(value) && value > 0 ? Math.max(1, Math.floor(value)) : Math.max(1, Math.floor(configured));
 }
 
 /**

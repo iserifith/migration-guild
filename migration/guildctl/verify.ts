@@ -7,6 +7,7 @@ import type Database from "better-sqlite3";
 import { deriveExpectedOutputPaths } from "../registry/commands/claim";
 import { addVerifierRuntimeEvidence } from "../registry/commands/evidence";
 import { getVerification, setVerification } from "../registry/commands/verification";
+import { withVerifySlot } from "../registry/commands/verifySlot";
 import type {
   AcceptanceEvidence,
   Artifact,
@@ -32,6 +33,8 @@ export interface VerifyOptions {
   outputDir: string;
   runId?: string | null;
   operatorToken?: string | null;
+  /** Resolved Guild config; supplies the verify-concurrency slot bound (US5 / #151). */
+  config?: Pick<GuildConfig, "verification">;
 }
 
 export interface VerifyResult {
@@ -137,11 +140,19 @@ export async function runVerify(
     let stdout = "";
     let stderr = "";
     try {
-      const result = await execAsync(command, {
-        cwd: opts.workspaceRoot,
-        env: scrubVerificationEnv(process.env),
-        maxBuffer: 10 * 1024 * 1024,
-      });
+      // US5 (#151) / T023: hold one bounded verify slot across the spawned
+      // command so no more than `verification.max_concurrent` verify
+      // subprocesses are live at once; released in a `finally` inside
+      // withVerifySlot on settle.
+      const result = await withVerifySlot(
+        db,
+        { runId: opts.runId ?? null, artifactId: opts.artifactId, config: opts.config },
+        () => execAsync(command, {
+          cwd: opts.workspaceRoot,
+          env: scrubVerificationEnv(process.env),
+          maxBuffer: 10 * 1024 * 1024,
+        }),
+      );
       stdout = redactSecrets(result.stdout);
       stderr = redactSecrets(result.stderr);
     } catch (error) {
@@ -331,6 +342,12 @@ export interface ArtifactVerificationOptions {
   agentReportedUnverifiable?: boolean;
   /** When false the record is computed but not written (used by callers that persist separately). */
   persist?: boolean;
+  /**
+   * Resolved Guild config; supplies `verification.max_concurrent` /
+   * `budget_seconds` for the bounded verify-concurrency slot (US5 / #151).
+   * Optional so existing callers that never spawn a check are unaffected.
+   */
+  config?: Pick<GuildConfig, "verification">;
 }
 
 export interface ArtifactVerificationOutcome {
@@ -537,7 +554,18 @@ export async function runArtifactVerification(
   }
 
   fs.mkdirSync(workingDir, { recursive: true });
-  const execution = await executeCheck(opts.check, argv, workingDir, budgetMs);
+  // US5 (#151) / T023: hold one bounded verify slot for the lifetime of the
+  // spawned check, so no more than `verification.max_concurrent` verify
+  // subprocesses are live at once. The slot is released in a `finally` inside
+  // withVerifySlot even when the check times out, errors, or the budget kills
+  // its process group. Skipping the no-check / unavailable-tool / incomplete-
+  // tree paths above is intentional — those never spawn a subprocess, so they
+  // must not consume a slot.
+  const execution = await withVerifySlot(
+    db,
+    { runId: opts.runId ?? null, artifactId: opts.artifactId, config: opts.config },
+    () => executeCheck(opts.check!, argv, workingDir, budgetMs),
+  );
   const coveredScope = [...scope.ownOutputPaths, ...scope.dependencyPaths];
 
   if (execution.timedOut) {
@@ -638,6 +666,7 @@ export async function verifyAtClaimClose(
       operatorToken: opts.operatorToken,
       claimId: opts.claimId,
       claimToken: opts.claimToken,
+      config: opts.config,
     });
     return getVerification(db, opts.artifactId);
   } catch {

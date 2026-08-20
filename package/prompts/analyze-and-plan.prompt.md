@@ -6,7 +6,7 @@ Analyze the legacy Java application in `legacy/` and produce a complete migratio
 
 1. Initialize the registry if it does not yet exist:
    ```bash
-   node migration/dist/registry/cli.js init
+   node migration/registry/dist/cli.js init
    ```
 
 2. Run `context-agent` on each source file in `legacy/` to classify and register all artifacts — both Java source files (first-class) and supporting config/descriptor/SQL files (second-class).
@@ -20,9 +20,9 @@ Analyze the legacy Java application in `legacy/` and produce a complete migratio
 
    To confirm mappings:
    ```bash
-   node migration/dist/registry/cli.js list-mappings
+   node migration/registry/dist/cli.js list-mappings
    # Then for each mapping:
-   node migration/dist/registry/cli.js confirm-mapping --id "<id>" --confirmed-by "<your-name>"
+   node migration/registry/dist/cli.js confirm-mapping --id "<id>" --confirmed-by "<your-name>"
    ```
 
 4. Run `planner-agent` to:
@@ -33,7 +33,7 @@ Analyze the legacy Java application in `legacy/` and produce a complete migratio
 
 5. Report the wave plan:
    ```bash
-   node migration/dist/registry/cli.js wave-plan
+   node migration/registry/dist/cli.js wave-plan
    ```
 
 6. Output:

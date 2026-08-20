@@ -191,7 +191,7 @@ test("arbitrate --approve fails without evidence", () => {
   });
 });
 
-test("arbitrate --approve rejects runtime evidence without a run operator credential", () => {
+test("arbitrate --approve rejects runtime evidence whose run the ad-hoc credential cannot validate", () => {
   withFixture((fixture) => {
     const verifyResult = runCli(fixture, [
       "verify",
@@ -202,6 +202,13 @@ test("arbitrate --approve rejects runtime evidence without a run operator creden
     ]);
     assert.equal(verifyResult.status, 0, verifyResult.stderr);
 
+    // US1 (#153): bare manual approve now mints an ad-hoc run + credential and
+    // passes it through, so the failure is no longer "missing credential" —
+    // it is the registry's run-binding check: the evidence's authenticity HMAC
+    // binds it to the run that produced it, and an ad-hoc run cannot validate
+    // another run's evidence. Supplying --run-id/--operator-token for the
+    // evidence's own run is the supported manual-approval path (covered in
+    // arbitrate-manual-approval.test.ts).
     const result = runCli(fixture, [
       "arbitrate",
       "--artifact",
@@ -214,7 +221,7 @@ test("arbitrate --approve rejects runtime evidence without a run operator creden
     ]);
 
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /valid run operator credential/i);
+    assert.match(result.stderr, /run operator credential|does not match runtime evidence/i);
     const db = new Database(fixture.dbPath);
     try {
       assert.equal(getArtifactById(db, ARTIFACT_ID).status, "migrated");

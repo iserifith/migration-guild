@@ -224,6 +224,34 @@ test("a resolvable adapter whose provider request returns an empty completion is
   }
 });
 
+// ─── US7 (#158, FR-014, SC-008): reasoning-model probe budget ───────────────
+test("US7: the live probe carries a raised max_tokens so a reasoning model is not false-failed", async () => {
+  // #158: a reasoning model (openai/kimi-k3 class) burns its 16-token budget on
+  // chain-of-thought before any visible output, so the probe false-failed a
+  // healthy provider with "provider returned an empty completion". The probe's
+  // max_tokens must be raised (256–512) so a reachable provider that answers
+  // within the budget is reported healthy, while a genuinely-unreachable or
+  // still-empty provider still fails with the unchanged message (FR-014).
+  const { result, calls } = await preflight([{ body: completionBody("pong") }]);
+  assert.equal(result.verdict, "pass", JSON.stringify(result));
+  assert.equal(calls.length, 1);
+  const body = calls[0].body as { max_tokens?: number };
+  assert.equal(typeof body.max_tokens, "number", "probe must send a numeric max_tokens");
+  assert.ok(
+    body.max_tokens! >= 256,
+    `max_tokens must be raised to accommodate a reasoning model's chain-of-thought (got ${body.max_tokens})`,
+  );
+});
+
+test("US7: a provider that still returns an empty completion at the raised budget keeps the unchanged failure message", async () => {
+  const { result, calls } = await preflight([{ body: emptyCompletionBody() }]);
+  assert.equal(result.verdict, "fail", JSON.stringify(result));
+  assert.equal(result.failedStage, "response");
+  // FR-014 / T031: the failure message shape is deliberately unchanged.
+  assert.equal(result.reason, "provider returned an empty completion");
+  assert.equal(calls.length, 1, "one probe, never a retry to find a better answer (FR-012)");
+});
+
 test("an environment-sourced harness is still gated by the live provider request", async () => {
   const root = makeTempDir("guild-preflight-agentcmd-");
   try {

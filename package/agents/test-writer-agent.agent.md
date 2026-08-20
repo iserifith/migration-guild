@@ -32,7 +32,7 @@ You are a Java test engineer in a split migration pipeline. Your sole responsibi
    - If `GUILDCTL_ARTIFACT_ID` is set: skip the claim command. Use `GUILDCTL_ARTIFACT_ID` as `<claimed-id>`, `GUILDCTL_CLAIM_ID` as `claim_id`, and `GUILDCTL_CLAIM_TOKEN` as `claim_token`. Proceed directly to step 2.
    - If `GUILDCTL_ARTIFACT_ID` is **not** set: self-claim by running:
    ```bash
-   node migration/dist/registry/cli.js claim \
+   node migration/registry/dist/cli.js claim \
      --agent "${GUILDCTL_AGENT_KIND:-test-writer-agent}" \
      --owner "${GUILDCTL_AGENT_NAME:-test-writer-agent}" \
      --run-id "${GUILDCTL_RUN_ID:?missing GUILDCTL_RUN_ID}" \
@@ -46,7 +46,7 @@ You are a Java test engineer in a split migration pipeline. Your sole responsibi
 
 2. Read the analyze context first:
    ```bash
-   node migration/dist/registry/cli.js get-context --id "<claimed-id>" --agent analyze-agent
+   node migration/registry/dist/cli.js get-context --id "<claimed-id>" --agent analyze-agent
    ```
    The JSON response has a `form` field (`file`, `summary`, or `none`) and a `content` field.
    Use `content` directly as the primary source of truth — do not convert path separators,
@@ -65,7 +65,7 @@ You are a Java test engineer in a split migration pipeline. Your sole responsibi
 
 6. **Resolve second-class dependencies inline.** Before writing any test code, check for linked config/descriptor/SQL artifacts:
    ```bash
-   node migration/dist/registry/cli.js list-dependencies --id "<claimed-id>"
+   node migration/registry/dist/cli.js list-dependencies --id "<claimed-id>"
    ```
    For each dependency with `tier = second-class` and `status = planned`:
    - Mark it in-progress: `set-artifact-status --id "<dep-id>" --status in-progress`
@@ -84,7 +84,7 @@ You are a Java test engineer in a split migration pipeline. Your sole responsibi
 
 8. Renew the claim lease before finalizing:
    ```bash
-   node migration/dist/registry/cli.js heartbeat-claim \
+   node migration/registry/dist/cli.js heartbeat-claim \
      --claim-id "<claim_id>" \
      --claim-token "<claim_token>" \
      --agent test-writer-agent
@@ -92,7 +92,7 @@ You are a Java test engineer in a split migration pipeline. Your sole responsibi
 
 9. Update registry:
    ```bash
-   node migration/dist/registry/cli.js set-artifact-status \
+   node migration/registry/dist/cli.js set-artifact-status \
      --id "<claimed-id>" \
      --status tests-written \
      --agent test-writer-agent \
