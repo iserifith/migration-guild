@@ -256,3 +256,31 @@ test("a pack with no verify: block is valid and simply declares no check", () =>
     "no verify: block resolves to no check, which maps to no-stack-check");
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test("bootstrap does not corrupt Spring Boot API symbols via bare-marker substring collision and sanitizes a reserved-word package", () => {
+  // Regression for a real-run finding: render()'s marker was a bare identifier
+  // ("Application"), so a plain substring replace corrupted "SpringApplication"
+  // and "@SpringBootApplication" into fabricated, non-existent symbols whenever
+  // the derived app class also ended in "Application". Separately, a module
+  // name of "default" produced the illegal `package default;`.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "guild-bootstrap-collision-"));
+  fs.cpSync(path.join(repoRoot, "stacks"), path.join(root, "stacks"), { recursive: true });
+  scaffoldGuildConfig(root);
+
+  const artifacts = [{ path: "legacy/src/main/java/default/LegacyService.java", module: "default", role: "service", framework: null }];
+  const result = bootstrapTargetModule(root, artifacts);
+
+  assert.equal(result.basePackage, "defaultpkg", "reserved Java keyword must not survive as a bare package segment");
+
+  const appFile = fs.readFileSync(
+    path.join(root, "modern", "src", "main", "java", "defaultpkg", `${result.appName.replace(/[^a-z0-9-]/gi, "").split("-").map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join("")}Application.java`),
+    "utf8",
+  );
+  assert.match(appFile, /^package defaultpkg;$/m);
+  assert.match(appFile, /import org\.springframework\.boot\.SpringApplication;/);
+  assert.match(appFile, /import org\.springframework\.boot\.autoconfigure\.SpringBootApplication;/);
+  assert.match(appFile, /^@SpringBootApplication$/m);
+  assert.doesNotMatch(appFile, /SpringDefaultApplication|SpringBootDefaultApplication/);
+
+  fs.rmSync(root, { recursive: true, force: true });
+});

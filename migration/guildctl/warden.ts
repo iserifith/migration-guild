@@ -138,16 +138,22 @@ function registeredExpectedOutputPaths(db: Database.Database | undefined, exclud
     }
 
     // Also include paths explicitly recorded in claims (covers edge cases
-    // where claim expected_output_paths differ from derived), scoped to the
-    // same wave for the same reason.
+    // where claim expected_output_paths differ from derived). NOT scoped by
+    // wave: `run migrate --parallel N` claims artifacts across waves
+    // concurrently whenever it's invoked without an explicit `--wave` (see
+    // claimNextTask's opt-in wave filter), so a wave-scoped allowlist here
+    // let a later-wave artifact's end-of-session check treat an
+    // already-completed earlier-wave sibling's real output as unauthorized
+    // and hard-delete it. Any artifact that was ever claimed in this run has
+    // actually been worked on (unlike the unclaimed same-wave stub case
+    // above), so sanctioning its output regardless of wave doesn't weaken
+    // protection against edits to untouched, unrelated artifacts.
     const claimRows = db.prepare(`
       SELECT c.expected_output_paths
       FROM artifact_claims c
-      JOIN artifacts a ON a.id = c.artifact_id
       WHERE c.expected_output_paths IS NOT NULL
         AND c.artifact_id != ?
-        AND a.wave IS ?
-    `).all(excludeArtifactId, currentWave) as Array<{ expected_output_paths: string }>;
+    `).all(excludeArtifactId) as Array<{ expected_output_paths: string }>;
     for (const row of claimRows) {
       try {
         const parsed = JSON.parse(row.expected_output_paths) as unknown;
@@ -158,6 +164,20 @@ function registeredExpectedOutputPaths(db: Database.Database | undefined, exclud
         // Ignore malformed historical claim metadata; the current claim's
         // validated allowed paths are still enforced by the caller.
       }
+    }
+
+    // Fall back to derived paths (same as the same-wave case above) for any
+    // claimed artifact whose claim rows lack expected_output_paths, again
+    // without wave scoping for the reason described above.
+    const claimedArtifactRows = db.prepare(`
+      SELECT DISTINCT a.id, a.path
+      FROM artifact_claims c
+      JOIN artifacts a ON a.id = c.artifact_id
+      WHERE c.artifact_id != ?
+    `).all(excludeArtifactId) as Array<{ id: string; path: string }>;
+    for (const row of claimedArtifactRows) {
+      const derived = deriveExpectedOutputPaths({ path: row.path } as Artifact);
+      for (const p of derived) paths.add(p);
     }
 
     return [...paths];
@@ -227,11 +247,21 @@ export function enforceWardenSnapshot(
     // unchanged, and recording this MUST NOT add the path to any allow-list —
     // broadening write authorization is out of scope.
     const outOfScopePaths = violations.map((violation) => violation.path);
+    // "created"-kind violations are hard-deleted (fs.rmSync above), not restored —
+    // there is no prior version to restore. Only "deleted"/"modified" kinds get
+    // their prior content written back. The summary must say which happened, since
+    // an operator reading run output otherwise can't tell that data was lost.
+    const deletedCount = violations.filter((violation) => violation.kind === "created").length;
+    const restoredCount = violations.length - deletedCount;
+    const summaryParts = [
+      deletedCount > 0 ? `${deletedCount} unauthorized file(s) deleted` : null,
+      restoredCount > 0 ? `${restoredCount} unauthorized change(s) restored` : null,
+    ].filter((part): part is string => part !== null);
     appendEvent(db, {
       id: opts.artifactId,
       type: "filesystem-violation",
       agent: opts.agent,
-      summary: `${violations.length} unauthorized filesystem change(s) restored`,
+      summary: summaryParts.join("; "),
       data: JSON.stringify({
         violations,
         out_of_scope_paths: outOfScopePaths,

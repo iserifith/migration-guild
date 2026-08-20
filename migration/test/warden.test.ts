@@ -6,7 +6,7 @@ import test from "node:test";
 import Database from "better-sqlite3";
 import { enforceWardenSnapshot, snapshotWorkspaceForWarden, snapshotWorkspaceForWardenWithExclusions, transientWardenExclusions } from "../guildctl/warden";
 import { expandWardenExclusions } from "../guildctl/runner";
-import { registerArtifact } from "../registry/commands/artifacts";
+import { registerArtifact, setArtifactWave } from "../registry/commands/artifacts";
 import { applySchema } from "../registry/db/schema";
 
 function createDb(): Database.Database {
@@ -59,7 +59,10 @@ test("filesystem warden restores unauthorized writes creations and deletions exa
     const event = db.prepare("SELECT type, summary, event_data FROM events WHERE artifact_id = ? ORDER BY ts DESC LIMIT 1")
       .get("legacy-source:com.acme:Warden") as { type: string; summary: string; event_data: string };
     assert.equal(event.type, "filesystem-violation");
-    assert.match(event.summary, /3 unauthorized filesystem change/);
+    // "created"-kind violations (legacy/Created.java) are hard-deleted, not restored;
+    // the summary must say so distinctly from the genuinely-restored kinds.
+    assert.match(event.summary, /1 unauthorized file\(s\) deleted/);
+    assert.match(event.summary, /2 unauthorized change\(s\) restored/);
   } finally {
     db.close();
     fs.rmSync(workspace, { recursive: true, force: true });
@@ -293,6 +296,73 @@ test("filesystem warden preserves output paths sanctioned by parallel claims", (
     assert.equal(result.clean, false);
     assert.deepEqual(result.violations.map((v) => v.path), ["modern/Unauthorized.java"]);
     assert.equal(fs.readFileSync(path.join(workspace, "modern", "SiblingTest.java"), "utf8"), "sanctioned\n");
+    assert.equal(fs.existsSync(path.join(workspace, "modern", "Unauthorized.java")), false);
+  } finally {
+    db.close();
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("filesystem warden preserves a completed cross-wave sibling's output under --parallel without --wave", () => {
+  // Regression for the real-run finding: `run migrate --parallel N` (no
+  // explicit --wave) can claim artifacts from different waves concurrently.
+  // A later-wave artifact's end-of-session warden check must not hard-delete
+  // an earlier-wave sibling's already-completed, legitimate output just
+  // because registeredExpectedOutputPaths used to scope its allowlist to
+  // the enforcing artifact's own wave.
+  const db = createDb();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-warden-crosswave-"));
+  try {
+    fs.mkdirSync(path.join(workspace, "modern"), { recursive: true });
+    registerArtifact(db, {
+      id: "legacy-source:com.acme:WaveThreeArtifact",
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/WaveThreeArtifact.java",
+    });
+    registerArtifact(db, {
+      id: "legacy-source:com.acme:WaveOneSibling",
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/WaveOneSibling.java",
+    });
+    setArtifactWave(db, "legacy-source:com.acme:WaveThreeArtifact", 3);
+    setArtifactWave(db, "legacy-source:com.acme:WaveOneSibling", 1);
+
+    // The wave-1 sibling's claim already finished (state = 'completed') by
+    // the time the wave-3 artifact's session ends — the actual sequencing
+    // in the real run that triggered the bug.
+    db.prepare(`
+      INSERT INTO artifact_claims (
+        claim_id, artifact_id, owner_id, agent, from_status, claim_token,
+        state, attempt_no, expected_output_paths, claimed_at, lease_expires_at
+      ) VALUES (
+        'claim-wave-one', 'legacy-source:com.acme:WaveOneSibling', 'sibling-owner',
+        'code-writer-agent', 'analyzed', 'token-wave-one', 'completed', 1,
+        '["modern/WaveOneSibling.java"]', datetime('now'), datetime('now', '+30 minutes')
+      )
+    `).run();
+
+    const snapshot = snapshotWorkspaceForWarden(workspace);
+    // Wave-1 sibling's real, already-migrated output shows up as "created"
+    // from the wave-3 artifact's own before/after snapshot.
+    fs.writeFileSync(path.join(workspace, "modern", "WaveOneSibling.java"), "migrated by wave 1\n");
+    fs.writeFileSync(path.join(workspace, "modern", "Unauthorized.java"), "unauthorized\n");
+
+    const result = enforceWardenSnapshot(db, {
+      artifactId: "legacy-source:com.acme:WaveThreeArtifact",
+      workspaceRoot: workspace,
+      snapshot,
+      allowedPaths: [],
+      agent: "guildctl-warden",
+    });
+
+    assert.deepEqual(result.violations.map((v) => v.path), ["modern/Unauthorized.java"]);
+    assert.equal(
+      fs.readFileSync(path.join(workspace, "modern", "WaveOneSibling.java"), "utf8"),
+      "migrated by wave 1\n",
+      "cross-wave sibling's completed output must survive, not be hard-deleted",
+    );
     assert.equal(fs.existsSync(path.join(workspace, "modern", "Unauthorized.java")), false);
   } finally {
     db.close();

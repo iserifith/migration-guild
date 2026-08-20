@@ -661,7 +661,16 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
           wardenClean = warden.clean;
           if (!warden.clean) {
             finalExitCode = 1;
-            const msg = `[guildctl] filesystem warden restored ${warden.violations.length} unauthorized change(s); marking run failed`;
+            // "created"-kind violations are hard-deleted, not restored — there is no
+            // prior version to restore. Distinguish so operators reading run output
+            // can tell that data was lost vs. simply reverted.
+            const deletedCount = warden.violations.filter((violation) => violation.kind === "created").length;
+            const restoredCount = warden.violations.length - deletedCount;
+            const msgParts = [
+              deletedCount > 0 ? `${deletedCount} unauthorized file(s) deleted` : null,
+              restoredCount > 0 ? `${restoredCount} unauthorized change(s) restored` : null,
+            ].filter((part): part is string => part !== null);
+            const msg = `[guildctl] filesystem warden: ${msgParts.join("; ")}; marking run failed`;
             process.stderr.write(
               (process.stderr.isTTY ? "\x1b[1;31m" : "") + msg + (process.stderr.isTTY ? "\x1b[0m" : "") + "\n",
             );
