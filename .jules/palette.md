@@ -10,3 +10,7 @@
 ## 2024-05-18 - Centralizing ARIA live regions for async states
 **Learning:** The application heavily abstracts async state rendering into `ViewState.tsx` (`LoadingState`, `EmptyState`, `ErrorState`).
 **Action:** By adding `role="status"` and `role="alert"` centrally to `StateCard`, we guarantee consistent screen reader announcements for all dynamic state changes across every tab without needing to sprinkle `aria-live` regions everywhere.
+
+## 2024-08-20 - Adding Loading Feedback to Async Buttons
+**Learning:** Adding `aria-busy` along with dynamic text and disabling a button during async operations provides significantly better screen reader accessibility and visual feedback.
+**Action:** Always include loading states for any global async refresh buttons to indicate work is happening in the background.

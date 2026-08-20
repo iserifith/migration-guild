@@ -214,6 +214,7 @@ export default function App() {
     blockers,
     issues,
     runs,
+    loading,
     reload,
   } = useRegistryData({
     sessions: sessionQuery,
@@ -281,8 +282,16 @@ export default function App() {
               <option value="local">Local time</option>
             </select>
           </label>
-          <button className="header-button" onClick={reload} type="button">
-            ↻ refresh
+          <button
+            aria-busy={loading}
+            aria-label={loading ? "Refreshing data" : "Refresh data"}
+            className="header-button"
+            disabled={loading}
+            onClick={reload}
+            title={loading ? "Refreshing..." : "Refresh"}
+            type="button"
+          >
+            {loading ? "↻ refreshing..." : "↻ refresh"}
           </button>
         </div>
       </header>
