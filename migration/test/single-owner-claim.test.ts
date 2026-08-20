@@ -246,6 +246,42 @@ test("TASK-05: deriveExpectedOutputPaths mirrors legacy/ to modern/", () => {
   assert.deepEqual(deriveExpectedOutputPaths({ path: "src/main/C.java" } as any), []);
 });
 
+test("TASK-05 regression: deriveExpectedOutputPaths handles flat single-module legacy layouts", () => {
+  // No intermediate module segment between `legacy/` and `src/` — this is the
+  // real-world layout of package/mock/legacy-customer-utils and similar
+  // single-module fixtures (legacy/src/main/java/... with no module dir).
+  assert.deepEqual(
+    deriveExpectedOutputPaths({ path: "legacy/src/main/java/com/acme/Foo.java" } as any),
+    [
+      "modern/src/main/java/com/acme/Foo.java",
+      "modern/src/test/java/com/acme/FooTest.java",
+    ],
+  );
+  // Flat layout test file (standard Maven src/test/java convention).
+  assert.deepEqual(
+    deriveExpectedOutputPaths({
+      path: "legacy/src/test/java/com/acme/legacy/customer/LegacyCustomerKeyServiceTest.java",
+    } as any),
+    [
+      "modern/src/main/java/com/acme/legacy/customer/LegacyCustomerKeyServiceTest.java",
+      "modern/src/test/java/com/acme/legacy/customer/LegacyCustomerKeyServiceTest.java",
+      "modern/src/test/java/com/acme/legacy/customer/LegacyCustomerKeyServiceTestTest.java",
+    ],
+  );
+  // Nested module layout using the standard Maven src/main/java convention
+  // (as opposed to jforum's bare `<module>/src/<pkg>.java` layout above) must
+  // keep working too.
+  assert.deepEqual(
+    deriveExpectedOutputPaths({
+      path: "legacy/legacy-customer-utils/src/main/java/com/acme/legacy/customer/LegacyCustomerRecord.java",
+    } as any),
+    [
+      "modern/src/main/java/com/acme/legacy/customer/LegacyCustomerRecord.java",
+      "modern/src/test/java/com/acme/legacy/customer/LegacyCustomerRecordTest.java",
+    ],
+  );
+});
+
 void claimNextTask;
 void reconcileStaleClaims;
 void releaseClaimRecord;
