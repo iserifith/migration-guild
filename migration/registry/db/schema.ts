@@ -73,6 +73,7 @@ export function applySchema(db: Database.Database): void {
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_outcome_label ON runs(outcome_label)");
 
   ensureCharacterizationFixtureEvidenceType(db);
+  ensureRemediationNoDefectEventType(db);
 }
 
 /**
@@ -136,4 +137,76 @@ function ensureColumn(
   if (!exists) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
   }
+}
+
+/**
+ * `events.type` is a CHECK-constrained column, so adding
+ * `remediation-confirmed-no-defect` (US2 / #154) to an existing database
+ * requires the same table rebuild SQLite demands for any CHECK widening —
+ * the exact pattern `ensureCharacterizationFixtureEvidenceType` already uses
+ * for acceptance_evidence. Fresh databases get the widened CHECK from
+ * registry_schema.sql and this is a no-op there.
+ */
+function ensureRemediationNoDefectEventType(db: Database.Database): void {
+  const row = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'events'`)
+    .get() as { sql: string } | undefined;
+  if (!row || row.sql.includes("remediation-confirmed-no-defect")) return;
+
+  db.exec(`
+    CREATE TABLE events_new (
+        event_id     TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+        ts           TEXT NOT NULL DEFAULT (datetime('now')),
+        artifact_id  TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+        type         TEXT NOT NULL CHECK (type IN (
+                         'planned',
+                         'claimed',
+                         'claim-heartbeat',
+                         'claim-completed',
+                         'claim-released',
+                         'claim-expired',
+                         'run-reaped',
+                         'registered',
+                         'analyzed',
+                         'scaffolded',
+                         'migrated',
+                         'proposal-submitted',
+                         'evidence-submitted',
+                         'critique-issued',
+                         'arbitration-approved',
+                         'arbitration-rejected',
+                         'conflict-opened',
+                         'conflict-resolved',
+                         'benchmark-recorded',
+                         'reviewed',
+                         'remediated',
+                         'blocked',
+                         'unblocked',
+                         'completed',
+                         'issue-opened',
+                         'issue-resolved',
+                         'tag-added',
+                         'tag-removed',
+                         'context-written',
+                         'status-changed',
+                         'evaluated',
+                         'auto-completed',
+                         'auto-rework',
+                         'filesystem-violation',
+                         'thread-created',
+                         'dependency-strategy-set',
+                         'remediation-confirmed-no-defect'
+                     )),
+        agent        TEXT NOT NULL,
+        model        TEXT,
+        summary      TEXT NOT NULL,
+        event_data   TEXT
+    );
+    INSERT INTO events_new SELECT * FROM events;
+    DROP TABLE events;
+    ALTER TABLE events_new RENAME TO events;
+    CREATE INDEX IF NOT EXISTS idx_events_artifact ON events(artifact_id);
+    CREATE INDEX IF NOT EXISTS idx_events_type     ON events(type);
+    CREATE INDEX IF NOT EXISTS idx_events_ts       ON events(ts);
+  `);
 }

@@ -33,10 +33,14 @@ node ../__GUILDCTL_KIT_BUILD__/setup.js --framework "Spring Boot 3.x" --legacy-u
 node ../__GUILDCTL_KIT_BUILD__/setup.js --legacy-path /path/to/your/legacy/code
 
 > **Interactive prompts require a TTY.** With no `--framework`/`--legacy-url`/`--legacy-path`
-> flags, the wizard reads answers from stdin — including when stdin is a closed or non-TTY
-> pipe. Running it headless (`setup.js < /dev/null`, from CI, or with stdin detached) makes
-> every prompt resolve to its default/blank answer instead of hanging. Pass the flags for
-> scripted installs.
+> flags, the wizard prompts interactively — but only when stdin is a TTY. When stdin is **not**
+> interactive (`setup.js < /dev/null`, from CI, or with stdin detached), the wizard detects this
+> up front and short-circuits straight to the documented defaults (framework = `Spring Boot 3.x`,
+> no legacy source), printing a stderr note, and still scaffolds the workspace (`.github/`,
+> `migration/`, `package/`, `stacks/`, …) instead of hanging or silently exiting with nothing.
+> Piped input that runs out mid-wizard resolves any remaining prompt to its default with a stderr
+> note. Either way a workspace is always produced; pass the flags for scripted installs. The
+> `.guild/` config is created separately by `init` (step 5 below), not by the wizard itself.
 
 # 4. Install runtime dependencies
 #    migration/ ships with the kit; this only installs its node_modules.
@@ -123,6 +127,21 @@ node migration/guildctl/dist/cli.js run review
 # Or run all phases in one command:
 node migration/guildctl/dist/cli.js run --parallel 3
 ```
+
+> **Autonomous runs (`auto` / `auto-run`) need the registry DB outside the workspace.**
+> `guildctl init` scaffolds `database.path` inside the workspace, which is fine for the
+> phase-by-phase commands above — but the autonomous queue fail-closes with
+> `Autonomous runs require REGISTRY_DB outside the target workspace`. This is a deliberate
+> safety guard (it keeps the state DB out of the tree the migrate/warden steps mutate), not a
+> bug. Before running `node migration/guildctl/dist/cli.js auto …` or `auto-run`, point the
+> registry at a path outside the workspace — either:
+> ```bash
+> # one-shot override on the command:
+> node migration/guildctl/dist/cli.js auto-run --db ../migration-registry.db
+> # …or export it for the shell session:
+> export REGISTRY_DB="$(pwd)/../migration-registry.db"
+> ```
+> Phase-by-phase `run <phase>` commands do not need this override.
 
 > **Monitor progress** — open a second terminal and run:
 > ```bash

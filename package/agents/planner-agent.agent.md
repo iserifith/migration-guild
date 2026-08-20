@@ -18,7 +18,7 @@ You are a Java migration planner. Your job is to read all registered artifacts f
 
 1. **Guard: verify the stack mapping has been confirmed.**
    ```bash
-   node migration/dist/registry/cli.js show-mapping-summary
+   node migration/registry/dist/cli.js show-mapping-summary
    ```
    If `unconfirmed > 0`, stop and output:
    > ⚠️ Stack mapping has unconfirmed entries. Run `stack-advisor` and confirm all mappings before planning.
@@ -28,12 +28,12 @@ You are a Java migration planner. Your job is to read all registered artifacts f
 
 2. List all pending **first-class** artifacts:
    ```bash
-   node migration/dist/registry/cli.js list-artifacts --status pending --tier first-class
+   node migration/registry/dist/cli.js list-artifacts --status pending --tier first-class
    ```
 
 3. List all pending **second-class** artifacts:
    ```bash
-   node migration/dist/registry/cli.js list-artifacts --status pending --tier second-class
+   node migration/registry/dist/cli.js list-artifacts --status pending --tier second-class
    ```
 
 4. For each first-class artifact, identify its dependencies on other artifacts (imports, inheritance, shared utilities, config files it reads).
@@ -43,7 +43,7 @@ You are a Java migration planner. Your job is to read all registered artifacts f
    - A service that uses `applicationContext.xml` depends on that descriptor
    - Properties files used by a module depend on — wait, the reverse: Java artifacts depend on the config/descriptor being migrated first
    ```bash
-   node migration/dist/registry/cli.js link \
+   node migration/registry/dist/cli.js link \
      --from "<java-artifact-id>" --to "<config-artifact-id>" --relation source-of
    ```
 
@@ -52,17 +52,17 @@ You are a Java migration planner. Your job is to read all registered artifacts f
    - Wave 2: first-class artifacts that depend only on Wave 1
    - Continue until all first-class artifacts are assigned
    ```bash
-   node migration/dist/registry/cli.js set-wave --id "<id>" --wave <n>
+   node migration/registry/dist/cli.js set-wave --id "<id>" --wave <n>
    ```
 
 7. Set all **first-class** artifacts to `planned`:
    ```bash
-   node migration/dist/registry/cli.js set-artifact-status --id "<id>" --status planned
+   node migration/registry/dist/cli.js set-artifact-status --id "<id>" --status planned
    ```
 
 8. Set all **second-class** artifacts to `planned` as well (they will be migrated inline by the migration-agent):
    ```bash
-   node migration/dist/registry/cli.js set-artifact-status --id "<id>" --status planned
+   node migration/registry/dist/cli.js set-artifact-status --id "<id>" --status planned
    ```
 
 ## Output Format

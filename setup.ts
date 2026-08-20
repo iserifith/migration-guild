@@ -90,7 +90,26 @@ const FRAMEWORKS = [
 ];
 
 function ask(rl: readline.Interface, question: string): Promise<string> {
-  return new Promise((resolve) => rl.question(question, resolve));
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (answer: string) => {
+      if (settled) return;
+      settled = true;
+      rl.off("close", onClose);
+      resolve(answer);
+    };
+    // US9 (#150, FR-017) backstop: if stdin reaches EOF/close while a prompt is
+    // still pending (e.g. piped input that ran out mid-wizard), resolve to the
+    // blank/default sentinel instead of leaving the promise pending — and say so
+    // on stderr. T037's up-front non-TTY short-circuit is the primary mechanism;
+    // this guards any prompt reached after it.
+    const onClose = () => {
+      console.error("note: stdin closed before a prompt was answered — resolving the remaining setup prompts to their documented defaults.");
+      finish("");
+    };
+    rl.once("close", onClose);
+    rl.question(question, (answer: string) => finish(answer));
+  });
 }
 
 function copyDir(src: string, dest: string, skip: string[] = []): string[] {
@@ -175,12 +194,20 @@ async function runInstall() {
   const cliFramework = flag("--framework");
   const cliUrl       = flag("--legacy-url");
   const cliPath      = flag("--legacy-path");
-  const nonInteractive = hasFlag("--yes") || (cliFramework !== undefined && (cliUrl !== undefined || cliPath !== undefined));
+  // US9 (#150, FR-017): a non-TTY stdin (closed pipe, `< /dev/null`, CI, detached)
+  // can never answer an interactive prompt. Short-circuit to the default/flag-driven
+  // path BEFORE creating a readline interface, so headless runs scaffold with the
+  // documented defaults instead of silently exiting 0 with nothing created.
+  const headless = !process.stdin.isTTY;
+  const nonInteractive = headless || hasFlag("--yes") || (cliFramework !== undefined && (cliUrl !== undefined || cliPath !== undefined));
 
   if (nonInteractive) {
     framework  = cliFramework ?? FRAMEWORKS[0].value;
     repoUrl    = cliUrl ?? "";
     legacyPath = cliPath;
+    if (headless && !hasFlag("--yes")) {
+      console.error("note: stdin is not interactive — resolving all setup prompts to their documented defaults (pass --framework/--legacy-url/--legacy-path to override).");
+    }
     console.log(`✓ Target framework : ${framework}`);
     if (repoUrl)    console.log(`✓ Legacy repo URL  : ${repoUrl}`);
     if (legacyPath) console.log(`✓ Legacy path      : ${legacyPath}`);

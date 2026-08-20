@@ -6,6 +6,49 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### August 20, 2026
+
+- Shipped nine operational-hardening fixes for Spec 012 (#150, #151, #153–#159) across the
+  `migration/` registry + guildctl runtime and the shipped docs/prompts. (1) Manual
+  arbitration (#153, FR-001..FR-002): `guildctl arbitrate` gained `--run-id`/
+  `--operator-token` options and mints an ad-hoc run + operator credential when neither is
+  supplied, so manual approve/reject works without an in-progress `auto` session; any
+  credential/state error surfaces as one clean stderr line with a non-zero exit (never a
+  stack trace). (2) Stack-aware verify + no-defect loop stop (#154, FR-003..FR-005): the
+  verify step resolves the active stack pack's `verify.per_artifact` check instead of a
+  hardcoded `npm test`; unavailable stack tooling reports `unverified`/`no-stack-check`
+  rather than `blocked`; a new `remediation-confirmed-no-defect` event stops the
+  supervisor's verify re-loop and surfaces the artifact operator-visibly. (3) Blocked
+  resume (#155, FR-006..FR-007): `claimArtifactById` accepts `blocked` in its
+  resume-eligible `fromStatuses`, the supervisor restores a blocked artifact to `migrated`
+  after a passing resume re-verification, and unsupported resume states produce a clean
+  `RegistryError` message with non-zero exit. (4) Warden-revert guard (#156, FR-008): the
+  `migrated` write in `setArtifactStatus` is gated by `wardenRestoredOwnOutput()` — when a
+  `filesystem-violation` restore touched the claim's own `expected_output_paths`, the write
+  is refused and the artifact routes to the blocked/failed path instead of being recorded
+  as successfully migrated. (5) Bounded verify concurrency (#151, FR-009..FR-011): a new
+  `verify_slots` lease table (atomic acquire/release, stale-lease reclamation) caps
+  concurrent verify subprocesses at `verification.max_concurrent` (default
+  `max(cpus-1, 1)`, overridable via `GUILDCTL_VERIFY_MAX_CONCURRENT`); sessions wait for
+  capacity rather than spawning unbounded verifiers; the java-spring stack's
+  `javac-scope-compile` now runs with `-J-Xmx256m`. (6) Stale-path sweep (#157,
+  FR-012..FR-013): all 99 occurrences of the pre-restructure `migration/dist/registry/cli.js`
+  path corrected to `migration/registry/dist/cli.js` across `guildctl/commands`,
+  `package/agents/`, and `package/prompts/`, plus a `stale-dist-path-consistency`
+  regression test that fails if the stale form reappears. (7) Reasoning-model preflight
+  (#158, FR-014..FR-015): the probe `max_tokens` raised 16 → 256 and a new
+  `isReasoningTokenExhaustion()` shape detector reports the empty-completion-with-
+  reasoning-tokens case as "model needs a larger token budget" instead of a generic empty
+  completion. (8) init→auto DB path docs (#159, FR-016): GETTING-STARTED and README now
+  document the `assertAutonomousRegistryPlacement` constraint and the exact `--db`/
+  `REGISTRY_DB` override an operator needs before running autonomous mode. (9) Headless
+  setup wizard (#150, FR-017..FR-019): `setup.ts` short-circuits up front on non-TTY stdin
+  (documented default answers, non-zero exit if it can't scaffold) and each `ask()` falls
+  back to its documented default on piped-EOF, with a stderr note; GETTING-STARTED's
+  non-interactive-behavior note now matches the real behavior. Root↔`package/` byte parity
+  restored for `.env.example` and `stacks/**/stack.yaml` (the parity drift surfaced at the
+  T040 gate). Full suite is 803/803 green (738 migration + 65 UI) vs the 706 baseline.
+
 ### August 19, 2026
 
 - Shipped five onboarding/kit-packaging fixes for Spec 012 (#148). (1) Kit packaging: the

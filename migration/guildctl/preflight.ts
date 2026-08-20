@@ -69,6 +69,14 @@ export interface PreflightOptions {
 
 export const DEFAULT_PREFLIGHT_BUDGET_SECONDS = DEFAULT_GUILD_CONFIG.preflight.budget_seconds;
 
+/**
+ * US7 (#158, FR-014): the live probe's completion budget. Raised from `16` to
+ * `256` so a reasoning model's chain-of-thought overhead does not exhaust the
+ * budget before any visible output (which preflight then misread as a dead
+ * provider). Still small enough to keep the probe cheap and single-shot.
+ */
+export const PREFLIGHT_PROBE_MAX_TOKENS = 256;
+
 /** Effective shared budget: CLI override → `preflight.budget_seconds` → 30s. */
 export function preflightBudgetSeconds(config: Pick<GuildConfig, "preflight">, override?: number): number {
   if (override != null && Number.isFinite(override) && override > 0) return override;
@@ -126,6 +134,29 @@ function completionText(parsed: unknown): string {
     ?? choice?.delta?.content
     ?? (typeof data?.content === "string" ? data.content : "");
   return typeof content === "string" ? content : "";
+}
+
+/**
+ * US7 (#158, FR-014): true when the provider answered with no visible text but
+ * reports reasoning tokens were burned — the signature of a reasoning model
+ * exhausting the probe budget on chain-of-thought before any visible output.
+ * At the raised `PREFLIGHT_PROBE_MAX_TOKENS` budget this shape is reported
+ * distinctly ("needs a larger token budget") instead of the generic
+ * "empty completion" failure, so an operator can tell a too-small probe budget
+ * apart from a provider that truly answered with nothing.
+ */
+function isReasoningTokenExhaustion(parsed: unknown): boolean {
+  if (!parsed || typeof parsed !== "object") return false;
+  const data = parsed as Record<string, any>;
+  const finishReason = data?.choices?.[0]?.finish_reason;
+  if (finishReason !== "length") return false;
+  const usage = data?.usage;
+  if (!usage || typeof usage !== "object") return false;
+  const reasoningTokens =
+    usage.completion_tokens_details?.reasoning_tokens
+    ?? usage.reasoning_tokens
+    ?? 0;
+  return typeof reasoningTokens === "number" && reasoningTokens > 0;
 }
 
 interface LiveOutcome {
@@ -237,7 +268,9 @@ export async function runPreflight(opts: PreflightOptions): Promise<PreflightRes
     body: JSON.stringify({
       model: resolution.model,
       messages: [{ role: "user", content: "preflight" }],
-      max_tokens: 16,
+      // US7 (#158, FR-014): raised from 16 so a reasoning model's chain-of-thought
+      // overhead does not consume the whole probe budget before visible output.
+      max_tokens: PREFLIGHT_PROBE_MAX_TOKENS,
       temperature: 0,
     }),
   };
@@ -296,6 +329,15 @@ export async function runPreflight(opts: PreflightOptions): Promise<PreflightRes
   if (!completionText(parsed).trim()) {
     // FR-012: a reachable provider that answers with nothing is not a pass, and
     // preflight does not retry to find a better answer.
+    // US7 (#158, FR-014): when the empty answer is the reasoning-token
+    // exhaustion shape at the raised budget, say so distinctly rather than the
+    // generic "empty completion" — the fix is a bigger budget, not a new provider.
+    if (isReasoningTokenExhaustion(parsed)) {
+      return liveFailure(
+        "response",
+        `provider returned an empty completion: the model burned its ${PREFLIGHT_PROBE_MAX_TOKENS}-token budget on reasoning tokens before any visible output — the model needs a larger token budget`,
+      );
+    }
     return liveFailure("response", "provider returned an empty completion");
   }
 

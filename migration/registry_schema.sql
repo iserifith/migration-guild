@@ -143,7 +143,8 @@ CREATE TABLE IF NOT EXISTS events (
                      'auto-rework',
                      'filesystem-violation',
                       'thread-created',
-                      'dependency-strategy-set'
+                      'dependency-strategy-set',
+                      'remediation-confirmed-no-defect'
                   )),
     agent        TEXT NOT NULL,
     model        TEXT,
@@ -385,6 +386,26 @@ CREATE INDEX IF NOT EXISTS idx_claims_state    ON artifact_claims(state);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_claims_active_artifact
   ON artifact_claims(artifact_id)
   WHERE state = 'active';
+
+-- ─── Verify Slots (US5 / #151) ───────────────────────────────────────────────
+-- A bounded lease granting permission to run one verify subprocess at a time,
+-- mirroring the artifact_claims lease shape. At most `verification.max_concurrent`
+-- rows may be live (released_at IS NULL and lease_expires_at > now()) at once;
+-- the acquire function enforces that with an atomic insert-if-under-limit check.
+
+CREATE TABLE IF NOT EXISTS verify_slots (
+    slot_id           TEXT PRIMARY KEY,
+    run_id            TEXT REFERENCES runs(run_id) ON DELETE SET NULL,
+    artifact_id       TEXT NOT NULL,
+    acquired_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    lease_expires_at  TEXT NOT NULL,
+    released_at       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_verify_slots_run      ON verify_slots(run_id);
+CREATE INDEX IF NOT EXISTS idx_verify_slots_artifact ON verify_slots(artifact_id);
+CREATE INDEX IF NOT EXISTS idx_verify_slots_live
+  ON verify_slots(released_at, lease_expires_at);
 
 -- ─── Stack Mappings ──────────────────────────────────────────────────────────
 -- Created by stack-advisor after inventory; confirmed by a human before planning.
@@ -651,3 +672,20 @@ CREATE TABLE IF NOT EXISTS run_operator_credentials (
     token_hash   TEXT NOT NULL,
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- US5 (#151): bounded verify-concurrency lease table for existing databases.
+-- `CREATE TABLE IF NOT EXISTS` is idempotent, so this is a no-op on a fresh
+-- database that already picked the table up from the base schema above.
+CREATE TABLE IF NOT EXISTS verify_slots (
+    slot_id           TEXT PRIMARY KEY,
+    run_id            TEXT REFERENCES runs(run_id) ON DELETE SET NULL,
+    artifact_id       TEXT NOT NULL,
+    acquired_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    lease_expires_at  TEXT NOT NULL,
+    released_at       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_verify_slots_run      ON verify_slots(run_id);
+CREATE INDEX IF NOT EXISTS idx_verify_slots_artifact ON verify_slots(artifact_id);
+CREATE INDEX IF NOT EXISTS idx_verify_slots_live
+  ON verify_slots(released_at, lease_expires_at);

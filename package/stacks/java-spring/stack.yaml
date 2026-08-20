@@ -51,7 +51,7 @@ verify:
   per_artifact:
     id: javac-scope-compile
     cmd: javac
-    args: ["-proc:none", "-d", "{workspace_root}/modern/build/verify-classes", "{scope_paths}"]
+    args: ["-proc:none", "-J-Xmx256m", "-d", "{workspace_root}/modern/build/verify-classes", "{scope_paths}"]
     availability_args: ["-version"]
     pass_exit_codes: [0]
     unavailable_note: >

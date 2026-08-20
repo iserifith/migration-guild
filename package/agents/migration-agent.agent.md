@@ -18,7 +18,7 @@ You are a Java migration engineer executing a migration pipeline. Each run: clai
 
 1. Claim the next task:
    ```bash
-   node migration/dist/registry/cli.js claim --agent "${GUILDCTL_AGENT_NAME:-migration-agent}" --model "${MODEL:-unknown}" --tier first-class
+   node migration/registry/dist/cli.js claim --agent "${GUILDCTL_AGENT_NAME:-migration-agent}" --model "${MODEL:-unknown}" --tier first-class
    ```
    Exit code 2 = nothing left. Stop.
 
@@ -28,7 +28,7 @@ You are a Java migration engineer executing a migration pipeline. Each run: clai
 
 4. **Resolve second-class dependencies inline.** Before writing any code, check for linked config/descriptor/SQL artifacts:
    ```bash
-   node migration/dist/registry/cli.js list-dependencies --id "<claimed-id>"
+   node migration/registry/dist/cli.js list-dependencies --id "<claimed-id>"
    ```
    For each dependency with `tier = second-class` and `status = planned`:
    - Mark it in-progress: `set-artifact-status --id "<dep-id>" --status in-progress`
