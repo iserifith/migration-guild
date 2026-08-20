@@ -110,6 +110,62 @@ test("#44: unrelated unregistered file is still reverted", () => {
   }
 });
 
+test("shared project scaffold (build file, settings file, resources dir) survives warden enforcement", () => {
+  // Regression for a real-run finding: a migration session legitimately
+  // needs to append a dependency line to modern/build.gradle and copy a
+  // config resource (e.g. a *.properties file migrated from legacy
+  // resources) into modern/src/main/resources — neither has a single owning
+  // artifact, so no artifact's own expected-output-paths derivation can
+  // predict them. Confirmed in a live run: both edits were hard-reverted by
+  // the warden as "unauthorized filesystem change", starving the artifact of
+  // output it genuinely needed even though the underlying migration was
+  // otherwise correct.
+  const db = createDb();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-warden-shared-scaffold-"));
+  try {
+    fs.mkdirSync(path.join(workspace, "modern", "src", "main", "resources"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "modern", "build.gradle"), "dependencies { }\n");
+    fs.writeFileSync(path.join(workspace, "modern", "settings.gradle"), "rootProject.name = 'demo'\n");
+    fs.writeFileSync(path.join(workspace, "modern", "src", "main", "resources", "application.yml"), "server:\n  port: 8080\n");
+
+    registerArtifact(db, {
+      id: "legacy-source:com.acme:NeedsResource",
+      kind: "legacy-source",
+      tier: "first-class",
+      path: "legacy/src/main/java/com/acme/NeedsResource.java",
+    });
+
+    const snapshot = snapshotWorkspaceForWarden(workspace);
+
+    // A code-writer session adds a dependency line, edits shared config, and
+    // creates a brand-new resource file its migrated code depends on.
+    fs.writeFileSync(path.join(workspace, "modern", "build.gradle"), "dependencies { implementation 'org.apache.commons:commons-lang3:3.14.0' }\n");
+    fs.writeFileSync(path.join(workspace, "modern", "src", "main", "resources", "application.yml"), "server:\n  port: 9090\n");
+    fs.writeFileSync(path.join(workspace, "modern", "src", "main", "resources", "region-prefixes.properties"), "NE=NEA\n");
+
+    const result = enforceWardenSnapshot(db, {
+      artifactId: "legacy-source:com.acme:NeedsResource",
+      workspaceRoot: workspace,
+      snapshot,
+      allowedPaths: [],
+      agent: "guildctl-warden",
+    });
+
+    assert.equal(result.clean, true, "shared scaffold edits/creations must not be flagged as violations");
+    assert.equal(
+      fs.readFileSync(path.join(workspace, "modern", "build.gradle"), "utf8"),
+      "dependencies { implementation 'org.apache.commons:commons-lang3:3.14.0' }\n",
+    );
+    assert.equal(
+      fs.readFileSync(path.join(workspace, "modern", "src", "main", "resources", "region-prefixes.properties"), "utf8"),
+      "NE=NEA\n",
+    );
+  } finally {
+    db.close();
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 test("#44: review-phase enforcement still catches mutations to the reviewed artifact's own paths", () => {
   const db = createDb();
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-warden-review-"));
