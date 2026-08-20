@@ -39,9 +39,10 @@ function LiveMissionControl() {
   const activityArtifactId = sessions[0]?.id ?? artifacts[0]?.id ?? "";
   const eventsHook = useEvents(activityArtifactId);
   const { events } = eventsHook;
-  const errors = [statusHook, societyHook, wavePlanHook, sessionsHook, artifactsHook, eventsHook]
+  // ⚡ Bolt: memoize error filtering to prevent array allocations and filtering on every polling render
+  const errors = React.useMemo(() => [statusHook, societyHook, wavePlanHook, sessionsHook, artifactsHook, eventsHook]
     .map((hook) => hook.error)
-    .filter((error): error is Error => error !== null);
+    .filter((error): error is Error => error !== null), [statusHook.error, societyHook.error, wavePlanHook.error, sessionsHook.error, artifactsHook.error, eventsHook.error]);
   const data = React.useMemo<MissionControlData>(() => {
     const total = status?.files.total ?? 0;
     const completed = status?.files.completed ?? 0;
