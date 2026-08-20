@@ -84,7 +84,8 @@ export type EventType =
   | "auto-rework"
   | "filesystem-violation"
   | "thread-created"
-  | "dependency-strategy-set";
+  | "dependency-strategy-set"
+  | "remediation-confirmed-no-defect";
 
 export type Agent =
   | "context-agent"

@@ -257,6 +257,59 @@ updates, and the `verify:` stack-pack blocks); `package/` updated for the four c
 agents and `stacks/*/stack.yaml` ↔ `package/stacks/*/stack.yaml` parity; `migration/` updated
 extensively (see above); this file and `CHANGELOGS.MD` updated.
 
+## Operational hardening (012-guildctl-operational-hardening)
+
+Nine operator-facing fixes landed across the registry + guildctl runtime (issues #150, #151,
+#153–#159). What a maintainer needs to know:
+
+- **Runtime evidence authenticity is HMAC-bound to the producing run's operator token.** A
+  credential from any other run (including the ad-hoc run `guildctl arbitrate` mints when no
+  `--run-id`/`--operator-token` is supplied) can never validate that evidence —
+  `validateRuntimeEvidence` rejects it with "Approval run credential does not match runtime
+  evidence." This is by design; manual arbitration succeeds when the operator supplies the
+  evidence run's own credential via the new flags.
+- **Verify concurrency is lease-gated by the `verify_slots` table** (atomic
+  insert-if-under-limit acquire, release-on-finally, stale-lease reclamation). The cap is
+  `verification.max_concurrent` (default `max(os.cpus().length - 1, 1)`), overridable via
+  `GUILDCTL_VERIFY_MAX_CONCURRENT`. Both verify spawn sites (`runVerify`'s exec path and
+  `runArtifactVerification`'s structured check) hold a slot for the subprocess lifetime.
+- **The `migrated` write in `setArtifactStatus` is gated by `wardenRestoredOwnOutput()`** — if a
+  `filesystem-violation` restore touched the claim's own `expected_output_paths`, the write
+  throws `RegistryError` and the artifact routes to blocked/failed instead of a false
+  `migrated`.
+- **`claimArtifactById` takes an explicit `fromStatuses: Status[]`** and records the artifact's
+  actual status as `from_status`, so release-return and resume-eligibility stay consistent
+  (`blocked` is resume-eligible; unsupported states produce a clean `RegistryError`).
+- **The supervisor stops re-verifying after a `remediation-confirmed-no-defect` event** for the
+  artifact; the event type is admitted to existing DBs by a CHECK-widening table rebuild
+  (`ensureRemediationNoDefectEventType`), following the `acceptance_evidence` precedent.
+- **Preflight's probe budget is `PREFLIGHT_PROBE_MAX_TOKENS = 256`** and
+  `isReasoningTokenExhaustion()` distinguishes the empty-completion-with-reasoning-tokens shape
+  (reports "model needs a larger token budget") from a generic empty completion.
+- **`setup.ts` is non-TTY-safe**: an up-front `!process.stdin.isTTY` short-circuit plus a
+  per-`ask()` `close`/EOF backstop resolving each remaining prompt to its documented default
+  (with a stderr note). GETTING-STARTED's non-interactive note matches this behavior.
+
+**Maintainer lesson — root ↔ `package/` byte parity.** `.env.example` and `stacks/**/stack.yaml`
+exist in BOTH the repo root and `package/` (the parity tests treat root as the source of truth).
+Editing only the root copy breaks the full suite's packaging/parity tests. After touching either,
+mirror root → `package/` (or edit `package/` and promote) before running `npm test`.
+
+New `migration/test/` suites added by this feature: `arbitrate-manual-approval.test.ts`,
+`verify-stack-default.test.ts`, `auto-resume-blocked.test.ts`,
+`warden-revert-blocks-migrated.test.ts`, `verify-slot-concurrency.test.ts`,
+`stale-dist-path-consistency.test.ts`, `preflight-reasoning-model-budget.test.ts`, and
+`setup-non-tty-fallback.test.ts` (plus extensions to `supervisor-failures.test.ts` and
+`preflight-resolved-path.test.ts`).
+
+Maintainer checklist answers for this feature (per fix): all nine are repo-runtime changes —
+(1)–(5), (7), (9) touch `migration/` only (registry commands, guildctl supervisor/verify/
+preflight, `registry_schema.sql`); (6) also touches shipped prompt/agent templates under
+`package/` (the stale-path sweep) — `package/` updated; (8) is docs-only (`README.md`,
+`GETTING-STARTED.md`); the javac memory bound touches `stacks/java-spring/stack.yaml` with the
+`package/stacks/` parity copy restored. `migration/` updated as above; this file and
+`CHANGELOGS.MD` updated.
+
 ## Docs expectations for this repo
 
 Use docs by audience:

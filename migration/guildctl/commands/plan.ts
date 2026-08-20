@@ -761,7 +761,7 @@ export async function runPlan(
     phase: "planning",
     basePrompt: "Run planning: build the dependency graph and assign wave numbers to all pending artifacts. " +
       "Dependency disposition proposals already exist in the registry for every declared library; refine them where AST-level usage evidence supports a different disposition kind by running " +
-      "`node migration/dist/registry/cli.js propose-disposition --library <group:artifact> --disposition <keep|replace-with-native|inline> --rationale <text> [--native-replacement <api>] [--inline-note <note>] [--locked-target-version <ver>]`. " +
+      "`node migration/registry/dist/cli.js propose-disposition --library <group:artifact> --disposition <keep|replace-with-native|inline> --rationale <text> [--native-replacement <api>] [--inline-note <note>] [--locked-target-version <ver>]`. " +
       "Never invent a replacement to avoid a 'keep' outcome; missing evidence degrades toward keep.",
     enforce: deps.enforceInvariants ?? false,
     retries: deps.retries ?? 0,

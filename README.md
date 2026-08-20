@@ -82,6 +82,8 @@ graph TB
 
 `guildctl auto-run` is fail-closed and silence-first: it emits one final summary, continues independent work after an artifact blocks, and stops on systemic executor errors without dispatching another artifact. Only `reviewed`, `completed`, or `skipped` dependencies unlock downstream work; a merely `migrated` artifact must still pass independent review. Migrated crash states resume automatically before fresh planned work. Use `--wave` and `--limit` for bounded canaries; `--no-resume` exists only for diagnostic runs that intentionally leave migrated state untouched.
 
+> **Autonomous runs need the registry DB outside the workspace.** `guildctl init` scaffolds `database.path` inside the workspace, so `auto`/`auto-run` fail-close with `Autonomous runs require REGISTRY_DB outside the target workspace` until you override it — pass `--db <path-outside-workspace>` or set `REGISTRY_DB`. This placement guard is deliberate (it keeps the state DB out of the tree the migrate/warden steps mutate). See GETTING-STARTED.md → "Run the pipeline" for the exact override pattern.
+
 ## Environment precedence (behaviour change)
 
 The workspace `.env` is loaded automatically and wins over inherited environment values by default.
