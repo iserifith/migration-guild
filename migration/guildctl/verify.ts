@@ -348,6 +348,17 @@ export interface ArtifactVerificationOptions {
    * Optional so existing callers that never spawn a check are unaffected.
    */
   config?: Pick<GuildConfig, "verification">;
+  /**
+   * When true, and the check actually executes with a `runId`/`operatorToken`
+   * supplied, a signed `runtime` acceptance-evidence record is written
+   * alongside the verification record — the same shape `guildctl verify
+   * --command` produces — so the outcome can back an arbitration approval.
+   * Defaults to false: callers that only want the verification bookkeeping
+   * (e.g. `verifyAtClaimClose`) are unaffected.
+   */
+  recordEvidence?: boolean;
+  /** Directory the evidence log is written to. Defaults to `<workspaceRoot>/.guild/evidence/runtime`. */
+  evidenceOutputDir?: string;
 }
 
 export interface ArtifactVerificationOutcome {
@@ -360,6 +371,8 @@ export interface ArtifactVerificationOutcome {
   durationMs: number | null;
   /** False when the check was skipped (no pack check, unavailable, incomplete tree). */
   ranCheck: boolean;
+  /** Signed runtime evidence produced when `recordEvidence` was requested and the check ran; empty otherwise. */
+  evidence: AcceptanceEvidence[];
 }
 
 const DEFAULT_VERIFICATION_BUDGET_MS = 120_000;
@@ -446,6 +459,61 @@ async function executeCheck(
 }
 
 /**
+ * Write a signed `runtime` acceptance-evidence record for a stack check that
+ * actually executed, mirroring what `runVerify` writes per `--command`. Only
+ * called when the caller opted in via `recordEvidence` and supplied a run
+ * credential; returns `null` otherwise (or when the process never produced an
+ * exit code, e.g. it was killed).
+ */
+function recordStackCheckEvidence(
+  db: Database.Database,
+  opts: ArtifactVerificationOptions,
+  check: PerArtifactVerify,
+  argv: string[],
+  execution: CheckExecution,
+  pass: 0 | 1,
+): AcceptanceEvidence | null {
+  if (!opts.recordEvidence || !opts.runId || !opts.operatorToken || execution.exitCode == null) return null;
+  const command = redactSecrets(`${check.cmd} ${argv.join(" ")}`.trim());
+  const output = redactSecrets(execution.output);
+  const outputDir = opts.evidenceOutputDir ?? path.join(opts.workspaceRoot, ".guild", "evidence", "runtime");
+  fs.mkdirSync(outputDir, { recursive: true });
+  const log = [
+    `command: ${command}`,
+    `exit_code: ${execution.exitCode}`,
+    `duration_ms: ${execution.durationMs}`,
+    "",
+    "output:",
+    output,
+  ].join("\n");
+  const logSha256 = sha256(log);
+  const logPath = path.join(outputDir, `${Date.now()}-${randomUUID().slice(0, 8)}-stack-verify.log`);
+  fs.writeFileSync(logPath, log, "utf8");
+  const authenticity = signRuntimeEvidence({
+    artifactId: opts.artifactId,
+    runId: opts.runId,
+    command,
+    exitCode: execution.exitCode,
+    pass,
+    logSha256,
+  }, opts.operatorToken);
+  return addVerifierRuntimeEvidence(db, {
+    artifactId: opts.artifactId,
+    runId: opts.runId,
+    producedBy: "guildctl-verify-stack",
+    command,
+    exitCode: execution.exitCode,
+    pass,
+    summary: pass === 1 ? `Stack verification passed: ${check.id}` : `Stack verification failed: ${check.id}`,
+    outputPath: logPath,
+    outputExcerpt: excerpt(output),
+    logSha256,
+    durationMs: execution.durationMs,
+    authenticity,
+  });
+}
+
+/**
  * Run the stack pack's bounded per-artifact check and record the outcome.
  *
  * Outcome mapping follows contracts/stack-pack-verify.md. No outcome blocks the
@@ -463,7 +531,13 @@ export async function runArtifactVerification(
   const finish = (
     state: VerificationState,
     reason: VerificationReason | null,
-    extra: { detail?: string | null; scope?: string[]; durationMs?: number | null; ranCheck?: boolean } = {},
+    extra: {
+      detail?: string | null;
+      scope?: string[];
+      durationMs?: number | null;
+      ranCheck?: boolean;
+      evidence?: AcceptanceEvidence[];
+    } = {},
   ): ArtifactVerificationOutcome => {
     const outcome: ArtifactVerificationOutcome = {
       state,
@@ -474,6 +548,7 @@ export async function runArtifactVerification(
       budgetMs,
       durationMs: extra.durationMs ?? null,
       ranCheck: extra.ranCheck ?? false,
+      evidence: extra.evidence ?? [],
     };
     if (opts.persist !== false) {
       setVerification(db, {
@@ -585,18 +660,22 @@ export async function runArtifactVerification(
 
   const passCodes = opts.check.pass_exit_codes ?? [0];
   if (execution.exitCode != null && passCodes.includes(execution.exitCode)) {
+    const evidence = recordStackCheckEvidence(db, opts, opts.check, argv, execution, 1);
     return finish("verified", null, {
       scope: coveredScope,
       durationMs: execution.durationMs,
       ranCheck: true,
+      evidence: evidence ? [evidence] : [],
     });
   }
 
+  const failureEvidence = recordStackCheckEvidence(db, opts, opts.check, argv, execution, 0);
   return finish("verification-failed", "check-failed", {
     detail: redactSecrets(`exit ${execution.exitCode}: ${excerpt(execution.output)}`),
     scope: coveredScope,
     durationMs: execution.durationMs,
     ranCheck: true,
+    evidence: failureEvidence ? [failureEvidence] : [],
   });
 }
 

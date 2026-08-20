@@ -63,11 +63,12 @@ export async function runVerifyCommand(db: Database.Database, opts: VerifyCliOpt
         runId: run.run_id,
         operatorToken: operator.token,
         config: cfg,
+        recordEvidence: true,
       });
       result = {
         artifactId: opts.artifact,
         pass: outcome.state === "verified",
-        evidence: [],
+        evidence: outcome.evidence,
         outcome,
       };
     }

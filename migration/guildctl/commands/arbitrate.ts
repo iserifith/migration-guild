@@ -41,10 +41,12 @@ export async function runArbitrate(db: Database.Database, opts: ArbitrateCliOpti
   // it, so a fully-manual approve against evidence signed by a different run
   // fails with the registry's own clean "valid run operator credential"
   // message; supplying --run-id/--operator-token for the evidence's run is
-  // the supported path for that case.
+  // the supported path for that case. Only the approve path uses a run
+  // credential at all, so --reject never mints one — an unused run/operator
+  // row would otherwise be left behind on every manual reject.
   let runId = opts.runId;
   let operatorToken = opts.operatorToken;
-  if (!runId && !operatorToken) {
+  if (opts.approve && !runId && !operatorToken) {
     const run = startRun(db, {
       agent: "guildctl-arbitrate",
       ownerId: "guildctl-arbitrate",

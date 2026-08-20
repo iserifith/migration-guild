@@ -485,15 +485,23 @@ export async function runAutoCommand(db: Database.Database, opts: AutoCliOptions
       // *unverified* outcome rather than blocking.
       check = undefined;
     }
-    return async () => {
+    // A verified outcome must be able to back an arbitration approval the same
+    // way `--command` verification does. The loop signs approval evidence
+    // with its own run-bound operator credential, so the evidence recorded
+    // here (recordEvidence: true) must be signed with that exact credential —
+    // the supervisor loop passes it in via ctx (see AutoOptions.verify).
+    return async (ctx: { runId: string; operatorToken: string }) => {
       const outcome: ArtifactVerificationOutcome = await runArtifactVerification(db, {
         artifactId: opts.artifact,
         workspaceRoot,
         check,
         budgetMs: resolveVerificationBudgetMs(cfg, process.env, check?.budget_seconds),
+        runId: ctx.runId,
+        operatorToken: ctx.operatorToken,
         config: cfg,
+        recordEvidence: true,
       });
-      return { pass: outcome.state === "verified", evidence: [] };
+      return { pass: outcome.state === "verified", evidence: outcome.evidence };
     };
   })();
   const result = await runAuto(db, {
