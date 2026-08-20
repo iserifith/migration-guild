@@ -6,6 +6,8 @@ import { appendEvent } from "../registry/commands/events";
 import { addTag } from "../registry/commands/artifacts";
 import { deriveExpectedOutputPaths } from "../registry/commands/claim";
 import type { Artifact } from "../registry/types";
+import { resolveGuildConfig } from "./config";
+import { loadActiveStack } from "./stack";
 
 export interface WardenFileSnapshot {
   path: string;
@@ -186,6 +188,31 @@ function registeredExpectedOutputPaths(db: Database.Database | undefined, exclud
   }
 }
 
+// The active stack's build file, settings file, and resources directory are
+// project-level scaffold output owned by bootstrap, not any single artifact.
+// A migration session legitimately needs to append a dependency line to the
+// build file, or add/modify a config resource its own migrated code depends
+// on (e.g. a properties file copied from the legacy resources tree) — no
+// artifact's own expected-output-paths derivation can predict that, since
+// these files/dirs have no single owning artifact by design. Without this,
+// the warden reverts/deletes those legitimate edits and blames the operator
+// with "unauthorized filesystem change", starving the artifact of output it
+// genuinely needs (confirmed via a real run: build.gradle dependency lines
+// and a required *.properties resource were both hard-reverted this way).
+function sharedProjectPaths(workspaceRoot: string): string[] {
+  try {
+    const pack = loadActiveStack(resolveGuildConfig({ cwd: workspaceRoot }), workspaceRoot);
+    const scaffold = pack.manifest.scaffold;
+    return [
+      `modern/${scaffold.build_file}`,
+      `modern/${scaffold.settings_file}`,
+      `modern/${scaffold.resources_dir}`,
+    ];
+  } catch {
+    return [];
+  }
+}
+
 export function snapshotWorkspaceForWarden(workspaceRoot: string): WardenSnapshot {
   return snapshotWorkspaceForWardenWithExclusions(workspaceRoot, []);
 }
@@ -221,7 +248,11 @@ export function enforceWardenSnapshot(
   // snapshot. The current artifact's own outputs are governed solely by
   // opts.allowedPaths so that review-phase enforcement (which passes an empty
   // allowlist) still fails closed on post-verification mutations of them.
-  const allowedPaths = [...opts.allowedPaths, ...registeredExpectedOutputPaths(db, opts.artifactId)];
+  const allowedPaths = [
+    ...opts.allowedPaths,
+    ...registeredExpectedOutputPaths(db, opts.artifactId),
+    ...sharedProjectPaths(opts.workspaceRoot),
+  ];
 
   for (const file of [...all].sort()) {
     if (isExcludedPath(path.join(opts.workspaceRoot, file), excluded)) continue;
