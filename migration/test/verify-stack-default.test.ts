@@ -7,9 +7,13 @@ import Database from "better-sqlite3";
 import { DEFAULT_GUILD_CONFIG, stringifySimpleYaml, type GuildConfig } from "../guildctl/config";
 import { runVerifyCommand } from "../guildctl/commands/verify";
 import { hasRemediationConfirmedNoDefect, REMEDIATION_CONFIRMED_NO_DEFECT } from "../guildctl/supervisor/loop";
+import { loadActiveStack, resolvePerArtifactVerify } from "../guildctl/stack";
+import { runArtifactVerification } from "../guildctl/verify";
 import { registerArtifact, setArtifactStatus } from "../registry/commands/artifacts";
-import { claimArtifactById } from "../registry/commands/claim";
+import { claimArtifactById, createRunOperatorCredential } from "../registry/commands/claim";
 import { appendEvent, getEvents } from "../registry/commands/events";
+import { approveArtifactWithEvidence } from "../registry/commands/evidence";
+import { startRun } from "../registry/commands/runs";
 import { getVerification } from "../registry/commands/verification";
 import { applySchema } from "../registry/db/schema";
 
@@ -24,7 +28,9 @@ function createDb(): Database.Database {
  * per-artifact check actually runs, and point the process at it. Returns the
  * workspace plus the bin dir a fake `javac` can be dropped into.
  */
-function makeJavaWorkspace(): { workspace: string; binDir: string; javacArgsFile: string; cleanup: () => void } {
+function makeJavaWorkspace(
+  opts: { isolatePath?: boolean } = {},
+): { workspace: string; binDir: string; javacArgsFile: string; cleanup: () => void } {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-verify-stack-"));
   fs.mkdirSync(path.join(workspace, "modern", "src", "main", "java", "com", "acme"), { recursive: true });
   fs.writeFileSync(
@@ -41,7 +47,11 @@ function makeJavaWorkspace(): { workspace: string; binDir: string; javacArgsFile
   const previousWorkspaceEnv = process.env.GUILD_WORKSPACE;
   const previousPath = process.env.PATH;
   process.env.GUILD_WORKSPACE = workspace;
-  process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ""}`;
+  // isolatePath: PATH is *only* binDir, so a `javac` genuinely can't be found
+  // via lookup — prepending binDir to the inherited PATH (the non-isolated
+  // default below) still lets a real javac elsewhere on PATH (e.g. the JDK
+  // GitHub Actions' Ubuntu runners ship by default) resolve and run for real.
+  process.env.PATH = opts.isolatePath ? binDir : `${binDir}${path.delimiter}${previousPath ?? ""}`;
   process.chdir(workspace);
   return {
     workspace,
@@ -139,10 +149,58 @@ test("US2: a bare `verify` (no --command) resolves the stack pack's javac check,
   }
 });
 
+test("US2: a passing stack-resolved check produces evidence that can back an arbitration approval", async () => {
+  const db = createDb();
+  const { workspace, binDir, javacArgsFile, cleanup } = makeJavaWorkspace();
+  try {
+    installFakeJavac(binDir, javacArgsFile);
+    fs.mkdirSync(path.join(workspace, ".guild"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, ".guild", "config.yaml"),
+      stringifySimpleYaml(configWithStack("java-spring") as unknown as Record<string, unknown>),
+    );
+    const id = seedClaimedJavaArtifact(db);
+    const check = resolvePerArtifactVerify(loadActiveStack(configWithStack("java-spring"), workspace));
+
+    const run = startRun(db, { agent: "guildctl-auto", ownerId: "guildctl-auto", phase: "auto", prompt: `auto ${id}` });
+    const operator = createRunOperatorCredential(db, run.run_id);
+
+    const outcome = await runArtifactVerification(db, {
+      artifactId: id,
+      workspaceRoot: workspace,
+      check,
+      runId: run.run_id,
+      operatorToken: operator.token,
+      recordEvidence: true,
+    });
+    assert.equal(outcome.state, "verified");
+    assert.equal(outcome.evidence.length, 1, "a passing stack check must record exactly one evidence row");
+    assert.equal(outcome.evidence[0].evidence_type, "runtime");
+    assert.equal(outcome.evidence[0].pass, 1);
+
+    // This is exactly what the supervisor loop does after a passing
+    // verification: approve using the run credential that produced it.
+    const decision = approveArtifactWithEvidence(db, {
+      artifactId: id,
+      arbiter: "independent-reviewer-agent",
+      reason: "stack check passed",
+      evidenceIds: outcome.evidence.map((item) => item.evidence_id),
+      runId: run.run_id,
+      operatorToken: operator.token,
+    });
+    assert.equal(decision.decision, "approved");
+  } finally {
+    db.close();
+    cleanup();
+  }
+});
+
 test("US2: a missing javac toolchain maps to unverified/no-stack-check, not a blocked artifact", async () => {
   const db = createDb();
-  // No fake javac installed — and none on this PATH — so the availability probe fails.
-  const { workspace, cleanup } = makeJavaWorkspace();
+  // isolatePath: PATH is scoped to an empty binDir with no fake javac
+  // installed, so the availability probe fails regardless of whether the
+  // host running this test happens to have a real javac on its own PATH.
+  const { workspace, cleanup } = makeJavaWorkspace({ isolatePath: true });
   try {
     fs.mkdirSync(path.join(workspace, ".guild"), { recursive: true });
     fs.writeFileSync(

@@ -49,7 +49,13 @@ export interface AutoOptions {
   maxAttempts?: number;
   producerModel?: string;
   worker?: (input: AutoWorkerInput) => Promise<void>;
-  verify?: () => Promise<Pick<VerifyResult, "pass" | "evidence">>;
+  /**
+   * Receives the loop's own run-bound operator credential so an injected
+   * verifier can sign evidence under the same run the loop later uses to
+   * approve the artifact — evidence signed under a different run/token can
+   * never pass `assertApprovalEvidenceIsIndependent`'s authenticity check.
+   */
+  verify?: (ctx: { runId: string; operatorToken: string }) => Promise<Pick<VerifyResult, "pass" | "evidence">>;
   review?: (input: AutoReviewInput) => Promise<AutoReviewDecision>;
   resume?: boolean;
 }
@@ -449,7 +455,10 @@ export async function runAuto(
   const maxAttempts = opts.maxAttempts ?? 3;
   const budget = new FailureBudget(maxAttempts, 2);
   const worker = opts.worker ?? defaultWorker;
-  const verifier = opts.verify ?? (() => runVerify(db, {
+  // The default (--command) verifier already closes over the loop's own
+  // runId/operator.token, so it ignores the ctx argument; injected verifiers
+  // use it to sign evidence under that same run (see AutoOptions.verify).
+  const verifier = opts.verify ?? ((): Promise<Pick<VerifyResult, "pass" | "evidence">> => runVerify(db, {
     artifactId: opts.artifactId,
     workspaceRoot: opts.workspaceRoot,
     commands: opts.commands,
@@ -490,7 +499,7 @@ export async function runAuto(
       // review/arbitration from the verifier outcome — no claim from
       // `planned`, so no raw "expected \"planned\"" RegistryError.
       if (artifact?.status === "blocked" || (artifact?.status === "migrated" && latest?.pass !== 0)) {
-        const verification = await verifier();
+        const verification = await verifier({ runId, operatorToken: operator.token });
         if (!verification.pass) {
           const failureText = verification.evidence.map((item) => item.output_excerpt ?? item.summary).join("\n");
           const failure = classifyFailure({ phase: "verify", exitCode: verification.evidence[0]?.exit_code, stderr: failureText });
@@ -750,7 +759,7 @@ export async function runAuto(
         );
       }
 
-      const verification = await verifier();
+      const verification = await verifier({ runId, operatorToken: operator.token });
       appendEvent(db, {
         id: opts.artifactId,
         type: verification.pass ? "auto-completed" : "auto-rework",
