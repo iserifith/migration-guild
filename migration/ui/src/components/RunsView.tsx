@@ -208,6 +208,7 @@ export default function RunsView({
                   }}
                   tabIndex={0}
                   role="button"
+                  aria-expanded={selectedRunId === run.run_id}
                 >
                   <td className="mono">{run.run_id}</td>
                   <td>{run.agent}</td>
