@@ -295,6 +295,44 @@ exist in BOTH the repo root and `package/` (the parity tests treat root as the s
 Editing only the root copy breaks the full suite's packaging/parity tests. After touching either,
 mirror root → `package/` (or edit `package/` and promote) before running `npm test`.
 
+## Approval gate + attempt history (013-approval-gate-attempt-state)
+
+High-risk artifacts now require a human approval step, and every migrate attempt is persisted.
+What a maintainer needs to know:
+
+- **A new artifact status `pending-approval` sits between `migrated`/`reviewed`.** An approving
+  arbitration verdict on an above-cutoff high-risk artifact holds it at `pending-approval`
+  instead of promoting to `reviewed`. Claim eligibility is unaffected by construction
+  (`claimNextTask`/`claimArtifactById` use explicit `from_status` allow-lists that do not
+  include `pending-approval`), so held artifacts are never claimable; the supervisor surfaces
+  them as "held for approval" with a distinct `heldForApproval` count, never as blocked/failed.
+- **Human decisions live in the `approval_decisions` table** (decision_id, artifact_id,
+  operator, operator_token_hash, run_id, decision ∈ approved/rejected, reason — NULL on
+  approve, required on reject — evidence_snapshot_json, decided_at), written by
+  `recordApprovalDecision` in `migration/registry/commands/approval.ts`. Approve →
+  `reviewed`; reject → `needs-rework`.
+- **CLI path:** `guildctl approve --list` (backed by `listPendingApprovals`) shows the held set
+  with risk reason codes + arbiter verdict; `guildctl approve <id> [--reject --reason ...]`
+  resolves it. `guildctl arbitrate` output gained additive `artifactStatus`/`heldForApproval`
+  fields reporting the actual post-verdict status.
+- **Attempt history lives in `attempt_records`** ((artifact_id, attempt_no) PK, run_id, phase,
+  outcome ∈ succeeded/failed/budget-exhausted, failure_kind/signature, started/finished
+  timestamps), written from the supervisor loop; the persisted retry budget survives restarts
+  with no double-counting.
+- **Mission Control API:** `GET /api/approvals` (exactly the `listPendingApprovals` set),
+  `GET /api/approvals/history`, `POST /api/approvals/<id>/decision` (dashboard decisions use a
+  mission-control operator identity; `RegistryError` → clean 4xx JSON).
+
+Maintainer checklist answers for this feature: repo-only runtime change (registry/guildctl/
+supervisor/UI — no new shipped Agent artifact, no `package/` capability change required);
+`package/` NOT updated (no user-workspace-facing capability added; the approve CLI and gate are
+runtime behavior in `migration/`); `migration/` updated (schema: `pending-approval` status +
+`approval_decisions`/`attempt_records` tables + widened event-type CHECKs; approval gate in
+evidence path; `approve` command; supervisor held-handling + `heldForApproval` count; Mission
+Control approvals API + Approvals panel); `DEVELOPMENT.md` updated (this section — claim/run
+lifecycle semantics changed via the new `pending-approval` status); `CHANGELOGS.MD` updated
+(Spec 013 entry under Unreleased).
+
 New `migration/test/` suites added by this feature: `arbitrate-manual-approval.test.ts`,
 `verify-stack-default.test.ts`, `auto-resume-blocked.test.ts`,
 `warden-revert-blocks-migrated.test.ts`, `verify-slot-concurrency.test.ts`,

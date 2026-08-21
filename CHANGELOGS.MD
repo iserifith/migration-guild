@@ -6,6 +6,35 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### August 21, 2026
+
+- Shipped Spec 013 — approval gate for high-risk artifacts + attempt-scoped retry history
+  across the `migration/` registry, guildctl runtime, supervisor, and Mission Control UI.
+  (1) Approval gate (US1, FR-001..FR-003, FR-012): an approving arbitration verdict on an
+  above-cutoff high-risk artifact now holds the artifact at a new `pending-approval`
+  status instead of promoting it straight to `reviewed`; `registry/commands/approval.ts`
+  (`resolveGateScope`, `recordApprovalDecision`) records every human decision in a new
+  `approval_decisions` audit table (operator, run, decision, reason, evidence snapshot);
+  the evidence gate in `registry/commands/evidence.ts` enforces it; unattended runs never
+  auto-approve. (2) CLI decision path (US2, FR-004): `guildctl approve --list` shows held
+  artifacts with risk reason codes and the arbiter verdict summary; `guildctl approve
+  <id>` / `guildctl approve <id> --reject --reason ...` resolves the hold (→
+  `reviewed`/`needs-rework`) via the registry layer; `arbitrate` output reports the actual
+  post-verdict status with additive `artifactStatus`/`heldForApproval` fields. (3)
+  Supervisor integration (US1, FR-005): the supervisor never claims a `pending-approval`
+  artifact, surfaces it as "held for approval" (never blocked/failed), and reports a
+  distinct `heldForApproval` count in queue/run reporting. (4) Attempt history (US3,
+  FR-009..FR-011): a new `attempt_records` table persists every migrate attempt
+  (artifact_id, attempt_no, outcome, failure_kind/signature, timings), and the persisted
+  retry budget survives process restarts — no attempt double-counted or lost, and "what
+  happened on attempt N" is answerable from the registry alone (no log scraping). (5)
+  Mission Control dashboard (US4): an Approvals panel lists pending approvals (with
+  approve/reject actions) and decided history, backed by `GET /api/approvals`, `GET
+  /api/approvals/history`, and `POST /api/approvals/<id>/decision` (dashboard decisions
+  use a mission-control operator identity; `RegistryError`s surface as clean 4xx JSON);
+  the pending-approval queue the panel shows is exactly the set the CLI's
+  `listPendingApprovals` returns (parity locked by test).
+
 ### August 20, 2026
 
 - Shipped nine operational-hardening fixes for Spec 012 (#150, #151, #153–#159) across the
