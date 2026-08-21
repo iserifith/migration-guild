@@ -21,3 +21,7 @@
 ## 2024-08-21 - Dependency Disposition Nulling Semantics
 **Learning:** When confirming a dependency disposition (`confirmDisposition`), the registry implements strict "nulling semantics". If the disposition strategy changes (e.g., from `replace-with-native` to `keep`), fields relevant only to the old strategy (like `native_replacement`) are cleared to `null` unless explicitly overridden. This prevents the confirmed row from containing stale, mixed data from a previous proposal.
 **Action:** Always check the exact state transitions and field handling when updating complex rows; do not assume a simple merge of new and old values.
+
+## 2024-03-24 - Diagnostics and Failure Modes
+**Learning:** The guildctl operator health suite differentiates between config-resolved harnesses and custom AGENT_CMD harnesses when testing reachability. `preflight.ts` will explicitly probe the adapter of a config-sourced harness but leave custom harnesses to be validated only by the live provider request. `doctor.ts` explicitly checks custom environment harnesses to ensure the operator's custom program is reachable before green-lighting the configuration.
+**Action:** When documenting reachability constraints, distinguish how preflight handles config-sourced configurations vs environment/custom harnesses.
