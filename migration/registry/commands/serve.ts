@@ -19,7 +19,11 @@ import {
   queryOpenIssuesPage,
   queryRunHistory,
   queryRunHistoryPage,
+  queryPendingApprovalsForUI,
+  queryApprovalHistoryForUI,
 } from "./queries";
+import { recordApprovalDecision } from "./approval";
+import { RegistryError } from "../types";
 
 const MIME: Record<string, string> = {
   ".html": "text/html",
@@ -47,6 +51,41 @@ function json(res: http.ServerResponse, data: unknown) {
   res.end(body);
 }
 
+// Clean 4xx error body matching the API's existing plain-text error
+// convention (see the /api/runs/<id>/log 404s below).
+function jsonError(res: http.ServerResponse, status: number, message: string) {
+  res.writeHead(status, { "Content-Type": "text/plain; charset=utf-8", "Access-Control-Allow-Origin": "*" });
+  res.end(message);
+}
+
+// Minimal JSON-body reader for POST handlers (none existed before US4).
+function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let raw = "";
+    req.on("data", (chunk) => {
+      raw += chunk;
+      // Guard against unbounded bodies.
+      if (raw.length > 1_000_000) {
+        reject(new Error("Request body too large."));
+        req.destroy();
+      }
+    });
+    req.on("end", () => {
+      try {
+        resolve(raw.trim() === "" ? {} : JSON.parse(raw));
+      } catch {
+        reject(new Error("Request body is not valid JSON."));
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+// Default operator id for dashboard-initiated approval decisions when the
+// request body does not supply one (US4). Mirrors the CLI's stable
+// "guildctl-approve" operator id.
+const DASHBOARD_OPERATOR_ID = "mission-control";
+
 function numberParam(
   value: string | null,
   fallback: number | undefined,
@@ -60,7 +99,7 @@ function numberParam(
 }
 
 export function startServer(db: Database.Database, port = 3322) {
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", `http://localhost:${port}`);
     const p = url.pathname;
 
@@ -92,6 +131,59 @@ export function startServer(db: Database.Database, port = 3322) {
 
     if (p === "/api/wave-plan") {
       return json(res, queryWavePlanForUI(db));
+    }
+
+    // ── /api/approvals (US4, spec 013) ────────────────────────────────────
+    // Thin dispatcher: the read delegates to queryPendingApprovalsForUI,
+    // which returns exactly the set listPendingApprovals (CLI) returns.
+    if (req.method === "GET" && p === "/api/approvals") {
+      return json(res, queryPendingApprovalsForUI(db));
+    }
+
+    // Decided history for the approvals panel (newest first).
+    if (req.method === "GET" && p === "/api/approvals/history") {
+      return json(res, queryApprovalHistoryForUI(db));
+    }
+
+    // ── POST /api/approvals/<id>/decision (US4, spec 013) ─────────────────
+    // Thin dispatcher around the shared registry function recordApprovalDecision
+    // (the same one the CLI calls). RegistryError is translated into the API's
+    // clean 4xx plain-text error body; success → 200 + the ApprovalDecision JSON.
+    const approvalDecisionMatch = p.match(/^\/api\/approvals\/([^/]+)\/decision$/);
+    if (req.method === "POST" && approvalDecisionMatch) {
+      const artifactId = decodeURIComponent(approvalDecisionMatch[1]);
+      let body: Record<string, unknown>;
+      try {
+        const parsed = await readJsonBody(req);
+        body = (parsed && typeof parsed === "object" ? parsed : {}) as Record<string, unknown>;
+      } catch (err) {
+        return jsonError(res, 400, err instanceof Error ? err.message : "Request body is not valid JSON.");
+      }
+
+      const decision = typeof body.decision === "string" ? body.decision : "";
+      if (decision !== "approved" && decision !== "rejected") {
+        return jsonError(res, 400, 'decision must be "approved" or "rejected".');
+      }
+
+      try {
+        const recorded = recordApprovalDecision(db, {
+          artifactId,
+          decision,
+          reason: typeof body.reason === "string" ? body.reason : undefined,
+          operator:
+            typeof body.operator === "string" && body.operator.trim()
+              ? body.operator
+              : DASHBOARD_OPERATOR_ID,
+          runId: typeof body.runId === "string" ? body.runId : undefined,
+          operatorToken: typeof body.operatorToken === "string" ? body.operatorToken : undefined,
+        });
+        return json(res, recorded);
+      } catch (err) {
+        if (err instanceof RegistryError) {
+          return jsonError(res, 400, err.message);
+        }
+        throw err;
+      }
     }
 
     if (p === "/api/events") {

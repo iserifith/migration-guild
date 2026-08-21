@@ -16,6 +16,7 @@ import { formatVerificationCloseOut, runVerify, verifyAtClaimClose, type VerifyR
 import { resolveGuildConfig } from "../config";
 import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions, transientWardenExclusions, wardenSnapshotDiff, type WardenSnapshot } from "../warden";
 import { classifyFailure, FailureBudget } from "./failures";
+import { getPersistedBudgetState, recordAttemptOutcome } from "../../registry/commands/attempts";
 
 export interface AutoWorkerInput {
   phase: "migrate" | "repair";
@@ -61,9 +62,14 @@ export interface AutoOptions {
 }
 
 export interface AutoResult {
-  status: "complete" | "blocked" | "cancelled";
-  runId: string;
+  // US1 (spec 013, T009): "held" is the awaiting-a-human-decision outcome for a
+  // `pending-approval` artifact — distinct from blocked/failed/complete.
+  status: "complete" | "blocked" | "cancelled" | "held";
+  runId: string | null;
   attempts: number;
+  // Additive held-for-approval marker, present (true) only when status === "held".
+  heldForApproval?: boolean;
+  reason?: string;
 }
 
 async function defaultWorker(): Promise<void> {
@@ -432,10 +438,54 @@ function closeOutReviewError(
   return { status: "blocked", runId, attempts };
 }
 
+/**
+ * US1 approval gate (spec 013, T009): report what actually happened after
+ * approveArtifactWithEvidence runs, not what the caller assumed. An
+ * above-cutoff high-risk artifact holds at `pending-approval` instead of
+ * promoting to `reviewed` (see arbitrate.ts's identical T008 re-read), so
+ * runAuto must not report "complete" when the artifact got gated mid-run.
+ */
+function reportApprovalOutcome(
+  db: Database.Database,
+  artifactId: string,
+  runId: string,
+  attempts: number,
+): AutoResult {
+  const statusRow = db.prepare("SELECT status FROM artifacts WHERE id = ?").get(artifactId) as { status: string } | undefined;
+  if (statusRow?.status === "pending-approval") {
+    return {
+      status: "held",
+      runId,
+      attempts,
+      heldForApproval: true,
+      reason: "pending-approval",
+    };
+  }
+  return { status: "complete", runId, attempts };
+}
+
 export async function runAuto(
   db: Database.Database,
   opts: AutoOptions,
 ): Promise<AutoResult> {
+  // US1 approval gate (spec 013, T009): a `pending-approval` artifact is HELD
+  // awaiting a human decision — it is not claimable work and the supervisor
+  // must never try to claim it, advance it, or treat it as a failure. Surface
+  // it as held-for-approval and leave its status untouched. This short-circuits
+  // before requireReview/startRun/claim so a held artifact never crashes the
+  // supervisor even when no review callback or claim is involved.
+  const initialStatusRow = db.prepare("SELECT status FROM artifacts WHERE id = ?").get(opts.artifactId) as { status: string } | undefined;
+  if (initialStatusRow?.status === "pending-approval") {
+    process.stderr.write(`held for approval: artifact ${opts.artifactId} is pending-approval; awaiting a human approval decision\n`);
+    return {
+      runId: null,
+      attempts: 0,
+      status: "held",
+      heldForApproval: true,
+      reason: "pending-approval",
+    };
+  }
+
   const review = requireReview(opts.review);
   assertAutonomousRegistryPlacement(db, opts.workspaceRoot);
   const wardenExcludedPaths = transientWardenExclusions(opts.workspaceRoot, [path.resolve(opts.outputDir ?? `${opts.workspaceRoot}/.guild/evidence`), ...activeSqliteWardenExclusions(db)]);
@@ -453,7 +503,15 @@ export async function runAuto(
   // failing the run.
   const autoConfig = resolveGuildConfig({ cwd: opts.workspaceRoot });
   const maxAttempts = opts.maxAttempts ?? 3;
-  const budget = new FailureBudget(maxAttempts, 2);
+  // US3 (spec 013, FR-009): seed from durable attempt_records so a restart
+  // resumes consumed attempts/playbooks instead of resetting the budget.
+  const budget = new FailureBudget(maxAttempts, 2, {
+    artifactId: opts.artifactId,
+    ...getPersistedBudgetState(db, opts.artifactId),
+  });
+  // Timestamp the current attempt began; attempts[#attempts-1] is the attempt
+  // currently executing (attempts is incremented before each dispatch).
+  const attemptStartedAt: string[] = [];
   const worker = opts.worker ?? defaultWorker;
   // The default (--command) verifier already closes over the loop's own
   // runId/operator.token, so it ignores the ctx argument; injected verifiers
@@ -468,7 +526,11 @@ export async function runAuto(
     config: autoConfig,
   }));
 
-  let attempts = 0;
+  // US3 (spec 013, FR-009): seed from durable attempt_records like the
+  // FailureBudget above, so a resumed run's attempt counter picks up where
+  // persisted history left off instead of colliding with already-persisted
+  // attempt_records rows (UNIQUE(artifact_id, attempt_no)).
+  let attempts = getPersistedBudgetState(db, opts.artifactId).attemptsUsed;
   try {
     // US2 (#154) / T009: a remediation pass that appended
     // `remediation-confirmed-no-defect` for this artifact has already declared
@@ -598,7 +660,7 @@ export async function runAuto(
               operatorToken: operator.token,
             });
             finishRun(db, { runId, exitCode: 0 });
-            return { status: "complete", runId, attempts };
+            return reportApprovalOutcome(db, opts.artifactId, runId, attempts);
           }
           if (!scheduleReviewRejectionRepair(db, opts, budget, reviewed, attempts, maxAttempts)) {
             rejectArtifactWithEvidence(db, {
@@ -624,6 +686,7 @@ export async function runAuto(
     while (attempts < maxAttempts && budget.canAttemptArtifact(opts.artifactId)) {
       attempts += 1;
       budget.recordAttempt(opts.artifactId);
+      attemptStartedAt[attempts - 1] = new Date().toISOString();
       const claim = claimArtifactById(db, {
         artifactId: opts.artifactId,
         agent: phase === "repair" ? "remediation-agent" : "code-writer-agent",
@@ -666,6 +729,16 @@ export async function runAuto(
           summary: `Blocked after filesystem violation: ${failure.signature}`,
           data: JSON.stringify({ failure, violations: warden.violations }),
         });
+        recordAttemptOutcome(db, {
+          artifactId: opts.artifactId,
+          attemptNo: attempts,
+          phase,
+          outcome: "failed",
+          failureKind: failure.kind,
+          failureSignature: failure.signature,
+          startedAt: attemptStartedAt[attempts - 1],
+          runId,
+        });
         setArtifactStatus(db, opts.artifactId, "blocked", {
           agent: "guildctl",
           runId,
@@ -685,6 +758,16 @@ export async function runAuto(
           agent: "guildctl-auto",
           summary: `Worker failed: ${failure.kind}`,
           data: JSON.stringify({ failure }),
+        });
+        recordAttemptOutcome(db, {
+          artifactId: opts.artifactId,
+          attemptNo: attempts,
+          phase,
+          outcome: "failed",
+          failureKind: failure.kind,
+          failureSignature: failure.signature,
+          startedAt: attemptStartedAt[attempts - 1],
+          runId,
         });
         setArtifactStatus(db, opts.artifactId, "blocked", {
           agent: "guildctl",
@@ -834,12 +917,47 @@ export async function runAuto(
         }
         const reviewed = reviewResult.decision!;
         if (!reviewed.approved) {
+          const reviewFailure = classifyFailure({
+            phase: "review",
+            stderr: `review rejected: ${reviewed.reason}`,
+          });
+          // US3 (spec 013): record the rejected attempt's outcome BEFORE the
+          // repair boundary. The record insert must stay ahead of the
+          // helper's auto-rework event: the evidence-freshness check breaks
+          // same-second auto-rework-vs-evidence ties by rowid, so this
+          // ordering keeps the event strictly after both the record and the
+          // next attempt's evidence.
           if (scheduleReviewRejectionRepair(db, opts, budget, reviewed, attempts, maxAttempts)) {
+            recordAttemptOutcome(db, {
+              artifactId: opts.artifactId,
+              attemptNo: attempts,
+              phase,
+              outcome: "failed",
+              failureKind: reviewFailure.kind,
+              failureSignature: reviewFailure.signature,
+              startedAt: attemptStartedAt[attempts - 1],
+              runId,
+            });
             fromStatus = "migrated";
             phase = "repair";
             reviewReason = reviewed.reason;
             continue;
           }
+          // US3 (spec 013): no repair left for this attempt — record the
+          // terminal outcome ("failed" when the attempt itself failed,
+          // "budget-exhausted" when the loop's retry policy is what stopped
+          // a retryable rejection).
+          const exhaustedByAttemptCap = attempts >= maxAttempts || !budget.canAttemptArtifact(opts.artifactId);
+          recordAttemptOutcome(db, {
+            artifactId: opts.artifactId,
+            attemptNo: attempts,
+            phase,
+            outcome: exhaustedByAttemptCap ? "budget-exhausted" : "failed",
+            failureKind: reviewFailure.kind,
+            failureSignature: reviewFailure.signature,
+            startedAt: attemptStartedAt[attempts - 1],
+            runId,
+          });
           rejectArtifactWithEvidence(db, {
             artifactId: opts.artifactId,
             arbiter: reviewed.reviewerAgent,
@@ -849,6 +967,14 @@ export async function runAuto(
           finishRun(db, { runId, exitCode: 1, reason: "independent review rejected artifact" });
           return { status: "blocked", runId, attempts };
         }
+        recordAttemptOutcome(db, {
+          artifactId: opts.artifactId,
+          attemptNo: attempts,
+          phase,
+          outcome: "succeeded",
+          startedAt: attemptStartedAt[attempts - 1],
+          runId,
+        });
         approveArtifactWithEvidence(db, {
           artifactId: opts.artifactId,
           arbiter: reviewed.reviewerAgent,
@@ -858,7 +984,7 @@ export async function runAuto(
           operatorToken: operator.token,
         });
         finishRun(db, { runId, exitCode: 0 });
-        return { status: "complete", runId, attempts };
+        return reportApprovalOutcome(db, opts.artifactId, runId, attempts);
       }
       const failureText = verification.evidence.map((item) => item.output_excerpt ?? item.summary).join("\n");
       const failure = classifyFailure({ phase: "verify", exitCode: verification.evidence[0]?.exit_code, stderr: failureText });
@@ -870,9 +996,35 @@ export async function runAuto(
         data: JSON.stringify({ failure }),
       });
       if (!budget.canRunPlaybook(opts.artifactId, failure, "repair")) {
+        // US3 (spec 013): the playbook retry budget for this signature is
+        // exhausted — record the attempt's terminal outcome before the loop
+        // falls through to the budget-exhausted close-out.
+        recordAttemptOutcome(db, {
+          artifactId: opts.artifactId,
+          attemptNo: attempts,
+          phase,
+          outcome: "budget-exhausted",
+          failureKind: failure.kind,
+          failureSignature: failure.signature,
+          startedAt: attemptStartedAt[attempts - 1],
+          runId,
+        });
         break;
       }
       budget.recordPlaybook(opts.artifactId, failure, "repair");
+      // US3 (spec 013): repair scheduled at the playbook boundary — durably
+      // record the failed attempt so budget state is re-seedable after a
+      // restart.
+      recordAttemptOutcome(db, {
+        artifactId: opts.artifactId,
+        attemptNo: attempts,
+        phase,
+        outcome: "failed",
+        failureKind: failure.kind,
+        failureSignature: failure.signature,
+        startedAt: attemptStartedAt[attempts - 1],
+        runId,
+      });
       fromStatus = "migrated";
       phase = "repair";
       reviewReason = undefined;

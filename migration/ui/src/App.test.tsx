@@ -14,6 +14,7 @@ import type { Artifact, StatusResponse } from "./types";
 vi.mock("./hooks", () => ({
   useRegistryData: vi.fn(),
   useRunLog: vi.fn(),
+  useApprovals: () => ({ pending: [], history: [], loading: false, error: null, reload: vi.fn() }),
   useStatus: () => ({ status: null, loading: false, error: null, reload: vi.fn() }),
   useSociety: () => ({ society: null, loading: false, error: null, reload: vi.fn() }),
   useWavePlan: () => ({ wavePlan: [], loading: false, error: null, reload: vi.fn() }),
@@ -219,6 +220,7 @@ describe("App shell", () => {
     render(<App />);
     for (const label of [
       "Mission Control",
+      "Approvals",
       "Artifacts",
       "Wave Plan",
       "Sessions",
