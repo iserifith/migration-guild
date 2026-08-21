@@ -13,3 +13,11 @@
 ## 2024-03-24 - Supervisor Deep Dive
 **Learning:** The supervisor loop relies heavily on the `AutonomousLimitError` to pass process cleanup state and limit termination info across the boundary instead of just doing a raw exit.
 **Action:** When handling errors or writing tools that have long running processes, ensuring a structured error containing process info is critical.
+
+## 2024-08-21 - CLI Command Wiring and SQLite Transactions
+**Learning:** The operator CLI surface (`migration/registry/cli.ts`) is designed as a thin routing layer that wraps subcommand execution in a central `run(fn)` helper. The actual business logic and database mutations are isolated in `migration/registry/commands/*.ts`. This ensures commands can be reused directly by the local API server while enforcing consistent error handling (`RegistryError` -> exit codes) and JSON serialization.
+**Action:** When documenting or modifying commands, remember the separation of concerns: parameter parsing and formatting in `cli.ts`, state validation and SQLite transactions in `commands/*.ts`.
+
+## 2024-08-21 - Dependency Disposition Nulling Semantics
+**Learning:** When confirming a dependency disposition (`confirmDisposition`), the registry implements strict "nulling semantics". If the disposition strategy changes (e.g., from `replace-with-native` to `keep`), fields relevant only to the old strategy (like `native_replacement`) are cleared to `null` unless explicitly overridden. This prevents the confirmed row from containing stale, mixed data from a previous proposal.
+**Action:** Always check the exact state transitions and field handling when updating complex rows; do not assume a simple merge of new and old values.
