@@ -339,6 +339,42 @@ CREATE TABLE IF NOT EXISTS approval_decisions (
 
 CREATE INDEX IF NOT EXISTS idx_approval_decisions_artifact ON approval_decisions(artifact_id);
 
+-- ─── Attempt Records ────────────────────────────────────────────────────────
+-- Durable per-attempt outcome history for migrate retries (spec 013,
+-- data-model.md §3): one row per (artifact, attempt_no), recording outcome,
+-- classified failure kind/signature, and timing, so attempt/budget state is
+-- re-seedable from SQLite + events after a process restart instead of living
+-- only in the supervisor's in-memory FailureBudget maps.
+
+CREATE TABLE IF NOT EXISTS attempt_records (
+    attempt_id        TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+    artifact_id       TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    attempt_no        INTEGER NOT NULL CHECK (attempt_no > 0),
+    phase             TEXT NOT NULL DEFAULT 'migrate',
+    outcome           TEXT NOT NULL CHECK (outcome IN ('succeeded', 'failed', 'budget-exhausted')),
+    failure_kind      TEXT CHECK (failure_kind IS NULL OR failure_kind IN (
+                         'build-failure',
+                         'test-failure',
+                         'agent-timeout',
+                         'review-rejection',
+                         'filesystem-violation',
+                         'claim-violation',
+                         'stack-mismatch',
+                         'pack-defect',
+                         'provider-error',
+                         'unknown'
+                     )),
+    failure_signature TEXT,
+    started_at        TEXT NOT NULL,
+    finished_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    claim_id          TEXT REFERENCES artifact_claims(claim_id) ON DELETE SET NULL,
+    recorded_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (artifact_id, attempt_no),
+    CHECK (outcome = 'succeeded' OR failure_kind IS NOT NULL)
+);
+
+CREATE INDEX IF NOT EXISTS idx_attempt_records_artifact ON attempt_records(artifact_id);
+
 -- ─── Benchmark Runs ───────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS benchmark_runs (
