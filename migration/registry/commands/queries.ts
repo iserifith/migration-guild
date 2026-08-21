@@ -1,6 +1,8 @@
 import type Database from "better-sqlite3";
 import { RegistryError, validateId } from "../types";
 import type { Artifact, ArtifactTier, EventType, Kind, Status, Tag } from "../types";
+import { listPendingApprovals } from "./approval";
+import type { ApprovalDecision, PendingApproval } from "./approval";
 
 /**
  * Verification state read through the coalescing LEFT JOIN (FR-002, FR-009), so
@@ -996,6 +998,54 @@ export function queryOpenIssuesPage(
       `,
     ),
   });
+}
+
+// ── /api/approvals ──────────────────────────────────────────────────────────
+
+/**
+ * T027 (spec 013, US4) — the dashboard's read of the pending-approval queue.
+ *
+ * FR-004/FR-013: this MUST return exactly the set `guildctl approve --list`
+ * surfaces, so it delegates to the same registry-layer function
+ * (`listPendingApprovals`) rather than running a parallel query. Locked in by
+ * test/approval-dashboard-parity.test.ts.
+ */
+export function queryPendingApprovalsForUI(db: Database.Database): PendingApproval[] {
+  return listPendingApprovals(db);
+}
+
+/**
+ * US4 decided-history read for the approvals panel: every recorded
+ * approval_decisions row, newest first. Complements
+ * `queryPendingApprovalsForUI` (the still-held queue) so the panel can show
+ * both what awaits a decision and what has already been decided.
+ */
+export function queryApprovalHistoryForUI(db: Database.Database): ApprovalDecision[] {
+  interface ApprovalHistoryRow {
+    decision_id: string;
+    artifact_id: string;
+    run_id: string | null;
+    operator: string;
+    decision: "approved" | "rejected";
+    reason: string | null;
+    operator_token_hash: string | null;
+    decided_at: string;
+  }
+  const rows = db.prepare(
+    `SELECT decision_id, artifact_id, run_id, operator, decision, reason, operator_token_hash, decided_at
+     FROM approval_decisions
+     ORDER BY decided_at DESC, rowid DESC`,
+  ).all() as ApprovalHistoryRow[];
+  return rows.map((row) => ({
+    decisionId: row.decision_id,
+    artifactId: row.artifact_id,
+    runId: row.run_id,
+    operator: row.operator,
+    decision: row.decision,
+    reason: row.reason,
+    operatorTokenHash: row.operator_token_hash,
+    decidedAt: row.decided_at,
+  }));
 }
 
 // ── /api/runs ───────────────────────────────────────────────────────────────
