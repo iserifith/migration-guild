@@ -13,3 +13,7 @@
 ## 2024-03-24 - Supervisor Deep Dive
 **Learning:** The supervisor loop relies heavily on the `AutonomousLimitError` to pass process cleanup state and limit termination info across the boundary instead of just doing a raw exit.
 **Action:** When handling errors or writing tools that have long running processes, ensuring a structured error containing process info is critical.
+
+## 2024-03-24 - Diagnostics and Failure Modes
+**Learning:** The guildctl operator health suite differentiates between config-resolved harnesses and custom AGENT_CMD harnesses when testing reachability. `preflight.ts` will explicitly probe the adapter of a config-sourced harness but leave custom harnesses to be validated only by the live provider request. `doctor.ts` explicitly checks custom environment harnesses to ensure the operator's custom program is reachable before green-lighting the configuration.
+**Action:** When documenting reachability constraints, distinguish how preflight handles config-sourced configurations vs environment/custom harnesses.
