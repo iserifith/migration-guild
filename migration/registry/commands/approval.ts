@@ -3,8 +3,9 @@ import { createHash } from "node:crypto";
 import { resolveRiskSpec } from "../../guildctl/risk";
 import { RegistryError, validateId } from "../types";
 import { setArtifactStatus } from "./artifacts";
+import { validateRunOperatorCredential } from "./claim";
 import { appendEvent } from "./events";
-import { checkEvidenceFreshness, getLatestArbitrationDecision } from "./evidence";
+import { checkEvidenceFreshness, commitPromotedArtifact, getLatestArbitrationDecision } from "./evidence";
 
 export interface GateScopeResult {
   inScope: boolean;
@@ -18,6 +19,8 @@ export interface RecordApprovalDecisionOptions {
   reason?: string;
   runId?: string;
   operatorToken?: string;
+  /** Workspace root to commit a promoted artifact in; defaults to resolveWorkspaceRoot(). */
+  workspaceRoot?: string;
 }
 
 /**
@@ -213,6 +216,10 @@ export function recordApprovalDecision(
   db: Database.Database,
   opts: RecordApprovalDecisionOptions,
 ): ApprovalDecision {
+  let promotion: { targetStatus: "reviewed" | "needs-rework"; arbitration: ReturnType<typeof getLatestArbitrationDecision> } = {
+    targetStatus: "needs-rework",
+    arbitration: null,
+  };
   const tx = db.transaction((): ApprovalDecision => {
     validateId(opts.artifactId);
     const status = getArtifactStatus(db, opts.artifactId);
@@ -235,6 +242,10 @@ export function recordApprovalDecision(
 
     if (opts.decision === "rejected" && (!opts.reason || !opts.reason.trim())) {
       throw new RegistryError(1, "A rejection reason is required.");
+    }
+
+    if (opts.runId && opts.operatorToken && !validateRunOperatorCredential(db, opts.runId, opts.operatorToken)) {
+      throw new RegistryError(1, "Approval requires a valid run operator credential.");
     }
 
     const operatorTokenHash = opts.operatorToken
@@ -272,6 +283,7 @@ export function recordApprovalDecision(
 
     const targetStatus = opts.decision === "approved" ? "reviewed" : "needs-rework";
     setArtifactStatus(db, opts.artifactId, targetStatus);
+    promotion = { targetStatus, arbitration: latestArbitration };
     appendEvent(db, {
       id: opts.artifactId,
       type: opts.decision === "approved" ? "approval-approved" : "approval-rejected",
@@ -288,5 +300,12 @@ export function recordApprovalDecision(
     return toApprovalDecision(row);
   });
 
-  return tx();
+  const decision = tx();
+  // Mirrors approveArtifactWithEvidence's git-commit-on-promotion side effect
+  // (evidence.ts): a human approval decision that releases an artifact to
+  // `reviewed` must commit its outputs too, not just the arbiter's approval.
+  if (promotion.targetStatus === "reviewed" && promotion.arbitration) {
+    commitPromotedArtifact(db, opts.artifactId, promotion.arbitration, opts.workspaceRoot);
+  }
+  return decision;
 }

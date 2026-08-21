@@ -438,6 +438,32 @@ function closeOutReviewError(
   return { status: "blocked", runId, attempts };
 }
 
+/**
+ * US1 approval gate (spec 013, T009): report what actually happened after
+ * approveArtifactWithEvidence runs, not what the caller assumed. An
+ * above-cutoff high-risk artifact holds at `pending-approval` instead of
+ * promoting to `reviewed` (see arbitrate.ts's identical T008 re-read), so
+ * runAuto must not report "complete" when the artifact got gated mid-run.
+ */
+function reportApprovalOutcome(
+  db: Database.Database,
+  artifactId: string,
+  runId: string,
+  attempts: number,
+): AutoResult {
+  const statusRow = db.prepare("SELECT status FROM artifacts WHERE id = ?").get(artifactId) as { status: string } | undefined;
+  if (statusRow?.status === "pending-approval") {
+    return {
+      status: "held",
+      runId,
+      attempts,
+      heldForApproval: true,
+      reason: "pending-approval",
+    };
+  }
+  return { status: "complete", runId, attempts };
+}
+
 export async function runAuto(
   db: Database.Database,
   opts: AutoOptions,
@@ -500,7 +526,11 @@ export async function runAuto(
     config: autoConfig,
   }));
 
-  let attempts = 0;
+  // US3 (spec 013, FR-009): seed from durable attempt_records like the
+  // FailureBudget above, so a resumed run's attempt counter picks up where
+  // persisted history left off instead of colliding with already-persisted
+  // attempt_records rows (UNIQUE(artifact_id, attempt_no)).
+  let attempts = getPersistedBudgetState(db, opts.artifactId).attemptsUsed;
   try {
     // US2 (#154) / T009: a remediation pass that appended
     // `remediation-confirmed-no-defect` for this artifact has already declared
@@ -630,7 +660,7 @@ export async function runAuto(
               operatorToken: operator.token,
             });
             finishRun(db, { runId, exitCode: 0 });
-            return { status: "complete", runId, attempts };
+            return reportApprovalOutcome(db, opts.artifactId, runId, attempts);
           }
           if (!scheduleReviewRejectionRepair(db, opts, budget, reviewed, attempts, maxAttempts)) {
             rejectArtifactWithEvidence(db, {
@@ -954,7 +984,7 @@ export async function runAuto(
           operatorToken: operator.token,
         });
         finishRun(db, { runId, exitCode: 0 });
-        return { status: "complete", runId, attempts };
+        return reportApprovalOutcome(db, opts.artifactId, runId, attempts);
       }
       const failureText = verification.evidence.map((item) => item.output_excerpt ?? item.summary).join("\n");
       const failure = classifyFailure({ phase: "verify", exitCode: verification.evidence[0]?.exit_code, stderr: failureText });
