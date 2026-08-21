@@ -6,6 +6,7 @@ import test from "node:test";
 import Database from "better-sqlite3";
 import { runAuto } from "../guildctl/supervisor/loop";
 import { runAutoQueue, type AutoQueueRemaining } from "../guildctl/supervisor/queue";
+import { getClaimabilityStats, getStatusCounts } from "../guildctl/monitoring";
 import { claimArtifactById, claimNextTask } from "../registry/commands/claim";
 import { registerArtifact, setArtifactStatus, setArtifactWave } from "../registry/commands/artifacts";
 import { applySchema } from "../registry/db/schema";
@@ -174,6 +175,63 @@ test("T009: runAutoQueue reports heldForApproval alongside blocked without confl
     const remaining: AutoQueueRemaining = result.remaining;
     assert.equal(remaining.heldForApproval, 1);
     assert.equal(remaining.blocked, 1);
+  } finally {
+    db.close();
+  }
+});
+
+// T010 (spec 013, FR-005): the held-for-approval count must be exposed wherever
+// run/queue status counts are reported — distinct from blocked.
+
+test("T010: getStatusCounts reports pending-approval artifacts as held, distinct from blocked", () => {
+  const db = createDb();
+  try {
+    seedHeld(db, "StatusHeld");
+    const blocked = `legacy-source:com.acme:StatusBlocked`;
+    registerArtifact(db, { id: blocked, kind: "legacy-source", tier: "first-class", path: "legacy/StatusBlocked.java" });
+    setArtifactWave(db, blocked, 1);
+    setArtifactStatus(db, blocked, "blocked");
+
+    const counts = getStatusCounts(db);
+    assert.equal(counts["pending-approval"], 1);
+    assert.equal(counts["blocked"], 1);
+  } finally {
+    db.close();
+  }
+});
+
+test("T010: getClaimabilityStats exposes an additive heldForApproval count distinct from blocked", () => {
+  const db = createDb();
+  try {
+    seedHeld(db, "ClaimHeld");
+    const blocked = `legacy-source:com.acme:ClaimBlocked`;
+    registerArtifact(db, { id: blocked, kind: "legacy-source", tier: "first-class", path: "legacy/ClaimBlocked.java" });
+    setArtifactWave(db, blocked, 1);
+    setArtifactStatus(db, blocked, "blocked");
+
+    const stats = getClaimabilityStats(db, "planned", undefined) as {
+      total: number;
+      ready: number;
+      blocked: number;
+      inProgress: number;
+      heldForApproval?: number;
+    };
+    assert.equal(stats.heldForApproval, 1);
+    assert.equal(stats.blocked, 0);
+  } finally {
+    db.close();
+  }
+});
+
+test("T010: runAutoQueue remaining counts a seeded pending-approval artifact as heldForApproval", async () => {
+  const db = createDb();
+  try {
+    seedHeld(db, "QueueHeldCount");
+    const result = await runAutoQueue(db, {
+      executeArtifact: async () => ({ status: "complete", runId: "run-z", attempts: 1 }),
+    });
+    assert.equal(result.remaining.heldForApproval, 1);
+    assert.equal(result.remaining.blocked, 0);
   } finally {
     db.close();
   }
