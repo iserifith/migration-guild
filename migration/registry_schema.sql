@@ -35,6 +35,12 @@ CREATE TABLE IF NOT EXISTS artifacts (
                      'interface'
                  )),
     framework    TEXT,
+    -- Status lifecycle: pending → planned → analyzed → in-progress →
+    -- tests-written → migrated → reviewed → completed, with blocked ↔
+    -- needs-rework for human / arbitration rejection paths. Above-cutoff
+    -- high-risk artifacts hold at pending-approval between an approving
+    -- arbiter verdict and the human approval decision (spec 013), then
+    -- release to reviewed / needs-rework.
     status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN (
                      'pending',
                      'planned',
@@ -44,6 +50,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
                      'migrated',
                      'reviewed',
                      'needs-rework',
+                     'pending-approval',
                      'completed',
                      'blocked',
                      'skipped'
@@ -124,6 +131,9 @@ CREATE TABLE IF NOT EXISTS events (
                      'critique-issued',
                      'arbitration-approved',
                      'arbitration-rejected',
+                     'approval-gated',
+                     'approval-approved',
+                     'approval-rejected',
                      'conflict-opened',
                      'conflict-resolved',
                      'benchmark-recorded',
@@ -309,6 +319,26 @@ CREATE TABLE IF NOT EXISTS arbitration_decisions (
 
 CREATE INDEX IF NOT EXISTS idx_arbitration_decisions_artifact ON arbitration_decisions(artifact_id);
 
+-- ─── Approval Decisions ─────────────────────────────────────────────────────
+-- Records the human approval or rejection that releases an artifact out of
+-- pending-approval. The approving arbiter identity MUST NOT equal `operator`
+-- (enforced by the registry layer, research.md §1), and rejections require a
+-- reason so the rework loop knows what to fix (spec 013, data-model.md §2).
+
+CREATE TABLE IF NOT EXISTS approval_decisions (
+    decision_id      TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+    artifact_id      TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    run_id           TEXT REFERENCES runs(run_id) ON DELETE SET NULL,
+    operator         TEXT NOT NULL,
+    decision         TEXT NOT NULL CHECK (decision IN ('approved', 'rejected')),
+    reason           TEXT,
+    operator_token_hash TEXT,
+    decided_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    CHECK (decision <> 'rejected' OR reason IS NOT NULL)
+);
+
+CREATE INDEX IF NOT EXISTS idx_approval_decisions_artifact ON approval_decisions(artifact_id);
+
 -- ─── Benchmark Runs ───────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS benchmark_runs (
@@ -364,6 +394,7 @@ CREATE TABLE IF NOT EXISTS artifact_claims (
                          'migrated',
                          'reviewed',
                          'needs-rework',
+                         'pending-approval',
                          'completed',
                          'blocked',
                          'skipped'
