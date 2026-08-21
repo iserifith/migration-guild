@@ -25,3 +25,7 @@
 ## 2024-03-24 - Diagnostics and Failure Modes
 **Learning:** The guildctl operator health suite differentiates between config-resolved harnesses and custom AGENT_CMD harnesses when testing reachability. `preflight.ts` will explicitly probe the adapter of a config-sourced harness but leave custom harnesses to be validated only by the live provider request. `doctor.ts` explicitly checks custom environment harnesses to ensure the operator's custom program is reachable before green-lighting the configuration.
 **Action:** When documenting reachability constraints, distinguish how preflight handles config-sourced configurations vs environment/custom harnesses.
+
+## 2024-08-21 - Effective Limit Phase Remapping
+**Learning:** Manual phase commands (like `remediate`) and autonomous loop phases (like `repair`) often use different terminologies for the same logical stage, but the limit configuration must map to the base spec (e.g., `remediation`). `limitPhaseForAutoWorker` handles this so `resolveEffectiveLimit` pulls the right config knob.
+**Action:** When tracking configurations, ensure the phase name used matches the limit mapping, not just the run label or status.
