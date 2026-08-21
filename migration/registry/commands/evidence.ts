@@ -18,6 +18,7 @@ import { setArtifactStatus } from "./artifacts";
 import { deriveExpectedOutputPaths, validateRunOperatorCredential } from "./claim";
 import { appendEvent } from "./events";
 import { readFixtureFile, sha256Json } from "./fixture-file";
+import { resolveGateScope } from "./approval";
 
 export interface AddAcceptanceEvidenceOptions {
   artifactId: string;
@@ -523,12 +524,39 @@ export function approveArtifactWithEvidence(
         target_status: "reviewed",
       }),
     });
+
+    // US1 approval gate (spec 013, FR-001/FR-002/FR-011): the arbiter verdict is
+    // recorded either way (arbitration-approved above), but an above-cutoff
+    // high-risk artifact holds at pending-approval for the human decision
+    // instead of transitioning straight to reviewed. The gate check lives inside
+    // the transaction so the status write and the approval-gated event are
+    // atomic with the verdict.
+    const gateScope = resolveGateScope(db, opts.artifactId);
+    if (gateScope.inScope) {
+      setArtifactStatus(db, opts.artifactId, "pending-approval");
+      appendEvent(db, {
+        id: opts.artifactId,
+        type: "approval-gated",
+        agent: opts.arbiter,
+        summary: `Held for human approval: ${gateScope.reason}`,
+        data: JSON.stringify({
+          role: "arbiter",
+          decision_id: decision.decision_id,
+          target_status: "pending-approval",
+          reason: gateScope.reason,
+        }),
+      });
+      return { decision, gated: true as const };
+    }
+
     setArtifactStatus(db, opts.artifactId, "reviewed");
-    return decision;
+    return { decision, gated: false as const };
   });
 
-  const decision = tx();
-  commitPromotedArtifact(db, opts.artifactId, decision, opts.workspaceRoot);
+  const { decision, gated } = tx();
+  if (!gated) {
+    commitPromotedArtifact(db, opts.artifactId, decision, opts.workspaceRoot);
+  }
   return decision;
 }
 
