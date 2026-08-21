@@ -37,6 +37,7 @@ export type Status =
   | "migrated"
   | "reviewed"
   | "needs-rework"
+  | "pending-approval"
   | "completed"
   | "blocked"
   | "skipped";
@@ -65,6 +66,9 @@ export type EventType =
   | "critique-issued"
   | "arbitration-approved"
   | "arbitration-rejected"
+  | "approval-gated"
+  | "approval-approved"
+  | "approval-rejected"
   | "conflict-opened"
   | "conflict-resolved"
   | "benchmark-recorded"
