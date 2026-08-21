@@ -15,6 +15,8 @@ The registry's state model revolves around several core entities (defined in `mi
 3. **`Event` (`events` table):** An append-only audit trail of every significant change to an artifact (status transitions, claims, verifications).
 4. **`Run` (`runs` table):** Represents a single execution attempt by an agent or operator, tracking metadata like resource usage, exit code, and attempt outcomes.
 5. **`ArtifactClaim` (`artifact_claims` table):** Tracks active and historical distributed leases on artifacts (see `claim-protocol.md`).
+6. **`ApprovalDecision` (`approval_decisions` table):** An append-only audit row per human approve/reject decision made on a `pending-approval` artifact — operator identity, run binding, reason, and an evidence-freshness snapshot (spec 013; see `review-arbitration.md`).
+7. **`AttemptRecord` (`attempt_records` table):** An append-only row per concluded migrate attempt (`artifact_id`, `attempt_no`, `outcome`, `failure_kind`/`failure_signature`, timings). Unlike `runs` (one row per process execution), this is the durable, restart-proof source of truth for "what happened on attempt N" and for reconstructing the retry budget (spec 013; see `supervisor.md`).
 
 ## Step-by-Step Flow: Status Transitions
 
@@ -44,6 +46,9 @@ Every successful call to `setArtifactStatus` dynamically writes an event to the 
 ### 6. Evidence Invalidation
 If an artifact transitions back to `in-progress` or `needs-rework` (e.g., due to a failed review or bug report), `resetVerification` (`migration/registry/commands/verification.ts`) is called to clear any previous verification state. This enforces Constitution I: evidence bound to superseded outputs must not survive the change.
 
+### 7. The `pending-approval` Hold (spec 013)
+Not every approving arbiter verdict promotes an artifact straight to `reviewed`. `approveArtifactWithEvidence` (`migration/registry/commands/evidence.ts`) checks `resolveGateScope` (`migration/registry/commands/approval.ts`) against the artifact's stored risk assessment: if it's above the stack pack's high-risk cutoff, the artifact is transitioned to `pending-approval` instead, and an `approval-gated` event is written in the same transaction as the arbiter's `arbitration_decisions` row. `pending-approval` is a genuine `Status` value (`migration/registry/types.ts`) — it is claimable by nothing; the supervisor explicitly refuses to pick it up (see `supervisor.md`). A human operator releases the hold via `recordApprovalDecision` (`guildctl approve`), which writes one `approval_decisions` row and transitions the artifact to `reviewed` or `needs-rework`.
+
 ## Invariants and Edge Cases
 
 - **Trigger-Based Event Logging:** To guarantee that the CLI commands (like `guildctl watch` which polls the `events` table) never miss a status transition, the `trg_artifact_status_change` trigger automatically logs an event if the `status` column changes directly.
@@ -58,5 +63,5 @@ If an artifact transitions back to `in-progress` or `needs-rework` (e.g., due to
 
 ## Extension Points
 
-- **New Statuses:** Adding a new status requires updating `Status` in `migration/registry/types.ts`, and ensuring any logic in `supervisor/loop.ts` and `setArtifactStatus` correctly handles the new lifecycle stage.
+- **New Statuses:** Adding a new status requires updating `Status` in `migration/registry/types.ts`, and ensuring any logic in `supervisor/loop.ts` and `setArtifactStatus` correctly handles the new lifecycle stage. `pending-approval` (spec 013) is the reference example of a "non-claimable, awaiting-human" status: it had to be excluded from the supervisor's claim-eligibility whitelist (`claim.ts`/`queue.ts`), added to `terminalStatus`'s non-terminal checks (`queue.ts`), and given its own `AutoResult.status` value (`"held"`, `loop.ts`) so callers don't mistake a held artifact for a completed one.
 - **Run Tracking:** Adding new telemetry for runs (like memory usage or API tokens) involves adding the nullable column to `runs` in `registry_schema.sql`, the schema fallback in `schema.ts`, the typing in `AttemptOutcomeInput`/`Run`, and the write path in `finishRun`.
