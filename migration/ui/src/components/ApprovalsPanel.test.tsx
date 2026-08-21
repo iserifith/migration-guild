@@ -69,8 +69,9 @@ describe("ApprovalsPanel", () => {
     expect(
       screen.getByRole("heading", { name: /pending approvals/i }),
     ).toBeInTheDocument();
+    const pendingTable = screen.getByRole("table", { name: /pending approvals/i });
     expect(
-      screen.getByText("legacy-source:com.acme:Foo"),
+      within(pendingTable).getByText("legacy-source:com.acme:Foo"),
     ).toBeInTheDocument();
     expect(screen.getByText("high-blast-radius")).toBeInTheDocument();
     expect(screen.getByText("untested-module")).toBeInTheDocument();
@@ -152,7 +153,8 @@ describe("ApprovalsPanel", () => {
   it("approve submits an approved decision for the row's artifact", async () => {
     const props = renderPanel();
 
-    const row = screen
+    const pendingTable = screen.getByRole("table", { name: /pending approvals/i });
+    const row = within(pendingTable)
       .getByText("legacy-source:com.acme:Foo")
       .closest("tr")!;
     fireEvent.click(within(row).getByRole("button", { name: /^approve$/i }));
@@ -166,7 +168,8 @@ describe("ApprovalsPanel", () => {
   it("reject requires a reason and submits it with the decision", async () => {
     const props = renderPanel();
 
-    const row = screen
+    const pendingTable = screen.getByRole("table", { name: /pending approvals/i });
+    const row = within(pendingTable)
       .getByText("legacy-source:com.acme:Foo")
       .closest("tr")!;
     fireEvent.click(within(row).getByRole("button", { name: /^reject$/i }));
@@ -192,7 +195,8 @@ describe("ApprovalsPanel", () => {
   it("cancelling a rejection hides the reason form without submitting", () => {
     const props = renderPanel();
 
-    const row = screen
+    const pendingTable = screen.getByRole("table", { name: /pending approvals/i });
+    const row = within(pendingTable)
       .getByText("legacy-source:com.acme:Foo")
       .closest("tr")!;
     fireEvent.click(within(row).getByRole("button", { name: /^reject$/i }));
