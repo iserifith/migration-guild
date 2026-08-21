@@ -37,6 +37,24 @@ export interface ApprovalDecision {
   decidedAt: string;
 }
 
+/**
+ * One artifact currently held at pending-approval, projected for
+ * `guildctl approve --list` (and the deferred Mission Control panel) — the
+ * read side of the human decision path (spec 013, contracts/registry-commands.md
+ * §listPendingApprovals). Pure read shape: one JOIN across artifacts,
+ * artifact_risk_assessments, and the artifact's latest arbitration_decisions
+ * row.
+ */
+export interface PendingApproval {
+  artifactId: string;
+  /** Parsed artifact_risk_assessments.reason_codes_json ([] when missing/malformed). */
+  riskReasonCodes: string[];
+  /** The reason on the artifact's most recent arbitration_decisions row. */
+  arbitrationVerdictSummary: string;
+  /** artifacts.updated_at — bumped by the pending-approval status transition. */
+  enteredPendingApprovalAt: string;
+}
+
 interface ApprovalDecisionRow {
   decision_id: string;
   artifact_id: string;
@@ -51,6 +69,33 @@ interface ApprovalDecisionRow {
 interface RiskAssessmentRow {
   risk_score: number | null;
   high_risk: number | null;
+}
+
+interface PendingApprovalRow {
+  artifact_id: string;
+  reason_codes_json: string | null;
+  arbitration_reason: string | null;
+  entered_pending_approval_at: string;
+}
+
+function toPendingApproval(row: PendingApprovalRow): PendingApproval {
+  let riskReasonCodes: string[] = [];
+  if (row.reason_codes_json) {
+    try {
+      const parsed: unknown = JSON.parse(row.reason_codes_json);
+      if (Array.isArray(parsed)) {
+        riskReasonCodes = parsed.filter((code): code is string => typeof code === "string");
+      }
+    } catch {
+      // Tolerate a malformed stored payload — the list view degrades to [].
+    }
+  }
+  return {
+    artifactId: row.artifact_id,
+    riskReasonCodes,
+    arbitrationVerdictSummary: row.arbitration_reason ?? "",
+    enteredPendingApprovalAt: row.entered_pending_approval_at,
+  };
 }
 
 function toApprovalDecision(row: ApprovalDecisionRow): ApprovalDecision {
@@ -116,6 +161,42 @@ export function resolveGateScope(
     inScope: false,
     reason: `risk_score ${assessment.risk_score} below cutoff ${cutoff}`,
   };
+}
+
+/**
+ * List every artifact currently held at pending-approval with the context an
+ * operator needs to decide (spec 013, contracts/registry-commands.md
+ * §listPendingApprovals). One pure read: a JOIN across artifacts,
+ * artifact_risk_assessments, and the artifact's most recent
+ * arbitration_decisions row (its `reason` becomes the verdict summary —
+ * mirrors getLatestArbitrationDecision's decided_at/rowid ordering).
+ * `enteredPendingApprovalAt` is artifacts.updated_at, which setArtifactStatus
+ * bumps at the pending-approval transition. Backs both `guildctl approve
+ * --list` and the deferred Mission Control panel — one query, two renderers.
+ */
+export function listPendingApprovals(db: Database.Database): PendingApproval[] {
+  const rows = db.prepare(
+    `SELECT
+       a.id                AS artifact_id,
+       ra.reason_codes_json AS reason_codes_json,
+       latest.reason       AS arbitration_reason,
+       a.updated_at        AS entered_pending_approval_at
+     FROM artifacts a
+     LEFT JOIN artifact_risk_assessments ra
+       ON ra.artifact_id = a.id
+     LEFT JOIN arbitration_decisions latest
+       ON latest.artifact_id = a.id
+      AND latest.rowid = (
+        SELECT ad2.rowid
+        FROM arbitration_decisions ad2
+        WHERE ad2.artifact_id = a.id
+        ORDER BY ad2.decided_at DESC, ad2.rowid DESC
+        LIMIT 1
+      )
+     WHERE a.status = 'pending-approval'
+     ORDER BY a.updated_at, a.id`,
+  ).all() as PendingApprovalRow[];
+  return rows.map(toPendingApproval);
 }
 
 /**
