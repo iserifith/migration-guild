@@ -62,9 +62,14 @@ export interface AutoOptions {
 }
 
 export interface AutoResult {
-  status: "complete" | "blocked" | "cancelled";
-  runId: string;
+  // US1 (spec 013, T009): "held" is the awaiting-a-human-decision outcome for a
+  // `pending-approval` artifact — distinct from blocked/failed/complete.
+  status: "complete" | "blocked" | "cancelled" | "held";
+  runId: string | null;
   attempts: number;
+  // Additive held-for-approval marker, present (true) only when status === "held".
+  heldForApproval?: boolean;
+  reason?: string;
 }
 
 async function defaultWorker(): Promise<void> {
@@ -437,6 +442,24 @@ export async function runAuto(
   db: Database.Database,
   opts: AutoOptions,
 ): Promise<AutoResult> {
+  // US1 approval gate (spec 013, T009): a `pending-approval` artifact is HELD
+  // awaiting a human decision — it is not claimable work and the supervisor
+  // must never try to claim it, advance it, or treat it as a failure. Surface
+  // it as held-for-approval and leave its status untouched. This short-circuits
+  // before requireReview/startRun/claim so a held artifact never crashes the
+  // supervisor even when no review callback or claim is involved.
+  const initialStatusRow = db.prepare("SELECT status FROM artifacts WHERE id = ?").get(opts.artifactId) as { status: string } | undefined;
+  if (initialStatusRow?.status === "pending-approval") {
+    process.stderr.write(`held for approval: artifact ${opts.artifactId} is pending-approval; awaiting a human approval decision\n`);
+    return {
+      runId: null,
+      attempts: 0,
+      status: "held",
+      heldForApproval: true,
+      reason: "pending-approval",
+    };
+  }
+
   const review = requireReview(opts.review);
   assertAutonomousRegistryPlacement(db, opts.workspaceRoot);
   const wardenExcludedPaths = transientWardenExclusions(opts.workspaceRoot, [path.resolve(opts.outputDir ?? `${opts.workspaceRoot}/.guild/evidence`), ...activeSqliteWardenExclusions(db)]);

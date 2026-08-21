@@ -20,6 +20,9 @@ interface ClaimabilityStats {
   ready: number;
   blocked: number;
   inProgress: number;
+  // US1 (spec 013, T010, FR-005): artifacts held at `pending-approval`,
+  // reported distinctly from `blocked`. Additive; default 0.
+  heldForApproval: number;
 }
 
 interface LogSignals {
@@ -120,16 +123,28 @@ export function getClaimabilityStats(
       ${waveClause}
   `).get(wave != null ? { wave } : {}) as { count: number };
 
+  // US1 (spec 013, T010, FR-005): held-for-approval is reported as its own
+  // count, never folded into blocked — a held artifact is awaiting a human,
+  // not failed or dependency-blocked.
+  const heldForApproval = db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM artifacts a
+    WHERE a.tier = 'first-class'
+      AND a.status = 'pending-approval'
+      ${waveClause}
+  `).get(wave != null ? { wave } : {}) as { count: number };
+
   return {
     total: total.count,
     ready: ready.count,
     blocked: blocked.count,
     inProgress: inProgress.count,
+    heldForApproval: heldForApproval.count,
   };
 }
 
 export function printQueueSnapshot(label: string, stats: ClaimabilityStats): void {
-  console.log(`  ${label}: ready=${stats.ready}  blocked=${stats.blocked}  queued=${stats.total}  in-progress=${stats.inProgress}`);
+  console.log(`  ${label}: ready=${stats.ready}  blocked=${stats.blocked}  queued=${stats.total}  in-progress=${stats.inProgress}  held-for-approval=${stats.heldForApproval}`);
 }
 
 function analyzeLogFile(logFile: string | null): { signals: LogSignals; summary: string | null; noWork: boolean } {

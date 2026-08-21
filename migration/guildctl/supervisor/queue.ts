@@ -28,6 +28,9 @@ export interface AutoQueueRemaining {
   inProgress: number;
   needsRework: number;
   blocked: number;
+  // US1 (spec 013, T010): count of artifacts held at `pending-approval`,
+  // reported distinctly from `blocked` per FR-005. Additive; default 0.
+  heldForApproval: number;
 }
 
 export interface AutoQueueResult {
@@ -38,7 +41,7 @@ export interface AutoQueueResult {
     artifactId: string;
     resume: boolean;
     status: AutoResult["status"];
-    runId: string;
+    runId: string | null;
     attempts: number;
   }>;
   recoveredArtifacts: string[];
@@ -157,7 +160,8 @@ function remainingCounts(db: Database.Database, wave?: number): AutoQueueRemaini
       SUM(CASE WHEN a.status = 'migrated' THEN 1 ELSE 0 END) AS migrated,
       SUM(CASE WHEN a.status = 'in-progress' THEN 1 ELSE 0 END) AS in_progress,
       SUM(CASE WHEN a.status = 'needs-rework' THEN 1 ELSE 0 END) AS needs_rework,
-      SUM(CASE WHEN a.status = 'blocked' THEN 1 ELSE 0 END) AS blocked
+      SUM(CASE WHEN a.status = 'blocked' THEN 1 ELSE 0 END) AS blocked,
+      SUM(CASE WHEN a.status = 'pending-approval' THEN 1 ELSE 0 END) AS held_for_approval
     FROM artifacts a
     WHERE a.tier = 'first-class'
       ${waveClause}
@@ -167,6 +171,7 @@ function remainingCounts(db: Database.Database, wave?: number): AutoQueueRemaini
     in_progress: number | null;
     needs_rework: number | null;
     blocked: number | null;
+    held_for_approval: number | null;
   };
   return {
     planned: row.planned ?? 0,
@@ -174,6 +179,7 @@ function remainingCounts(db: Database.Database, wave?: number): AutoQueueRemaini
     inProgress: row.in_progress ?? 0,
     needsRework: row.needs_rework ?? 0,
     blocked: row.blocked ?? 0,
+    heldForApproval: row.held_for_approval ?? 0,
   };
 }
 
