@@ -18,6 +18,8 @@ import {
   fetchBlockers,
   fetchEvents,
   fetchIssues,
+  fetchApprovalHistory,
+  fetchPendingApprovals,
   getSociety,
   fetchRunLog,
   fetchRuns,
@@ -27,6 +29,7 @@ import {
 } from "./api";
 import type { ArtifactQuery } from "./api";
 import type {
+  ApprovalDecision,
   Artifact,
   ArtifactEvent,
   BlockerListResult,
@@ -35,6 +38,7 @@ import type {
   IssueListResult,
   IssueQuery,
   IssueEntry,
+  PendingApproval,
   RunEntry,
   RunFilters,
   RunListResult,
@@ -422,6 +426,48 @@ export function useRunLog(runId: string | null): UseRunLogResult {
   }, [load]);
 
   return { log, loading, error, reload: load };
+}
+
+// ── useApprovals (US4, spec 013) ─────────────────────────────────────────────
+
+export interface UseApprovalsResult {
+  pending: PendingApproval[];
+  history: ApprovalDecision[];
+  loading: boolean;
+  error: Error | null;
+  reload: () => void;
+}
+
+/**
+ * Fetches the approval-gate queue plus the decided history. The pending list
+ * polls (operator-facing queue, like events/society); history refreshes on
+ * load and on `reload` (called after every submitted decision).
+ */
+export function useApprovals(): UseApprovalsResult {
+  const pendingState = useLoadableData(
+    () => fetchPendingApprovals(),
+    [] as PendingApproval[],
+    [],
+    5_000,
+  );
+  const historyState = useLoadableData(
+    () => fetchApprovalHistory(),
+    [] as ApprovalDecision[],
+    [],
+  );
+
+  const reload = useCallback(() => {
+    pendingState.reload();
+    historyState.reload();
+  }, [pendingState.reload, historyState.reload]);
+
+  return {
+    pending: pendingState.data,
+    history: historyState.data,
+    loading: pendingState.loading || historyState.loading,
+    error: pendingState.error ?? historyState.error,
+    reload,
+  };
 }
 
 // ── useRegistryData ───────────────────────────────────────────────────────────
