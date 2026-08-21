@@ -1,15 +1,19 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import type Database from "better-sqlite3";
 import { runArbitrate } from "../guildctl/commands/arbitrate";
-import { getArtifact } from "../registry/commands/artifacts";
+import { signRuntimeEvidence, sha256 } from "../guildctl/verify";
+import { addVerifierRuntimeEvidence } from "../registry/commands/evidence";
 import {
-  createApprovalGateFixture,
+  createApprovalGateDb,
   seedHighRiskArtifact,
-  seedRuntimeEvidence,
+  seedLowRiskArtifact,
   HIGH_RISK_ARTIFACT_ID,
-  OPERATOR_TOKEN,
-  RUN_ID,
+  LOW_RISK_ARTIFACT_ID,
+  type ApprovalGateDb,
 } from "./approval-fixtures";
 
 // T008 (spec 013, FR-005/FR-008): `guildctl arbitrate --approve` must surface the
@@ -17,6 +21,43 @@ import {
 // `pending-approval` (not `reviewed`), and the CLI must say so; a low-risk
 // artifact still promotes straight to `reviewed`. Registry-layer behavior is
 // unchanged — this is CLI surfacing only.
+
+// The fixtures' seedArtifact seeds the risk assessment plus a gate-oriented
+// runtime-evidence row whose run_id is NULL and which has no on-disk
+// output_path. That's enough to drive the gate via direct status manipulation
+// (what approval-gate.test.ts does), but NOT enough for the
+// `approveArtifactWithEvidence` path that `runArbitrate --approve` takes, which
+// requires: run binding, an on-disk log whose sha256 matches log_sha256, and the
+// raw HMAC in `authenticity`. Mirror arbitrate-manual-approval.test.ts's
+// signedRuntimeEvidence helper: write a real log file and add run-bound,
+// authenticity-signed runtime evidence under the gate run's operator credential.
+function bindApproveableEvidence(gate: ApprovalGateDb, artifactId: string): void {
+  const log = "runtime ok\n";
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "guild-t008-evidence-"));
+  const logPath = path.join(dir, "runtime.log");
+  fs.writeFileSync(logPath, log);
+  const logSha256 = sha256(log);
+  const command = "npm test";
+  const exitCode = 0;
+  const pass = 1 as const;
+  addVerifierRuntimeEvidence(gate.db, {
+    artifactId,
+    producedBy: "critic-agent",
+    runId: gate.runId,
+    command,
+    exitCode,
+    pass,
+    summary: "runtime passed",
+    outputPath: logPath,
+    outputExcerpt: log,
+    logSha256,
+    durationMs: 10,
+    authenticity: signRuntimeEvidence(
+      { artifactId, runId: gate.runId, command, exitCode, pass, logSha256 },
+      gate.operatorToken,
+    ),
+  });
+}
 
 interface Captured {
   stdout: string;
@@ -45,14 +86,15 @@ async function capture<T>(fn: () => Promise<T>): Promise<{ result: T; out: Captu
 }
 
 function getStatus(db: Database.Database, artifactId: string): string {
-  return getArtifact(db, artifactId)!.status;
+  const row = db.prepare("SELECT status FROM artifacts WHERE id = ?").get(artifactId) as { status: string } | undefined;
+  return row?.status ?? "";
 }
 
 test("T008: approving a HIGH-risk artifact reports target_status=pending-approval (held for human approval)", async () => {
-  const gate = createApprovalGateFixture();
+  const gate = createApprovalGateDb();
   try {
     seedHighRiskArtifact(gate);
-    seedRuntimeEvidence(gate);
+    bindApproveableEvidence(gate, HIGH_RISK_ARTIFACT_ID);
 
     const { out } = await capture(() =>
       runArbitrate(gate.db, {
@@ -60,8 +102,8 @@ test("T008: approving a HIGH-risk artifact reports target_status=pending-approva
         approve: true,
         arbiter: "arbiter-1",
         reason: "verdict approve",
-        runId: RUN_ID,
-        operatorToken: OPERATOR_TOKEN,
+        runId: gate.runId,
+        operatorToken: gate.operatorToken,
       }),
     );
 
@@ -77,10 +119,10 @@ test("T008: approving a HIGH-risk artifact reports target_status=pending-approva
 });
 
 test("T008: approving a HIGH-risk artifact --json adds artifactStatus + heldForApproval to the decision", async () => {
-  const gate = createApprovalGateFixture();
+  const gate = createApprovalGateDb();
   try {
     seedHighRiskArtifact(gate);
-    seedRuntimeEvidence(gate);
+    bindApproveableEvidence(gate, HIGH_RISK_ARTIFACT_ID);
 
     const { out } = await capture(() =>
       runArbitrate(gate.db, {
@@ -88,8 +130,8 @@ test("T008: approving a HIGH-risk artifact --json adds artifactStatus + heldForA
         approve: true,
         arbiter: "arbiter-1",
         reason: "verdict approve",
-        runId: RUN_ID,
-        operatorToken: OPERATOR_TOKEN,
+        runId: gate.runId,
+        operatorToken: gate.operatorToken,
         json: true,
       }),
     );
@@ -109,25 +151,23 @@ test("T008: approving a HIGH-risk artifact --json adds artifactStatus + heldForA
 });
 
 test("T008: approving a LOW-risk artifact reports target_status=reviewed (not held)", async () => {
-  const gate = createApprovalGateFixture();
+  const gate = createApprovalGateDb();
   try {
-    // Low-risk: no artifact_risk_assessments row → resolveGateScope is out of scope.
-    gate.registerArtifact(HIGH_RISK_ARTIFACT_ID);
-    gate.setArtifactStatus(HIGH_RISK_ARTIFACT_ID, "migrated");
-    seedRuntimeEvidence(gate);
+    seedLowRiskArtifact(gate);
+    bindApproveableEvidence(gate, LOW_RISK_ARTIFACT_ID);
 
     const { out } = await capture(() =>
       runArbitrate(gate.db, {
-        artifact: HIGH_RISK_ARTIFACT_ID,
+        artifact: LOW_RISK_ARTIFACT_ID,
         approve: true,
         arbiter: "arbiter-1",
         reason: "verdict approve",
-        runId: RUN_ID,
-        operatorToken: OPERATOR_TOKEN,
+        runId: gate.runId,
+        operatorToken: gate.operatorToken,
       }),
     );
 
-    assert.equal(getStatus(gate.db, HIGH_RISK_ARTIFACT_ID), "reviewed");
+    assert.equal(getStatus(gate.db, LOW_RISK_ARTIFACT_ID), "reviewed");
     assert.match(out.stdout, /target_status=reviewed/);
     assert.doesNotMatch(out.stdout, /held for human approval/);
     assert.doesNotMatch(out.stdout, /target_status=pending-approval/);
@@ -137,20 +177,19 @@ test("T008: approving a LOW-risk artifact reports target_status=reviewed (not he
 });
 
 test("T008: approving a LOW-risk artifact --json reports artifactStatus=reviewed, heldForApproval=false", async () => {
-  const gate = createApprovalGateFixture();
+  const gate = createApprovalGateDb();
   try {
-    gate.registerArtifact(HIGH_RISK_ARTIFACT_ID);
-    gate.setArtifactStatus(HIGH_RISK_ARTIFACT_ID, "migrated");
-    seedRuntimeEvidence(gate);
+    seedLowRiskArtifact(gate);
+    bindApproveableEvidence(gate, LOW_RISK_ARTIFACT_ID);
 
     const { out } = await capture(() =>
       runArbitrate(gate.db, {
-        artifact: HIGH_RISK_ARTIFACT_ID,
+        artifact: LOW_RISK_ARTIFACT_ID,
         approve: true,
         arbiter: "arbiter-1",
         reason: "verdict approve",
-        runId: RUN_ID,
-        operatorToken: OPERATOR_TOKEN,
+        runId: gate.runId,
+        operatorToken: gate.operatorToken,
         json: true,
       }),
     );
@@ -165,10 +204,9 @@ test("T008: approving a LOW-risk artifact --json reports artifactStatus=reviewed
 });
 
 test("T008: rejecting an artifact reports target_status=needs-rework and heldForApproval=false", async () => {
-  const gate = createApprovalGateFixture();
+  const gate = createApprovalGateDb();
   try {
     seedHighRiskArtifact(gate);
-    seedRuntimeEvidence(gate);
 
     const { out } = await capture(() =>
       runArbitrate(gate.db, {

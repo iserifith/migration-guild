@@ -75,14 +75,38 @@ export async function runArbitrate(db: Database.Database, opts: ArbitrateCliOpti
           evidenceIds,
         });
 
+    // T008: re-read the artifact's actual status after the verdict. The
+    // registry now holds an above-cutoff high-risk artifact at
+    // pending-approval instead of promoting it straight to reviewed, so the
+    // CLI must report what actually happened rather than infer from the
+    // verdict alone.
+    const statusRow = db
+      .prepare("SELECT status FROM artifacts WHERE id = ?")
+      .get(opts.artifact) as { status: string } | undefined;
+    const artifactStatus = statusRow?.status ?? (decision.decision === "approved" ? "reviewed" : "needs-rework");
+    const heldForApproval = decision.decision === "approved" && artifactStatus === "pending-approval";
+
     if (opts.json) {
-      process.stdout.write(JSON.stringify(decision, null, 2) + "\n");
+      // T008 (spec 013, FR-005/FR-008): keep emitting the ArbitrationDecision
+      // object verbatim (artifact_id, arbiter, decision, reason, evidence_ids,
+      // decided_at, ...) and ADD two fields so a CLI consumer can tell a gated
+      // artifact (held at pending-approval) from a promoted one (reviewed)
+      // without a second query:
+      //   artifactStatus    — the artifact's actual status after the verdict
+      //   heldForApproval   — true iff the verdict held it at pending-approval
+      // Nothing is removed or renamed; the shape is purely additive.
+      process.stdout.write(JSON.stringify({ ...decision, artifactStatus, heldForApproval }, null, 2) + "\n");
       return;
     }
-    const target = decision.decision === "approved" ? "reviewed" : "needs-rework";
+    // Non-JSON summary uses the artifact's ACTUAL post-verdict status, not a
+    // value inferred from the verdict: an approving verdict on an above-cutoff
+    // high-risk artifact now holds at pending-approval rather than reviewed.
     process.stdout.write(
-      `✓ Artifact ${decision.decision}: ${opts.artifact}\n  decision=${decision.decision_id} target_status=${target}\n`,
+      `✓ Artifact ${decision.decision}: ${opts.artifact}\n  decision=${decision.decision_id} target_status=${artifactStatus}\n`,
     );
+    if (heldForApproval) {
+      process.stdout.write("  held for human approval (high-risk)\n");
+    }
   } catch (error) {
     // US1 (#153) / T005: a RegistryError (missing credential, stale evidence,
     // independence violation, non-migrated status) is an expected operator
