@@ -74,6 +74,52 @@ test("US3: a blocked artifact resumes cleanly through the supervisor without an 
   }
 });
 
+test("US3: runAuto seeds its attempt counter from persisted attempt_records on resume (no UNIQUE collision)", async () => {
+  const db = createDb();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-us3-resume-attempts-"));
+  try {
+    fs.mkdirSync(path.join(workspace, "legacy"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "legacy", "AttemptResume.js"), "module.exports = 0;\n");
+    fs.mkdirSync(path.join(workspace, "modern"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "modern", "AttemptResume.js"), "function ok() { return 1; }\n");
+    const id = seedBlocked(db, "AttemptResume");
+
+    // Two attempts already persisted from a prior (crashed/restarted) run.
+    // Before the fix, runAuto's local `attempts` counter always started at 0,
+    // so the first attempt of a resumed run would try to record attempt_no=1
+    // again and throw on attempt_records' UNIQUE(artifact_id, attempt_no).
+    db.prepare(
+      `INSERT INTO attempt_records (artifact_id, attempt_no, phase, outcome, failure_kind, started_at)
+       VALUES (?, 1, 'migrate', 'failed', 'build-failure', datetime('now')),
+              (?, 2, 'repair', 'failed', 'build-failure', datetime('now'))`,
+    ).run(id, id);
+
+    const result = await runAuto(db, {
+      artifactId: id,
+      workspaceRoot: workspace,
+      commands: ["node --check modern/AttemptResume.js"],
+      resume: true,
+      worker: async () => {
+        throw new Error("worker must not run for a blocked artifact whose verify passes");
+      },
+      review: async () => ({
+        approved: true,
+        reason: "blocked artifact re-verified clean",
+        reviewerAgent: "review-agent",
+        reviewerModel: "review-model",
+      }),
+    });
+
+    assert.equal(result.status, "complete");
+    // The counter picked up where persisted history left off instead of
+    // resetting to 0 and colliding with the already-persisted rows.
+    assert.equal(result.attempts, 2);
+  } finally {
+    db.close();
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 test("US3: claimArtifactById accepts blocked as a resume-eligible from-status", () => {
   const db = createDb();
   try {

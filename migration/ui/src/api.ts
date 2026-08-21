@@ -8,6 +8,8 @@
  */
 
 import type {
+  ApprovalDecision,
+  ApprovalDecisionRequest,
   Artifact,
   ArtifactEvent,
   ArtifactKind,
@@ -21,6 +23,7 @@ import type {
   IssueQuery,
   IssueEntry,
   PagedResult,
+  PendingApproval,
   RunEntry,
   RunFilters,
   RunListResult,
@@ -50,6 +53,18 @@ async function getText(url: string): Promise<string> {
     throw new Error(`API error ${res.status} ${res.statusText} — ${url}`);
   }
   return res.text();
+}
+
+async function post<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`API error ${res.status} ${res.statusText} — ${url}`);
+  }
+  return res.json() as Promise<T>;
 }
 
 function buildUrl(base: string, params: object): string {
@@ -181,4 +196,25 @@ export async function fetchRuns(query: RunQuery = {}): Promise<RunListResult> {
 /** GET /api/runs/<runId>/log — plain-text log contents for one run. */
 export function fetchRunLog(runId: string): Promise<string> {
   return getText(`/api/runs/${encodeURIComponent(runId)}/log`);
+}
+
+/** GET /api/approvals — artifacts currently held at pending-approval (US4, spec 013). */
+export function fetchPendingApprovals(): Promise<PendingApproval[]> {
+  return get<PendingApproval[]>("/api/approvals");
+}
+
+/** GET /api/approvals/history — approval decisions, newest first. */
+export function fetchApprovalHistory(): Promise<ApprovalDecision[]> {
+  return get<ApprovalDecision[]>("/api/approvals/history");
+}
+
+/** POST /api/approvals/<artifactId>/decision — record an approve/reject decision. */
+export function postApprovalDecision(
+  artifactId: string,
+  body: ApprovalDecisionRequest,
+): Promise<ApprovalDecision> {
+  return post<ApprovalDecision>(
+    `/api/approvals/${encodeURIComponent(artifactId)}/decision`,
+    body,
+  );
 }

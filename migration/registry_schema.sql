@@ -35,6 +35,12 @@ CREATE TABLE IF NOT EXISTS artifacts (
                      'interface'
                  )),
     framework    TEXT,
+    -- Status lifecycle: pending → planned → analyzed → in-progress →
+    -- tests-written → migrated → reviewed → completed, with blocked ↔
+    -- needs-rework for human / arbitration rejection paths. Above-cutoff
+    -- high-risk artifacts hold at pending-approval between an approving
+    -- arbiter verdict and the human approval decision (spec 013), then
+    -- release to reviewed / needs-rework.
     status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN (
                      'pending',
                      'planned',
@@ -44,6 +50,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
                      'migrated',
                      'reviewed',
                      'needs-rework',
+                     'pending-approval',
                      'completed',
                      'blocked',
                      'skipped'
@@ -124,6 +131,9 @@ CREATE TABLE IF NOT EXISTS events (
                      'critique-issued',
                      'arbitration-approved',
                      'arbitration-rejected',
+                     'approval-gated',
+                     'approval-approved',
+                     'approval-rejected',
                      'conflict-opened',
                      'conflict-resolved',
                      'benchmark-recorded',
@@ -309,6 +319,62 @@ CREATE TABLE IF NOT EXISTS arbitration_decisions (
 
 CREATE INDEX IF NOT EXISTS idx_arbitration_decisions_artifact ON arbitration_decisions(artifact_id);
 
+-- ─── Approval Decisions ─────────────────────────────────────────────────────
+-- Records the human approval or rejection that releases an artifact out of
+-- pending-approval. The approving arbiter identity MUST NOT equal `operator`
+-- (enforced by the registry layer, research.md §1), and rejections require a
+-- reason so the rework loop knows what to fix (spec 013, data-model.md §2).
+
+CREATE TABLE IF NOT EXISTS approval_decisions (
+    decision_id      TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+    artifact_id      TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    run_id           TEXT REFERENCES runs(run_id) ON DELETE SET NULL,
+    operator         TEXT NOT NULL,
+    decision         TEXT NOT NULL CHECK (decision IN ('approved', 'rejected')),
+    reason           TEXT,
+    operator_token_hash TEXT,
+    decided_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    CHECK (decision <> 'rejected' OR reason IS NOT NULL)
+);
+
+CREATE INDEX IF NOT EXISTS idx_approval_decisions_artifact ON approval_decisions(artifact_id);
+
+-- ─── Attempt Records ────────────────────────────────────────────────────────
+-- Durable per-attempt outcome history for migrate retries (spec 013,
+-- data-model.md §3): one row per (artifact, attempt_no), recording outcome,
+-- classified failure kind/signature, and timing, so attempt/budget state is
+-- re-seedable from SQLite + events after a process restart instead of living
+-- only in the supervisor's in-memory FailureBudget maps.
+
+CREATE TABLE IF NOT EXISTS attempt_records (
+    attempt_id        TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+    artifact_id       TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    attempt_no        INTEGER NOT NULL CHECK (attempt_no > 0),
+    phase             TEXT NOT NULL DEFAULT 'migrate',
+    outcome           TEXT NOT NULL CHECK (outcome IN ('succeeded', 'failed', 'budget-exhausted')),
+    failure_kind      TEXT CHECK (failure_kind IS NULL OR failure_kind IN (
+                         'build-failure',
+                         'test-failure',
+                         'agent-timeout',
+                         'review-rejection',
+                         'filesystem-violation',
+                         'claim-violation',
+                         'stack-mismatch',
+                         'pack-defect',
+                         'provider-error',
+                         'unknown'
+                     )),
+    failure_signature TEXT,
+    started_at        TEXT NOT NULL,
+    finished_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    claim_id          TEXT REFERENCES artifact_claims(claim_id) ON DELETE SET NULL,
+    recorded_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (artifact_id, attempt_no),
+    CHECK (outcome = 'succeeded' OR failure_kind IS NOT NULL)
+);
+
+CREATE INDEX IF NOT EXISTS idx_attempt_records_artifact ON attempt_records(artifact_id);
+
 -- ─── Benchmark Runs ───────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS benchmark_runs (
@@ -364,6 +430,7 @@ CREATE TABLE IF NOT EXISTS artifact_claims (
                          'migrated',
                          'reviewed',
                          'needs-rework',
+                         'pending-approval',
                          'completed',
                          'blocked',
                          'skipped'

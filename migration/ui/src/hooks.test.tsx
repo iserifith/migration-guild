@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  useApprovals,
   useRegistryData,
   useEvents,
   useRunLog,
@@ -11,6 +12,8 @@ import {
   fetchArtifacts,
   fetchBlockers,
   fetchIssues,
+  fetchApprovalHistory,
+  fetchPendingApprovals,
   fetchRunLog,
   fetchRuns,
   fetchSessions,
@@ -32,6 +35,8 @@ vi.mock("./api", () => ({
   fetchBlockers: vi.fn(),
   fetchEvents: vi.fn(),
   fetchIssues: vi.fn(),
+  fetchApprovalHistory: vi.fn(),
+  fetchPendingApprovals: vi.fn(),
   fetchRunLog: vi.fn(),
   fetchRuns: vi.fn(),
   fetchSessions: vi.fn(),
@@ -99,6 +104,8 @@ describe("hooks", () => {
       paged<RunEntry>([], { total: 0, total_pages: 1 }),
     );
     vi.mocked(fetchRunLog).mockResolvedValue("log output");
+    vi.mocked(fetchPendingApprovals).mockResolvedValue([]);
+    vi.mocked(fetchApprovalHistory).mockResolvedValue([]);
   });
 
   it("useWavePlan loads server-provided wave entries", async () => {
@@ -128,6 +135,50 @@ describe("hooks", () => {
     await act(async () => { vi.advanceTimersByTime(5_000); await Promise.resolve(); });
     expect(result.current.events).toHaveLength(1);
     expect(fetchEvents).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it("useApprovals' background poll refreshes data without re-flipping loading", async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchPendingApprovals)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          artifactId: "legacy-source:com.acme:Foo",
+          riskReasonCodes: [],
+          arbitrationVerdictSummary: "",
+          enteredPendingApprovalAt: "2024-01-02T00:00:00Z",
+        },
+      ]);
+
+    const loadingByRender: boolean[] = [];
+    const { result } = renderHook(() => {
+      const approvals = useApprovals();
+      loadingByRender.push(approvals.loading);
+      return approvals;
+    });
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(result.current.loading).toBe(false);
+    expect(result.current.pending).toEqual([]);
+
+    // The 5s poll refetches pending approvals; a background refresh must not
+    // flip `loading` back to true — that would unmount ApprovalsPanel's table
+    // (and any in-progress reject-reason form) on every tick.
+    await act(async () => {
+      vi.advanceTimersByTime(5_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchPendingApprovals).toHaveBeenCalledTimes(2);
+    expect(result.current.pending).toEqual([
+      expect.objectContaining({ artifactId: "legacy-source:com.acme:Foo" }),
+    ]);
+    // loading must have gone true exactly once (the very first load) and
+    // never again, including across the poll-triggered refetch above.
+    expect(loadingByRender.filter(Boolean)).toHaveLength(1);
+    expect(result.current.loading).toBe(false);
     vi.useRealTimers();
   });
 

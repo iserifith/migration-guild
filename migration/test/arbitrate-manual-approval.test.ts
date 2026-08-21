@@ -147,10 +147,67 @@ test("US1: an explicit --run-id whose credential is missing is a clean RegistryE
         reason: "manual review ok",
         evidence: [ev.evidenceId],
         runId: ev.runId,
+        operatorToken: ev.operatorToken,
       }),
       (error: unknown) => {
         assert.ok(error instanceof RegistryError, `expected RegistryError, got ${error}`);
         assert.match(error.message, /credential/i);
+        return true;
+      },
+    );
+    assert.equal(getArtifactById(db, ARTIFACT_ID).status, "migrated");
+  } finally {
+    db.close();
+  }
+});
+
+test("US1: supplying only --run-id without --operator-token is rejected up front instead of silently proceeding", async () => {
+  const db = createDb();
+  try {
+    markMigrated(db, ARTIFACT_ID);
+    const ev = signedRuntimeEvidence(db, { artifactId: ARTIFACT_ID });
+
+    await assert.rejects(
+      runArbitrate(db, {
+        artifact: ARTIFACT_ID,
+        approve: true,
+        arbiter: "operator",
+        reason: "manual review ok",
+        evidence: [ev.evidenceId],
+        runId: ev.runId,
+        // operatorToken deliberately omitted.
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof RegistryError, `expected RegistryError, got ${error}`);
+        assert.match(error.message, /--run-id and --operator-token must be supplied together/i);
+        return true;
+      },
+    );
+    assert.equal(getArtifactById(db, ARTIFACT_ID).status, "migrated");
+  } finally {
+    db.close();
+  }
+});
+
+test("US1: supplying only --operator-token without --run-id is rejected up front instead of silently proceeding", async () => {
+  const db = createDb();
+  try {
+    markMigrated(db, ARTIFACT_ID);
+    const ev = signedRuntimeEvidence(db, { artifactId: ARTIFACT_ID });
+
+    await assert.rejects(
+      runArbitrate(db, {
+        artifact: ARTIFACT_ID,
+        approve: true,
+        arbiter: "operator",
+        reason: "manual review ok",
+        evidence: [ev.evidenceId],
+        // runId deliberately omitted.
+        operatorToken: ev.operatorToken,
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof RegistryError, `expected RegistryError, got ${error}`);
+        assert.match(error.message, /--run-id and --operator-token must be supplied together/i);
         return true;
       },
     );

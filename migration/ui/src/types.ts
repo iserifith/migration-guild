@@ -29,6 +29,7 @@ export type ArtifactStatus =
   | "migrated"
   | "reviewed"
   | "needs-rework"
+  | "pending-approval"
   | "completed"
   | "blocked"
   | "skipped";
@@ -305,3 +306,32 @@ export interface RunEntry {
 }
 
 export type RunListResult = PagedResult<RunEntry, RunFilters>;
+
+/** Shape of each element returned by GET /api/approvals (spec 013, US4). */
+export interface PendingApproval {
+  artifactId: string;
+  riskReasonCodes: string[];
+  arbitrationVerdictSummary: string;
+  enteredPendingApprovalAt: string;
+}
+
+/** Shape returned by POST /api/approvals/<id>/decision and each GET /api/approvals/history row (spec 013, US4). */
+export interface ApprovalDecision {
+  decisionId: string;
+  artifactId: string;
+  runId: string | null;
+  operator: string;
+  decision: "approved" | "rejected";
+  reason: string | null;
+  operatorTokenHash: string | null;
+  decidedAt: string;
+}
+
+/** Request body for POST /api/approvals/<id>/decision. */
+export interface ApprovalDecisionRequest {
+  decision: "approved" | "rejected";
+  reason?: string;
+  operator?: string;
+  runId?: string;
+  operatorToken?: string;
+}
