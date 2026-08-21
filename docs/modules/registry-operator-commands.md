@@ -148,8 +148,45 @@ The `record-mapping` (via `createMapping` and `confirmMapping`) commands manage 
 
 Similar to dependency dispositions, mappings must be confirmed. The planner checks `hasUnconfirmedMappings` as a guard condition; it will not proceed with planning if any mappings exist but remain unconfirmed, forcing the operator to resolve the ambiguity before code generation begins.
 
+## The Approval Gate (`approval.ts`, spec 013)
+
+`migration/registry/commands/approval.ts` is the human decision layer for high-risk artifacts held at `pending-approval` (see `review-arbitration.md` for the full protocol). It exposes three functions, and — notably — is the one place in the registry where the CLI (`guildctl approve`) and the Mission Control dashboard's `/api/approvals*` routes call the *exact same* functions rather than each reimplementing the query:
+
+- **`resolveGateScope(db, artifactId)`**: A pure read of the artifact's stored `artifact_risk_assessments.high_risk` flag against the stack pack's cutoff. Called from inside `approveArtifactWithEvidence`'s transaction (`evidence.ts`) to decide whether an approving verdict promotes straight to `reviewed` or holds at `pending-approval`.
+- **`listPendingApprovals(db)`**: One JOIN across `artifacts`, `artifact_risk_assessments`, and each artifact's most recent `arbitration_decisions` row, filtered to `status = 'pending-approval'`. Backs both `guildctl approve --list` and `GET /api/approvals`.
+- **`recordApprovalDecision(db, opts)`**: The only writer. Runs inside one transaction: validates the artifact is actually `pending-approval`, that the human operator isn't the same identity as the gating arbiter, that evidence is still fresh (`checkEvidenceFreshness`), that a rejection carries a reason, and — when `runId`/`operatorToken` are both supplied — that they resolve to a real `run_operator_credentials` row (`validateRunOperatorCredential`, reused from `claim.ts`). It inserts one `approval_decisions` row, transitions the artifact to `reviewed`/`needs-rework`, and appends an `approval-approved`/`approval-rejected` event. On approval, it also runs `commitPromotedArtifact` (imported from `evidence.ts`) — the same git-commit-on-promotion step an automatic arbiter approval gets, so a human-approved artifact isn't missing its output commit.
+
+```typescript
+// migration/registry/commands/approval.ts:recordApprovalDecision (excerpt)
+if (opts.runId && opts.operatorToken && !validateRunOperatorCredential(db, opts.runId, opts.operatorToken)) {
+  throw new RegistryError(1, "Approval requires a valid run operator credential.");
+}
+```
+
+`guildctl approve` (`migration/guildctl/commands/approve.ts`) is intentionally thin — no SQL, no business logic — it just parses flags and calls `listPendingApprovals`/`recordApprovalDecision`. It requires `--run-id` and `--operator-token` together or not at all (supplying exactly one throws); when neither is supplied, it mints an ad-hoc run + operator credential scoped to the single invocation, the same precedent `arbitrate.ts` established for manual approvals.
+
+## Attempt-Scoped Retry History (`attempts.ts`, spec 013)
+
+`migration/registry/commands/attempts.ts` gives the supervisor a durable, restart-proof record of every migrate attempt, replacing what used to be purely in-memory retry accounting (see `supervisor.md` §6 for how the loop consumes it).
+
+- **`recordAttemptOutcome(db, opts)`**: The only writer — a single `INSERT` into the append-only `attempt_records` table. A pre-existing `(artifactId, attemptNo)` row throws `RegistryError` rather than being overwritten; this table is never upserted.
+- **`getAttemptHistory(db, artifactId)`**: Pure read, rows ordered by `attempt_no` — answers "what happened on attempt N" from the registry alone (FR-010), without scraping process logs.
+- **`getPersistedBudgetState(db, artifactId)`**: Pure read that reconstructs what a fresh `FailureBudget` needs on construction: `attemptsUsed` (a `COUNT(*)`) and `playbookSignatureCounts` (a per-`failure_signature` count, non-null signatures only). This is what lets a supervisor restart resume with retry accounting identical to a no-restart run — both the `FailureBudget` and `runAuto`'s own attempt counter are seeded from this same read.
+
+```typescript
+// migration/registry/commands/attempts.ts:recordAttemptOutcome (excerpt)
+const existing = db
+  .prepare("SELECT 1 AS x FROM attempt_records WHERE artifact_id = ? AND attempt_no = ?")
+  .get(opts.artifactId, opts.attemptNo);
+if (existing) {
+  throw new RegistryError(1, `Attempt ${opts.attemptNo} already recorded for artifact ${opts.artifactId}`);
+}
+```
+
 ## Key Takeaways for Agents
 
 *   **Atomic State Transitions:** Most commands (like `setVerification`, `confirmDisposition`, `recordScopeDecision`) perform their mutations inside explicit SQLite transactions (`db.transaction(...)()`) and often write an audit event in the same transaction.
 *   **Fail-Closed Validation:** The CLI and underlying commands aggressively validate inputs (e.g., `validateId`, ensuring `durationMs` for verified states) and throw `RegistryError`s, which the CLI translates into non-zero exit codes.
 *   **Idempotency and Last-Write-Wins:** Many updates (like `setVerification`) use `ON CONFLICT DO UPDATE SET` to safely handle repeated executions or retries.
+*   **Append-Only Where History Matters:** `approval_decisions` and `attempt_records` are the newest examples of a pattern also seen in `events`: when the record *is* the audit trail, writers insert and never update, and a would-be duplicate write throws instead of silently overwriting history.
+*   **One Function, Two Callers:** `listPendingApprovals`/`recordApprovalDecision` are called identically by the CLI and by `serve.ts`'s HTTP handlers — when adding a new operator-facing capability that needs both a CLI and a dashboard surface, put the logic in `commands/*.ts` once and keep both entry points thin, rather than letting each reimplement it.
