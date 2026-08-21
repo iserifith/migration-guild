@@ -16,6 +16,7 @@ import { formatVerificationCloseOut, runVerify, verifyAtClaimClose, type VerifyR
 import { resolveGuildConfig } from "../config";
 import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions, transientWardenExclusions, wardenSnapshotDiff, type WardenSnapshot } from "../warden";
 import { classifyFailure, FailureBudget } from "./failures";
+import { getPersistedBudgetState, recordAttemptOutcome } from "../../registry/commands/attempts";
 
 export interface AutoWorkerInput {
   phase: "migrate" | "repair";
@@ -453,7 +454,15 @@ export async function runAuto(
   // failing the run.
   const autoConfig = resolveGuildConfig({ cwd: opts.workspaceRoot });
   const maxAttempts = opts.maxAttempts ?? 3;
-  const budget = new FailureBudget(maxAttempts, 2);
+  // US3 (spec 013, FR-009): seed from durable attempt_records so a restart
+  // resumes consumed attempts/playbooks instead of resetting the budget.
+  const budget = new FailureBudget(maxAttempts, 2, {
+    artifactId: opts.artifactId,
+    ...getPersistedBudgetState(db, opts.artifactId),
+  });
+  // Timestamp the current attempt began; attempts[#attempts-1] is the attempt
+  // currently executing (attempts is incremented before each dispatch).
+  const attemptStartedAt: string[] = [];
   const worker = opts.worker ?? defaultWorker;
   // The default (--command) verifier already closes over the loop's own
   // runId/operator.token, so it ignores the ctx argument; injected verifiers
@@ -624,6 +633,7 @@ export async function runAuto(
     while (attempts < maxAttempts && budget.canAttemptArtifact(opts.artifactId)) {
       attempts += 1;
       budget.recordAttempt(opts.artifactId);
+      attemptStartedAt[attempts - 1] = new Date().toISOString();
       const claim = claimArtifactById(db, {
         artifactId: opts.artifactId,
         agent: phase === "repair" ? "remediation-agent" : "code-writer-agent",
@@ -666,6 +676,16 @@ export async function runAuto(
           summary: `Blocked after filesystem violation: ${failure.signature}`,
           data: JSON.stringify({ failure, violations: warden.violations }),
         });
+        recordAttemptOutcome(db, {
+          artifactId: opts.artifactId,
+          attemptNo: attempts,
+          phase,
+          outcome: "failed",
+          failureKind: failure.kind,
+          failureSignature: failure.signature,
+          startedAt: attemptStartedAt[attempts - 1],
+          runId,
+        });
         setArtifactStatus(db, opts.artifactId, "blocked", {
           agent: "guildctl",
           runId,
@@ -685,6 +705,16 @@ export async function runAuto(
           agent: "guildctl-auto",
           summary: `Worker failed: ${failure.kind}`,
           data: JSON.stringify({ failure }),
+        });
+        recordAttemptOutcome(db, {
+          artifactId: opts.artifactId,
+          attemptNo: attempts,
+          phase,
+          outcome: "failed",
+          failureKind: failure.kind,
+          failureSignature: failure.signature,
+          startedAt: attemptStartedAt[attempts - 1],
+          runId,
         });
         setArtifactStatus(db, opts.artifactId, "blocked", {
           agent: "guildctl",
@@ -834,12 +864,47 @@ export async function runAuto(
         }
         const reviewed = reviewResult.decision!;
         if (!reviewed.approved) {
+          const reviewFailure = classifyFailure({
+            phase: "review",
+            stderr: `review rejected: ${reviewed.reason}`,
+          });
+          // US3 (spec 013): record the rejected attempt's outcome BEFORE the
+          // repair boundary. The record insert must stay ahead of the
+          // helper's auto-rework event: the evidence-freshness check breaks
+          // same-second auto-rework-vs-evidence ties by rowid, so this
+          // ordering keeps the event strictly after both the record and the
+          // next attempt's evidence.
           if (scheduleReviewRejectionRepair(db, opts, budget, reviewed, attempts, maxAttempts)) {
+            recordAttemptOutcome(db, {
+              artifactId: opts.artifactId,
+              attemptNo: attempts,
+              phase,
+              outcome: "failed",
+              failureKind: reviewFailure.kind,
+              failureSignature: reviewFailure.signature,
+              startedAt: attemptStartedAt[attempts - 1],
+              runId,
+            });
             fromStatus = "migrated";
             phase = "repair";
             reviewReason = reviewed.reason;
             continue;
           }
+          // US3 (spec 013): no repair left for this attempt — record the
+          // terminal outcome ("failed" when the attempt itself failed,
+          // "budget-exhausted" when the loop's retry policy is what stopped
+          // a retryable rejection).
+          const exhaustedByAttemptCap = attempts >= maxAttempts || !budget.canAttemptArtifact(opts.artifactId);
+          recordAttemptOutcome(db, {
+            artifactId: opts.artifactId,
+            attemptNo: attempts,
+            phase,
+            outcome: exhaustedByAttemptCap ? "budget-exhausted" : "failed",
+            failureKind: reviewFailure.kind,
+            failureSignature: reviewFailure.signature,
+            startedAt: attemptStartedAt[attempts - 1],
+            runId,
+          });
           rejectArtifactWithEvidence(db, {
             artifactId: opts.artifactId,
             arbiter: reviewed.reviewerAgent,
@@ -849,6 +914,14 @@ export async function runAuto(
           finishRun(db, { runId, exitCode: 1, reason: "independent review rejected artifact" });
           return { status: "blocked", runId, attempts };
         }
+        recordAttemptOutcome(db, {
+          artifactId: opts.artifactId,
+          attemptNo: attempts,
+          phase,
+          outcome: "succeeded",
+          startedAt: attemptStartedAt[attempts - 1],
+          runId,
+        });
         approveArtifactWithEvidence(db, {
           artifactId: opts.artifactId,
           arbiter: reviewed.reviewerAgent,
@@ -870,9 +943,35 @@ export async function runAuto(
         data: JSON.stringify({ failure }),
       });
       if (!budget.canRunPlaybook(opts.artifactId, failure, "repair")) {
+        // US3 (spec 013): the playbook retry budget for this signature is
+        // exhausted — record the attempt's terminal outcome before the loop
+        // falls through to the budget-exhausted close-out.
+        recordAttemptOutcome(db, {
+          artifactId: opts.artifactId,
+          attemptNo: attempts,
+          phase,
+          outcome: "budget-exhausted",
+          failureKind: failure.kind,
+          failureSignature: failure.signature,
+          startedAt: attemptStartedAt[attempts - 1],
+          runId,
+        });
         break;
       }
       budget.recordPlaybook(opts.artifactId, failure, "repair");
+      // US3 (spec 013): repair scheduled at the playbook boundary — durably
+      // record the failed attempt so budget state is re-seedable after a
+      // restart.
+      recordAttemptOutcome(db, {
+        artifactId: opts.artifactId,
+        attemptNo: attempts,
+        phase,
+        outcome: "failed",
+        failureKind: failure.kind,
+        failureSignature: failure.signature,
+        startedAt: attemptStartedAt[attempts - 1],
+        runId,
+      });
       fromStatus = "migrated";
       phase = "repair";
       reviewReason = undefined;
