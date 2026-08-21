@@ -12,6 +12,8 @@
  */
 
 import React from "react";
+import { postApprovalDecision } from "./api";
+import ApprovalsPanel from "./components/ApprovalsPanel";
 import ArtifactList from "./components/ArtifactList";
 import BlockersView from "./components/BlockersView";
 import MissionControl from "./components/MissionControl";
@@ -19,8 +21,9 @@ import RunsView from "./components/RunsView";
 import SessionsView from "./components/SessionsView";
 import SocietyView from "./components/SocietyView";
 import WavePlan from "./components/WavePlan";
-import { useRegistryData, type UseRegistryDataResult } from "./hooks";
+import { useApprovals, useRegistryData, type UseApprovalsResult, type UseRegistryDataResult } from "./hooks";
 import type {
+  ApprovalDecisionRequest,
   BlockerQuery,
   IssueQuery,
   RunQuery,
@@ -39,6 +42,8 @@ export interface TabProps {
   blockers: UseRegistryDataResult["blockers"];
   issues: UseRegistryDataResult["issues"];
   runs: UseRegistryDataResult["runs"];
+  /** Live approvals state, used only for the Approvals tab's nav badge. */
+  approvals: UseApprovalsResult;
   timeMode: TimeDisplayMode;
   sessionQuery: SessionQuery;
   updateSessionQuery: (updates: Partial<SessionQuery>) => void;
@@ -55,7 +60,43 @@ interface TabDef {
   id: string;
   /** Human-readable nav label (may differ from id for spacing/capitalisation). */
   label: string;
+  /** Optional additive badge (e.g. a pending count) rendered next to the label. */
+  badge?: (props: TabProps) => React.ReactNode;
   render: (props: TabProps) => React.ReactNode;
+}
+
+/**
+ * Approvals tab content (US4, spec 013). Owns its own data hook (kept out of
+ * the shared useRegistryData shell) and posts decisions through the typed API
+ * client, refetching pending + history after each submitted decision.
+ */
+function ApprovalsTab({ timeMode }: { timeMode: TimeDisplayMode }) {
+  const { pending, history, loading, error, reload } = useApprovals();
+  const decide = React.useCallback(
+    async (artifactId: string, body: ApprovalDecisionRequest) => {
+      await postApprovalDecision(artifactId, body);
+      reload();
+    },
+    [reload],
+  );
+  return (
+    <ApprovalsPanel
+      pending={pending}
+      history={history}
+      loading={loading}
+      error={error}
+      onRetry={reload}
+      onDecide={decide}
+      timeMode={timeMode}
+    />
+  );
+}
+
+/** Pending-approval count badge for the Approvals tab (hidden when zero). */
+function ApprovalsBadge({ approvals }: { approvals: UseApprovalsResult }) {
+  return approvals.pending.length > 0 ? (
+    <span className="badge pending-approval">{approvals.pending.length}</span>
+  ) : null;
 }
 
 const TABS: TabDef[] = [
@@ -63,6 +104,12 @@ const TABS: TabDef[] = [
     id: "Mission Control",
     label: "Mission Control",
     render: () => <MissionControl />,
+  },
+  {
+    id: "Approvals",
+    label: "Approvals",
+    badge: ({ approvals }) => <ApprovalsBadge approvals={approvals} />,
+    render: ({ timeMode }) => <ApprovalsTab timeMode={timeMode} />,
   },
   {
     id: "Society",
@@ -222,6 +269,9 @@ export default function App() {
     issues: issueQuery,
     runs: runQuery,
   });
+  // Live approvals state for the Approvals tab's nav badge; the tab's own
+  // content fetches independently inside ApprovalsTab.
+  const approvals = useApprovals();
   const updateSessionQuery = React.useCallback(
     (updates: Partial<SessionQuery>) =>
       setSessionQuery((current) => ({ ...current, ...updates })),
@@ -317,6 +367,27 @@ export default function App() {
               }}
             >
               {t.label}
+              {t.badge
+                ? t.badge({
+                    artifacts,
+                    status,
+                    wavePlan,
+                    sessions,
+                    blockers,
+                    issues,
+                    runs,
+                    approvals,
+                    timeMode,
+                    sessionQuery,
+                    updateSessionQuery,
+                    blockerQuery,
+                    updateBlockerQuery,
+                    issueQuery,
+                    updateIssueQuery,
+                    runQuery,
+                    updateRunQuery,
+                  })
+                : null}
             </div>
           );
         })}
@@ -336,6 +407,7 @@ export default function App() {
           blockers,
           issues,
           runs,
+          approvals,
           timeMode,
           sessionQuery,
           updateSessionQuery,

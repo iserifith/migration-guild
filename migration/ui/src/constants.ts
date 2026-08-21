@@ -31,6 +31,7 @@ export const STATUS_FILTER_OPTIONS: ReadonlyArray<{ value: string; label: string
   { value: "reviewed",      label: "reviewed"      },
   { value: "needs-rework",  label: "needs-rework"  },
   { value: "blocked",       label: "blocked"       },
+  { value: "pending-approval", label: "pending-approval" },
   { value: "skipped",       label: "skipped"       },
 ];
 
@@ -59,6 +60,7 @@ export const STATUS_COLORS: Readonly<Record<string, string>> = {
   reviewed:        "#c084fc",
   "needs-rework":  "#f87171",
   blocked:         "#ef4444",
+  "pending-approval": "#fbbf24",
   completed:       "#4ade80",
   skipped:         "#6b7280",
 };
