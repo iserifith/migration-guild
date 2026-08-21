@@ -594,7 +594,7 @@ function runGit(root: string, args: string[]): { status: number | null } {
  * failure here (no git, no repo, nothing to commit) must not turn a
  * successful arbitration approval into a crash.
  */
-function commitPromotedArtifact(
+export function commitPromotedArtifact(
   db: Database.Database,
   artifactId: string,
   decision: ArbitrationDecision,

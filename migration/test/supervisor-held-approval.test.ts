@@ -7,6 +7,7 @@ import Database from "better-sqlite3";
 import { runAuto } from "../guildctl/supervisor/loop";
 import { runAutoQueue, type AutoQueueRemaining } from "../guildctl/supervisor/queue";
 import { getClaimabilityStats, getStatusCounts } from "../guildctl/monitoring";
+import { applyRiskAssessment, resolveRiskSpec, scoreArtifact } from "../guildctl/risk";
 import { claimArtifactById, claimNextTask } from "../registry/commands/claim";
 import { registerArtifact, setArtifactStatus, setArtifactWave } from "../registry/commands/artifacts";
 import { applySchema } from "../registry/db/schema";
@@ -31,6 +32,14 @@ function seedHeld(db: Database.Database, name: string): string {
   registerArtifact(db, { id, kind: "legacy-source", tier: "first-class", path: `legacy/${name}.java` });
   setArtifactWave(db, id, 1);
   setArtifactStatus(db, id, "pending-approval");
+  return id;
+}
+
+function seedBlocked(db: Database.Database, name: string): string {
+  const id = `legacy-source:com.acme:${name}`;
+  registerArtifact(db, { id, kind: "legacy-source", tier: "first-class", path: `legacy/${name}.java` });
+  setArtifactWave(db, id, 1);
+  setArtifactStatus(db, id, "blocked");
   return id;
 }
 
@@ -135,6 +144,65 @@ test("T009: runAuto surfaces a pending-approval artifact as held for approval �
   }
 });
 
+// Source-text profile engineered to score above the default high-risk cutoff
+// (reflective Class.forName call + a god-method far over the line/complexity
+// limits) — same signal mix as approval-fixtures.ts's HIGH_RISK_SOURCE_TEXT.
+const HIGH_RISK_SOURCE_TEXT = [
+  "public class GatedMidRun {",
+  "  public void migrate(Object entity) {",
+  "    Class.forName(\"com.acme.legacy.Handler\");",
+  ...Array.from({ length: 200 }, () => "    if (flag) { doWork(); }"),
+  "  }",
+  "}",
+].join("\n");
+
+test("T009/T008: runAuto reports \"held\", not \"complete\", when the arbiter's approval gates the artifact mid-run", async () => {
+  const db = createDb();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-t009-gated-mid-run-"));
+  try {
+    fs.mkdirSync(path.join(workspace, "legacy"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "legacy", "GatedMidRun.java"), "class GatedMidRun {}\n");
+    fs.mkdirSync(path.join(workspace, "modern"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "modern", "GatedMidRun.js"), "function ok() { return 1; }\n");
+    const id = seedBlocked(db, "GatedMidRun");
+
+    // Score the artifact above the approval-gate cutoff before resuming, so
+    // the arbiter's approving verdict below holds it at pending-approval
+    // instead of promoting it straight to reviewed (resolveGateScope reads
+    // this stored assessment).
+    const record = scoreArtifact(id, HIGH_RISK_SOURCE_TEXT, resolveRiskSpec(undefined));
+    applyRiskAssessment(db, record);
+    assert.equal(record.highRisk, true, "fixture source text must score above the cutoff");
+
+    const result = await runAuto(db, {
+      artifactId: id,
+      workspaceRoot: workspace,
+      commands: ["node --check modern/GatedMidRun.js"],
+      resume: true,
+      worker: async () => {
+        throw new Error("worker must not run for a blocked artifact whose verify passes");
+      },
+      review: async () => ({
+        approved: true,
+        reason: "blocked artifact re-verified clean",
+        reviewerAgent: "review-agent",
+        reviewerModel: "review-model",
+      }),
+    });
+
+    // The arbiter's verdict was recorded, but the artifact is above-cutoff
+    // high-risk, so it holds at pending-approval — runAuto must report that
+    // truthfully instead of claiming "complete".
+    assert.equal(result.status, "held");
+    assert.equal((result as { heldForApproval?: boolean }).heldForApproval, true);
+    const row = db.prepare("SELECT status FROM artifacts WHERE id = ?").get(id) as { status: string };
+    assert.equal(row.status, "pending-approval");
+  } finally {
+    db.close();
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 test("T009: the auto queue never dispatches a pending-approval artifact and counts it as held", async () => {
   const db = createDb();
   try {
@@ -175,6 +243,25 @@ test("T009: runAutoQueue reports heldForApproval alongside blocked without confl
     const remaining: AutoQueueRemaining = result.remaining;
     assert.equal(remaining.heldForApproval, 1);
     assert.equal(remaining.blocked, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test("T009: runAutoQueue reports status \"partial\", not \"complete\", when an artifact is held for approval", async () => {
+  const db = createDb();
+  try {
+    seedHeld(db, "HeldOnlyArtifact");
+
+    const result = await runAutoQueue(db, {
+      executeArtifact: async () => ({ status: "complete", runId: "run-z", attempts: 1 }),
+    });
+
+    // A held-for-approval artifact still needs a human decision — the queue
+    // must not report the run as fully "complete" while one is outstanding.
+    assert.equal(result.remaining.heldForApproval, 1);
+    assert.notEqual(result.status, "complete");
+    assert.equal(result.status, "partial");
   } finally {
     db.close();
   }

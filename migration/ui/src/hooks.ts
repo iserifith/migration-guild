@@ -69,11 +69,19 @@ function useLoadableData<T>(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const requestIdRef = useRef(0);
+  // Only the very first load for this hook instance should flip `loading`
+  // (which callers use to unmount their whole view, e.g. ApprovalsPanel).
+  // Subsequent loads — most notably a poll-interval refetch — must update
+  // `data`/`error` silently so an in-progress form isn't unmounted every
+  // pollIntervalMs.
+  const hasLoadedOnceRef = useRef(false);
 
   const load = useCallback(() => {
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
-    setLoading(true);
+    if (!hasLoadedOnceRef.current) {
+      setLoading(true);
+    }
     setError(null);
     loader()
       .then((result) => {
@@ -82,6 +90,7 @@ function useLoadableData<T>(
         }
         setData(result);
         setLoading(false);
+        hasLoadedOnceRef.current = true;
       })
       .catch((e: unknown) => {
         if (requestIdRef.current !== requestId) {
@@ -89,6 +98,7 @@ function useLoadableData<T>(
         }
         setError(e instanceof Error ? e : new Error(String(e)));
         setLoading(false);
+        hasLoadedOnceRef.current = true;
       });
   }, deps);
 

@@ -46,6 +46,9 @@ export async function runArbitrate(db: Database.Database, opts: ArbitrateCliOpti
   // row would otherwise be left behind on every manual reject.
   let runId = opts.runId;
   let operatorToken = opts.operatorToken;
+  if (Boolean(runId) !== Boolean(operatorToken)) {
+    throw new RegistryError(2, "--run-id and --operator-token must be supplied together, or neither.");
+  }
   if (opts.approve && !runId && !operatorToken) {
     const run = startRun(db, {
       agent: "guildctl-arbitrate",

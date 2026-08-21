@@ -69,6 +69,9 @@ export async function runApprove(db: Database.Database, opts: ApproveCliOptions)
   // the decision to the run it was taken under, never to an operator identity.
   let runId = opts.runId;
   let operatorToken = opts.operatorToken;
+  if (Boolean(runId) !== Boolean(operatorToken)) {
+    throw new RegistryError(2, "--run-id and --operator-token must be supplied together, or neither.");
+  }
   if (!runId && !operatorToken) {
     const run = startRun(db, {
       agent: OPERATOR_ID,

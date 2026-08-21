@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
 import { appendEvent } from "../registry/commands/events";
@@ -393,5 +397,135 @@ test("approval-gate path: gate scope follows the stored risk row — clearing hi
     assert.equal(getEvents(gate.db, HIGH_RISK_ARTIFACT_ID, "approval-gated").length, 0);
   } finally {
     gate.db.close();
+  }
+});
+
+// Confirmed code-review findings (spec 013 follow-up): recordApprovalDecision
+// must validate a supplied run/operator-token pair against a real credential
+// (mirrors claim.ts's validateRunOperatorCredential, already used by
+// evidence.ts/artifacts.ts), and a human approval that promotes an artifact to
+// `reviewed` must commit its outputs (mirrors evidence.ts's
+// approveArtifactWithEvidence).
+
+test("recordApprovalDecision: an operator token that does not hash to the run's stored credential is a clean RegistryError", () => {
+  const gate = createApprovalGateDb();
+  try {
+    seedHighRiskArtifact(gate, { status: "pending-approval" });
+    seedApprovingArbitrationDecision(gate.db, HIGH_RISK_ARTIFACT_ID, { arbiter: "arbiter:auto" });
+
+    assert.throws(
+      () => recordApprovalDecision(gate.db, {
+        artifactId: HIGH_RISK_ARTIFACT_ID,
+        operator: OPERATOR,
+        decision: "approved",
+        runId: gate.runId,
+        operatorToken: "placeholder-wrong-operator-token",
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof RegistryError, `expected RegistryError, got ${error}`);
+        assert.match(error.message, /credential/i);
+        return true;
+      },
+    );
+    // Rejected before any decision row/status change lands.
+    assert.equal(getStatus(gate.db, HIGH_RISK_ARTIFACT_ID), "pending-approval");
+    assert.equal(getApprovalDecisions(gate.db, HIGH_RISK_ARTIFACT_ID).length, 0);
+  } finally {
+    gate.db.close();
+  }
+});
+
+test("recordApprovalDecision: a run id with no matching run_operator_credentials row is a clean RegistryError", () => {
+  const gate = createApprovalGateDb();
+  try {
+    seedHighRiskArtifact(gate, { status: "pending-approval" });
+    seedApprovingArbitrationDecision(gate.db, HIGH_RISK_ARTIFACT_ID, { arbiter: "arbiter:auto" });
+
+    assert.throws(
+      () => recordApprovalDecision(gate.db, {
+        artifactId: HIGH_RISK_ARTIFACT_ID,
+        operator: OPERATOR,
+        decision: "approved",
+        runId: "run-that-does-not-exist",
+        operatorToken: gate.operatorToken,
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof RegistryError, `expected RegistryError, got ${error}`);
+        assert.match(error.message, /credential/i);
+        return true;
+      },
+    );
+    assert.equal(getStatus(gate.db, HIGH_RISK_ARTIFACT_ID), "pending-approval");
+  } finally {
+    gate.db.close();
+  }
+});
+
+test("recordApprovalDecision: an approval with no runId/operatorToken at all is unaffected by the credential check", () => {
+  const gate = createApprovalGateDb();
+  try {
+    seedHighRiskArtifact(gate, { status: "pending-approval" });
+    seedApprovingArbitrationDecision(gate.db, HIGH_RISK_ARTIFACT_ID, { arbiter: "arbiter:auto" });
+
+    const decision = recordApprovalDecision(gate.db, {
+      artifactId: HIGH_RISK_ARTIFACT_ID,
+      operator: OPERATOR,
+      decision: "approved",
+    });
+    assert.equal(decision.decision, "approved");
+    assert.equal(getStatus(gate.db, HIGH_RISK_ARTIFACT_ID), "reviewed");
+  } finally {
+    gate.db.close();
+  }
+});
+
+test("recordApprovalDecision: a human approval that promotes to reviewed commits the artifact's output like approveArtifactWithEvidence (FR-003)", () => {
+  const gate = createApprovalGateDb();
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "guild-approval-commit-"));
+  try {
+    // Git sets GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE while running a hook
+    // (e.g. this project's own pre-commit test run) — inherited into a plain
+    // spawnSync env, those vars would silently redirect our git commands at
+    // the *outer* repo instead of `workspace`. Mirror evidence.ts's own
+    // GIT_SCOPE_ENV scrubbing for these test-harness git calls too.
+    const gitEnv: NodeJS.ProcessEnv = { ...process.env };
+    for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_CEILING_DIRECTORIES", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR"]) {
+      delete gitEnv[key];
+    }
+    const runGitOrThrow = (args: string[]): void => {
+      const result = spawnSync("git", args, { cwd: workspace, encoding: "utf8", env: gitEnv });
+      assert.equal(result.status, 0, `git ${args.join(" ")} failed: ${result.stderr}`);
+    };
+    runGitOrThrow(["init"]);
+    runGitOrThrow(["config", "user.email", "test@example.com"]);
+    runGitOrThrow(["config", "user.name", "Test"]);
+
+    seedHighRiskArtifact(gate, { status: "pending-approval" });
+    seedApprovingArbitrationDecision(gate.db, HIGH_RISK_ARTIFACT_ID, { arbiter: "arbiter:auto" });
+
+    // seedArtifact registers HIGH_RISK_ARTIFACT_ID at
+    // legacy/src/main/java/HighRiskThing.java, so deriveExpectedOutputPaths
+    // resolves its own output to modern/src/main/java/HighRiskThing.java.
+    const modernPath = path.join(workspace, "modern", "src", "main", "java", "HighRiskThing.java");
+    fs.mkdirSync(path.dirname(modernPath), { recursive: true });
+    fs.writeFileSync(modernPath, "public class HighRiskThing {}\n");
+
+    recordApprovalDecision(gate.db, {
+      artifactId: HIGH_RISK_ARTIFACT_ID,
+      operator: OPERATOR,
+      decision: "approved",
+      runId: gate.runId,
+      operatorToken: gate.operatorToken,
+      workspaceRoot: workspace,
+    });
+    assert.equal(getStatus(gate.db, HIGH_RISK_ARTIFACT_ID), "reviewed");
+
+    const log = spawnSync("git", ["log", "--oneline"], { cwd: workspace, encoding: "utf8", env: gitEnv });
+    assert.match(log.stdout, /promote:/, `expected a "promote:" commit, got log:\n${log.stdout}`);
+    const show = spawnSync("git", ["show", "--stat", "HEAD"], { cwd: workspace, encoding: "utf8", env: gitEnv });
+    assert.match(show.stdout, /HighRiskThing\.java/, `expected the promoted file in the commit, got:\n${show.stdout}`);
+  } finally {
+    gate.db.close();
+    fs.rmSync(workspace, { recursive: true, force: true });
   }
 });

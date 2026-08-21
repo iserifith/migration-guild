@@ -229,7 +229,7 @@ function terminalStatus(
   remaining: AutoQueueRemaining,
   hasMissingDependencyOutput: boolean,
 ): AutoQueueResult["status"] {
-  if (remaining.blocked > 0 || remaining.needsRework > 0 || hasMissingDependencyOutput) return "partial";
+  if (remaining.blocked > 0 || remaining.needsRework > 0 || remaining.heldForApproval > 0 || hasMissingDependencyOutput) return "partial";
   if (remaining.planned > 0 || remaining.migrated > 0 || remaining.inProgress > 0) return "stalled";
   return "complete";
 }
