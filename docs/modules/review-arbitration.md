@@ -14,6 +14,7 @@ The review and arbitration system consists of the following key surfaces:
 2. **Supervisor Integration (`migration/guildctl/supervisor/loop.ts`)**: The autonomous loop that orchestrates verification, independent review, and handling of review decisions.
 3. **Read-Only Warden Guard (`guardedIndependentReview`)**: A wrapper that ensures the review agent operates with zero authorized filesystem mutations.
 4. **Arbitration Command (`migration/guildctl/commands/arbitrate.ts`)**: The CLI surface for manual human operator arbitration, allowing an operator to override or bypass the automated reviewer.
+5. **Approval Gate (`migration/registry/commands/approval.ts`, spec 013)**: A second, human-only decision layer that sits between an approving arbiter verdict and `reviewed` status for above-cutoff high-risk artifacts. See "The Approval Gate" below.
 
 ## Step-by-Step Flow
 
@@ -40,8 +41,28 @@ After the review agent completes its assessment, `guardedIndependentReview` call
 ### 4. Arbitration Gate
 
 Once a valid decision is returned by the independent reviewer, the arbitration gate applies it:
-- **Approval**: If the reviewer approves, `approveArtifactWithEvidence` is called, recording the reviewer's identity, the reason, and the evidence IDs. The artifact's status transitions to `reviewed` (or `complete` in the supervisor loop).
+- **Approval**: If the reviewer approves, `approveArtifactWithEvidence` is called, recording the reviewer's identity, the reason, and the evidence IDs. The artifact's status transitions to `reviewed` — *unless* the approval gate (below) holds it at `pending-approval` instead.
 - **Rejection**: If the reviewer rejects, the supervisor either schedules a repair attempt (`scheduleReviewRejectionRepair`) by transitioning the artifact back to `migrated` (in `repair` phase) or permanently fails it using `rejectArtifactWithEvidence`.
+
+### 4a. The Approval Gate (spec 013)
+
+An approving arbiter verdict is not automatically the final word for high-risk artifacts. Inside `approveArtifactWithEvidence`'s transaction, `resolveGateScope` (`migration/registry/commands/approval.ts`) checks the artifact's stored `artifact_risk_assessments.high_risk` flag (computed at inventory time against the stack pack's cutoff, `guildctl/risk.ts`):
+
+- **In scope (high-risk, above cutoff):** the artifact is transitioned to `pending-approval` instead of `reviewed`, and an `approval-gated` event is appended in the same transaction as the arbiter's `arbitration_decisions` row. The arbiter's approving verdict is preserved — it's held, not overridden. `commitPromotedArtifact` (the git-commit-on-promotion side effect) is *not* run yet, since the artifact isn't actually promoted.
+- **Out of scope:** behavior is unchanged — straight to `reviewed`, with `commitPromotedArtifact` running immediately.
+
+Unattended runs never auto-approve a gated artifact: the supervisor loop explicitly refuses to claim or advance a `pending-approval` artifact (see `supervisor.md`), and `runAuto` reports it as `status: "held"` rather than `"complete"`.
+
+A human operator releases the hold with `guildctl approve <id>` (or `--reject --reason ...`), which calls `recordApprovalDecision` (`migration/registry/commands/approval.ts`). That function:
+- Requires the artifact to actually be `pending-approval`.
+- Requires the human operator's identity to differ from the arbiter that produced the held verdict (an arbiter cannot rubber-stamp its own gated approval as the human decision).
+- Re-checks evidence freshness (`checkEvidenceFreshness`) — a rejection or a stale evidence chain since the gate fired invalidates the approval.
+- Requires a non-empty `reason` for a rejection.
+- If both `--run-id` and `--operator-token` are supplied, validates them against a real `run_operator_credentials` row (`validateRunOperatorCredential`) before recording the decision — a decision can't be attributed to a run the operator doesn't hold a credential for.
+- On approval, transitions the artifact to `reviewed` and — mirroring `approveArtifactWithEvidence` — now also runs `commitPromotedArtifact`, so a human-approved artifact's outputs get committed exactly like an automatically-approved one.
+- On rejection, transitions it to `needs-rework`.
+
+Either decision writes exactly one `approval_decisions` row (operator, run, decision, reason, evidence snapshot) and an `approval-approved`/`approval-rejected` event, giving the same audit trail whether the decision came from the CLI or Mission Control's Approvals panel (`GET /api/approvals`, `POST /api/approvals/:id/decision` in `migration/registry/commands/serve.ts` — both consume `listPendingApprovals`/`recordApprovalDecision` directly, so CLI and dashboard can never diverge).
 
 ### 5. Manual Arbitration
 
@@ -60,8 +81,11 @@ Operators can manually arbitrate an artifact using `migration/guildctl/commands/
 
 - **Manual Approvals Against Different Runs**: Supplying an explicit `--run-id` and `--operator-token` to `runArbitrate` is the supported path for approving evidence signed by a different run. Otherwise, the registry will reject the action with a "valid run operator credential" error.
 - **Triage is Not Authorization**: A verification state of `verified` displayed to a reviewer is strictly triage information. The reviewer must still process the evidence.
+- **`--run-id`/`--operator-token` Are All-or-Nothing**: Both `guildctl approve` and `runArbitrate` require these two flags together or not at all — supplying exactly one throws a `RegistryError` rather than silently proceeding with an unauthenticated decision.
+- **Gate Scope Is a Snapshot, Not Live**: `resolveGateScope` reads the artifact's *stored* `artifact_risk_assessments.high_risk` flag, computed once at inventory time. It does not re-score the artifact at approval time — if the stack pack's risk cutoff changes after inventory, already-assessed artifacts keep their original gate scope until re-inventoried.
 
 ## Extension Points
 
 - `runArbitrate` (`migration/guildctl/commands/arbitrate.ts`): Can be extended to support complex operator workflows, such as multi-party sign-offs or different credential sources for manual evidence overrides.
 - `guardedIndependentReview` (`migration/guildctl/supervisor/loop.ts`): The hook where alternative or additional static analysis mechanisms can be injected before the review decision is finalized.
+- `resolveGateScope` (`migration/registry/commands/approval.ts`): The single place that decides which artifacts require a human decision. A future per-module or per-operator override to the gate would live here, not scattered across the call sites that check `pending-approval`.

@@ -135,8 +135,70 @@ export class FailureBudget {
 
 The budget prevents infinite loops of the *exact same mistake*. If the agent proposes code that results in `build-failure: tsc error 2322`, and then its repair attempt results in the *exact same* `build-failure: tsc error 2322`, the budget will quickly be exhausted for that specific signature, and the artifact will be marked `blocked` rather than burning through the remaining generic attempt limit.
 
+## 5. The Approval Gate: `pending-approval` Is Never Claimed (spec 013)
+
+A high-risk artifact whose arbiter verdict gets held at `pending-approval` (see `review-arbitration.md`) is *awaiting a human decision*, not blocked and not failed. The supervisor treats it as a third thing entirely.
+
+### Short-Circuit Before Claiming
+
+`runAuto` checks the artifact's status before it ever calls `requireReview`, `startRun`, or attempts a claim:
+
+```typescript
+// migration/guildctl/supervisor/loop.ts (top of runAuto)
+if (initialStatusRow?.status === "pending-approval") {
+  process.stderr.write(`held for approval: artifact ${opts.artifactId} is pending-approval; awaiting a human approval decision\n`);
+  return { status: "held", runId, attempts, heldForApproval: true, reason: "pending-approval" };
+}
+```
+
+This is deliberately a pre-flight, blacklist-style check specific to `runAuto`; the claim layer itself (`claimArtifactById` in `claim.ts`) enforces the same invariant structurally — its callers (including `queue.ts`'s candidate-selection query) simply never include `pending-approval` in their claim-eligible status whitelist. Both mechanisms have to agree, so any future non-claimable status needs updating in both places.
+
+### Reporting "held" Instead of "complete" for Mid-Run Gating
+
+An artifact can also become gated *during* the same `runAuto` call — the arbiter approves it, but it turns out to be above the risk cutoff, so `approveArtifactWithEvidence` gates it to `pending-approval` instead of promoting it. `reportApprovalOutcome` (`loop.ts`) re-reads the artifact's actual status after that call, rather than assuming success:
+
+```typescript
+// migration/guildctl/supervisor/loop.ts:reportApprovalOutcome()
+function reportApprovalOutcome(db, artifactId, runId, attempts): AutoResult {
+  const statusRow = db.prepare("SELECT status FROM artifacts WHERE id = ?").get(artifactId);
+  if (statusRow?.status === "pending-approval") {
+    return { status: "held", runId, attempts, heldForApproval: true, reason: "pending-approval" };
+  }
+  return { status: "complete", runId, attempts };
+}
+```
+
+Both call sites that invoke `approveArtifactWithEvidence` route their return through this helper — `AutoResult.status` only ever reports `"complete"` when the artifact is genuinely done, never when it's sitting at `pending-approval`. This mirrors `arbitrate.ts`'s manual-arbitration path, which does the identical post-verdict status re-read for the same reason.
+
+### Queue-Level Reporting
+
+`queue.ts`'s `remainingCounts` tracks a `heldForApproval` count alongside `blocked`/`needsRework`/etc., and `terminalStatus` treats `heldForApproval > 0` as non-terminal (`"partial"`) — a queue run that finishes with artifacts still awaiting human approval is never reported as `"complete"`.
+
+## 6. Attempt-Scoped Retry History (spec 013)
+
+Before spec 013, the retry budget (`FailureBudget`, `failures.ts`) was purely in-memory: it started fresh every time `runAuto` was invoked. A supervisor restart mid-artifact would silently reset the attempt count, letting an artifact burn through more attempts than `maxAttempts` actually allows across the restart boundary.
+
+### The `attempt_records` Table
+
+`migration/registry/commands/attempts.ts` adds a durable, append-only `attempt_records` table: one row per concluded attempt (`artifact_id`, `attempt_no`, `outcome`, `failure_kind`/`failure_signature`, timings). `recordAttemptOutcome` is the only writer — a pre-existing `(artifact_id, attempt_no)` row throws `RegistryError` rather than being silently overwritten, so a bug that double-records an attempt number fails loudly instead of corrupting history.
+
+### Seeding the Budget and the Loop Counter on Every Call
+
+`getPersistedBudgetState(db, artifactId)` reads back `attemptsUsed` (a `COUNT(*)`) and per-signature playbook counts, and `runAuto` seeds *both* of the mechanisms that gate retries from it:
+
+```typescript
+// migration/guildctl/supervisor/loop.ts
+const budget = new FailureBudget(maxAttempts, 2, {
+  artifactId: opts.artifactId,
+  ...getPersistedBudgetState(db, opts.artifactId),
+});
+let attempts = getPersistedBudgetState(db, opts.artifactId).attemptsUsed;
+```
+
+Seeding `attempts` (the loop's own counter, used to compute the next `attemptNo`) matters as much as seeding `budget`: without it, a resumed run would compute `attemptNo` starting from 1 again and collide with already-persisted rows, throwing instead of resuming at the correct attempt number. With both seeded from the same source, `getAttemptHistory(db, artifactId)` (FR-010) can answer "what happened on attempt N" purely from the registry — no log scraping — and that answer stays correct across any number of restarts.
+
 ## Conclusion: The `opts.resume` Semantic
 
 A critical learning from the supervisor's design is the native behavior of the `resume` option. When an artifact is previously `blocked` and picked up by a `resume` run, the supervisor natively clears the `blocked` status to `migrated` if the verifier passes.
 
-The supervisor actively rewrites states to move artifacts forward, relying on the robust close-out handlers described above to catch any resulting failures, ensuring that a blocked artifact isn't just permanently stuck if external conditions (like a dependency being fulfilled) have changed.
+The supervisor actively rewrites states to move artifacts forward, relying on the robust close-out handlers described above to catch any resulting failures, ensuring that a blocked artifact isn't just permanently stuck if external conditions (like a dependency being fulfilled) have changed. The same restart-safety now extends to retry accounting (§6) and to artifacts awaiting human approval (§5) — neither loses track of its true state across a process restart.
