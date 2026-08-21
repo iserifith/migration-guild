@@ -126,6 +126,16 @@ export interface ApprovalGateDb {
 }
 
 /**
+ * Seed an additional `runs` row (the factory's primary run is created by
+ * createApprovalGateDb). Needed by scenarios that rebind evidence to a run
+ * other than the factory's — e.g. the FR-006 staleness case, which moves the
+ * runtime evidence onto an earlier run before logging a repair event.
+ */
+export function seedRun(db: Database.Database, runId: string): void {
+  db.prepare("INSERT INTO runs (run_id, agent) VALUES (?, 'guildctl-approval-gate')").run(runId);
+}
+
+/**
  * Fresh in-memory registry with the schema applied and one `runs` row plus a
  * run-scoped operator credential minted, matching the seeded DB shape used by
  * the arbitrate-manual-approval tests.
@@ -133,7 +143,7 @@ export interface ApprovalGateDb {
 export function createApprovalGateDb(runId = "run-approval-gate"): ApprovalGateDb {
   const db = new Database(":memory:");
   applySchema(db);
-  db.prepare("INSERT INTO runs (run_id, inputs_json) VALUES (?, '{}')").run(runId);
+  db.prepare("INSERT INTO runs (run_id, agent) VALUES (?, 'guildctl-approval-gate')").run(runId);
   const { token: operatorToken } = createRunOperatorCredential(db, runId);
   return { db, runId, operatorToken };
 }

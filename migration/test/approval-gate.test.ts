@@ -17,6 +17,7 @@ import {
   seedApprovingArbitrationDecision,
   seedHighRiskArtifact,
   seedLowRiskArtifact,
+  seedRun,
 } from "./approval-fixtures";
 
 // Regression suite for the US1 approval gate (spec 013, FR-001/002/003/006/007/008/011
@@ -40,11 +41,11 @@ function getApprovalDecisions(db: Database.Database, artifactId: string): Array<
 function getEvents(db: Database.Database, artifactId: string, type?: string): Array<{ type: string; data: string | null }> {
   if (type) {
     return db.prepare(
-      "SELECT type, data FROM events WHERE artifact_id = ? AND type = ? ORDER BY rowid",
+      "SELECT type, event_data AS data FROM events WHERE artifact_id = ? AND type = ? ORDER BY rowid",
     ).all(artifactId, type) as Array<{ type: string; data: string | null }>;
   }
   return db.prepare(
-    "SELECT type, data FROM events WHERE artifact_id = ? ORDER BY rowid",
+    "SELECT type, event_data AS data FROM events WHERE artifact_id = ? ORDER BY rowid",
   ).all(artifactId) as Array<{ type: string; data: string | null }>;
 }
 
@@ -297,7 +298,11 @@ test("recordApprovalDecision: throws RegistryError on stale evidence — repair 
     // event afterwards: checkEvidenceFreshness must report it stale, and the
     // human decision must be refused with the same RegistryError shape operators
     // already see from evidence.ts.
+    seedRun(gate.db, "run-earlier");
     gate.db.prepare("UPDATE acceptance_evidence SET run_id = ? WHERE artifact_id = ?").run("run-earlier", HIGH_RISK_ARTIFACT_ID);
+    // Backdate the runtime evidence so the repair event (logged now, second-resolution
+    // timestamps) is strictly newer — mirrors test/drift-gate.test.ts stale-evidence setup.
+    gate.db.prepare("UPDATE acceptance_evidence SET created_at = datetime('now', '-2 seconds') WHERE artifact_id = ?").run(HIGH_RISK_ARTIFACT_ID);
     appendEvent(gate.db, {
       id: HIGH_RISK_ARTIFACT_ID,
       type: "auto-rework",
