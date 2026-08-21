@@ -14,3 +14,7 @@
 ## 2024-08-20 - Adding Loading Feedback to Async Buttons
 **Learning:** Adding `aria-busy` along with dynamic text and disabling a button during async operations provides significantly better screen reader accessibility and visual feedback.
 **Action:** Always include loading states for any global async refresh buttons to indicate work is happening in the background.
+
+## 2024-08-21 - Add aria-expanded to clickable table rows
+**Learning:** Table rows styled as clickable elements (`role="button"`) that toggle a details panel or log viewer below the list should use `aria-expanded` to communicate their state to screen reader users. This clarifies that interacting with the row expands or collapses additional content.
+**Action:** When a custom element like a table row acts as a button to reveal more details, always include `aria-expanded={isExpanded}` along with `role="button"`, `tabIndex`, and keyboard handlers.
