@@ -72,7 +72,9 @@ export function createAttemptFixtureDb(opts: CreateAttemptFixtureOptions = {}): 
   applySchema(db);
   const artifactId = opts.artifactId ?? ATTEMPT_ARTIFACT_ID;
   const runId = opts.runId ?? "run-attempt-fixture";
-  db.prepare("INSERT INTO runs (run_id, inputs_json) VALUES (?, '{}')").run(runId);
+  // Matches the column set every other test seeds runs with (drift-gate,
+  // arbiter-gate, ...): agent/owner_id/status are NOT NULL in the runs schema.
+  db.prepare("INSERT INTO runs (run_id, agent, owner_id, status) VALUES (?, 'code-writer-agent', 'guildctl', 'running')").run(runId);
   registerArtifact(db, {
     id: artifactId,
     kind: "legacy-source",
