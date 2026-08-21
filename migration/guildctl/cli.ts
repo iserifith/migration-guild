@@ -46,6 +46,7 @@ import { runCaptureFixtureCommand } from "./commands/capture-fixture";
 import { runAutoCommand } from "./commands/auto";
 import { PreflightGateError, runAutoRunCommand } from "./commands/auto-run";
 import { runArbitrate } from "./commands/arbitrate";
+import { runApprove } from "./commands/approve";
 import { runSocietyReport } from "./commands/society-report";
 import { runBenchmarkBaselineWorker, runBenchmarkCompare, runBenchmarkGuildReviewWorker, runBenchmarkGuildReworkWorker, runBenchmarkRecord, runBenchmarkReport, runBenchmarkRun } from "./commands/benchmark";
 import {
@@ -551,6 +552,32 @@ program
       if (err instanceof RegistryError) {
         // US1 (#153): a credential/independence failure is an expected operator
         // error, not a crash — one clean line, non-zero exit, no stack trace.
+        process.stderr.write(`\n✗ ${err.message}\n\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
+  });
+
+program
+  .command("approve")
+  .description("List artifacts held at pending-approval, or record the human approve/reject decision that releases one")
+  .argument("[artifact]", "Artifact ID to approve or reject (omit with --list)")
+  .option("--list", "List artifacts currently awaiting approval")
+  .option("--reject", "Reject the artifact (default is approve)")
+  .option("--reason <text>", "Rejection rationale (required with --reject)")
+  .option("--run-id <id>", "Existing run to bind the decision to")
+  .option("--operator-token <token>", "Run operator credential for --run-id")
+  .option("--json", "Print the pending list or recorded decision as JSON")
+  .action(async (artifact, opts) => {
+    assertDbExists(dbPath());
+    try {
+      await runApprove(db(), { ...opts, artifact });
+    } catch (err) {
+      if (err instanceof RegistryError) {
+        // US2 (spec 013): a gate/independence/reason refusal is an expected
+        // operator error, not a crash — one clean line, non-zero exit, no
+        // stack trace (same boundary shape as arbitrate above).
         process.stderr.write(`\n✗ ${err.message}\n\n`);
         process.exit(1);
       }
