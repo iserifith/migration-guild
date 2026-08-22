@@ -38,9 +38,11 @@ interface ApprovalsPanelProps {
 function RejectForm({
   onConfirm,
   onCancel,
+  isSubmitting,
 }: {
   onConfirm: (reason: string) => void;
   onCancel: () => void;
+  isSubmitting?: boolean;
 }) {
   const [reason, setReason] = useState("");
   const trimmed = reason.trim();
@@ -53,16 +55,19 @@ function RejectForm({
         onChange={(e) => setReason(e.target.value)}
         placeholder="Reason for rejection (required)"
         value={reason}
+        disabled={isSubmitting}
       />
       <button
         className="state-button"
-        disabled={!trimmed}
+        disabled={!trimmed || isSubmitting}
         onClick={() => onConfirm(trimmed)}
         type="button"
+        aria-busy={isSubmitting}
+        title={!trimmed ? "A rejection reason is required" : undefined}
       >
-        Confirm rejection
+        {isSubmitting ? "Rejecting..." : "Confirm rejection"}
       </button>
-      <button className="state-button" onClick={onCancel} type="button">
+      <button className="state-button" onClick={onCancel} type="button" disabled={isSubmitting}>
         Cancel
       </button>
     </div>
@@ -81,10 +86,12 @@ export default function ApprovalsPanel({
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
+  const [submittingDecision, setSubmittingDecision] = useState<"approved" | "rejected" | null>(null);
 
   const decide = (artifactId: string, body: ApprovalDecisionRequest) => {
     setDecisionError(null);
     setSubmittingId(artifactId);
+    setSubmittingDecision(body.decision);
     void onDecide(artifactId, body)
       .then(() => setRejectingId(null))
       .catch((err: unknown) =>
@@ -92,7 +99,10 @@ export default function ApprovalsPanel({
           err instanceof Error ? err.message : "Decision failed.",
         ),
       )
-      .finally(() => setSubmittingId(null));
+      .finally(() => {
+        setSubmittingId(null);
+        setSubmittingDecision(null);
+      });
   };
 
   if (loading) {
@@ -167,6 +177,7 @@ export default function ApprovalsPanel({
                           decide(a.artifactId, { decision: "rejected", reason })
                         }
                         onCancel={() => setRejectingId(null)}
+                        isSubmitting={submittingId === a.artifactId && submittingDecision === "rejected"}
                       />
                     ) : (
                       <div className="filters" style={{ marginBottom: 0 }}>
@@ -177,8 +188,9 @@ export default function ApprovalsPanel({
                             decide(a.artifactId, { decision: "approved" })
                           }
                           type="button"
+                          aria-busy={submittingId === a.artifactId && submittingDecision === "approved"}
                         >
-                          Approve
+                          {submittingId === a.artifactId && submittingDecision === "approved" ? "Approving..." : "Approve"}
                         </button>
                         <button
                           className="state-button"
