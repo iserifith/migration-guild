@@ -7,7 +7,7 @@ import { claimArtifactById, createRunOperatorCredential, releaseClaimsForRun } f
 import { setArtifactStatus } from "../../registry/commands/artifacts";
 import { addAcceptanceEvidence, approveArtifactWithEvidence, checkEvidenceFreshness, rejectArtifactWithEvidence } from "../../registry/commands/evidence";
 import { finishRun, startRun } from "../../registry/commands/runs";
-import type { AcceptanceEvidence, ClaimedArtifact, FilesWrittenSource, OutcomeLabel } from "../../registry/types";
+import { RegistryError, type AcceptanceEvidence, type ClaimedArtifact, type FilesWrittenSource, type OutcomeLabel } from "../../registry/types";
 import { deriveOutcomeLabel } from "../runner";
 import { isPathInside } from "../config";
 import { AutonomousLimitError } from "../limits";
@@ -284,7 +284,7 @@ async function runIndependentReview(
 function assertAutonomousRegistryPlacement(db: Database.Database, workspaceRoot: string): void {
   if (db.name === ":memory:") return;
   if (isPathInside(db.name, workspaceRoot)) {
-    throw new Error(`Autonomous runs require REGISTRY_DB outside the target workspace: ${db.name}`);
+    throw new RegistryError(1, `Autonomous runs require REGISTRY_DB outside the target workspace: ${db.name}`);
   }
 }
 

@@ -622,11 +622,17 @@ program
     try {
       await runAutoRunCommand(db(), { ...opts, registryDbPath: dbPath() });
     } catch (err) {
-      if (!(err instanceof PreflightGateError)) throw err;
-      // The runtime path is not known good, so nothing was claimed. Report it
-      // as the gate it is, not as a crash.
-      process.stderr.write(`\n✗ ${err.message}\n  Run \`guildctl preflight\` for the resolved path.\n\n`);
-      process.exit(1);
+      if (err instanceof PreflightGateError) {
+        // The runtime path is not known good, so nothing was claimed. Report it
+        // as the gate it is, not as a crash.
+        process.stderr.write(`\n✗ ${err.message}\n  Run \`guildctl preflight\` for the resolved path.\n\n`);
+        process.exit(1);
+      }
+      if (err instanceof RegistryError) {
+        process.stderr.write(`\n✗ ${err.message}\n\n`);
+        process.exit(1);
+      }
+      throw err;
     }
   });
 
