@@ -109,7 +109,7 @@ export function formatPlanningBlockMessage(readiness: PlanningReadiness): {
     return {
       summary: "Planning blocked by undecided module scope.",
       reason: `${readiness.unresolvedScopeModules.length} module(s) have no keep/drop scope decision yet${modules ? ` (${modules}${readiness.unresolvedScopeModules.length > 5 ? ", …" : ""})` : ""}. Every module needs a decision before planning proceeds.`,
-      command: "node migration/guildctl/dist/cli.js scope",
+      command: "node migration/guildctl/dist/cli.js run scope",
     };
   }
 
