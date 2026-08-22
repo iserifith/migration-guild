@@ -18,3 +18,6 @@
 ## 2024-08-21 - Add aria-expanded to clickable table rows
 **Learning:** Table rows styled as clickable elements (`role="button"`) that toggle a details panel or log viewer below the list should use `aria-expanded` to communicate their state to screen reader users. This clarifies that interacting with the row expands or collapses additional content.
 **Action:** When a custom element like a table row acts as a button to reveal more details, always include `aria-expanded={isExpanded}` along with `role="button"`, `tabIndex`, and keyboard handlers.
+## 2026-08-22 - Inline loading states for async actions
+**Learning:** During latency on form actions, users lose context if buttons just do nothing. Using a combination of `aria-busy`, disabling controls, and changing button text to "[Action]ing..." provides immediate inline feedback that their interaction was recognized, specifically for the approvals panel in migration-guild.
+**Action:** Always implement disabled and `aria-busy` states when submitting asynchronous forms or calling endpoints, updating the button text to show activity, and disabling form fields to prevent double submission.
