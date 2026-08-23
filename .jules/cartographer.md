@@ -29,3 +29,7 @@
 ## 2024-08-21 - Effective Limit Phase Remapping
 **Learning:** Manual phase commands (like `remediate`) and autonomous loop phases (like `repair`) often use different terminologies for the same logical stage, but the limit configuration must map to the base spec (e.g., `remediation`). `limitPhaseForAutoWorker` handles this so `resolveEffectiveLimit` pulls the right config knob.
 **Action:** When tracking configurations, ensure the phase name used matches the limit mapping, not just the run label or status.
+
+## 2024-08-22 - UI Presentation Ordering via SQLite
+**Learning:** The CLI dashboard uses a hardcoded `ORDER BY CASE status WHEN 'pending' THEN 1 ... END` directly in SQLite queries (e.g. `printStatusSummary` in `migration/guildctl/dashboard.ts`) to enforce business-logic pipeline ordering of aggregated rows, avoiding the need for an in-memory JS sort step.
+**Action:** When adding new aggregations or UI views that have a logical pipeline order, implement the sorting directly in the SQL projection rather than fetching and mapping arrays in the backend.
