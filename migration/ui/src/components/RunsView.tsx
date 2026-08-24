@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRunLog } from "../hooks";
 import type { RunEntry, RunFilters, RunQuery, TimeDisplayMode } from "../types";
 import { formatDuration, formatTimestamp } from "../format";
@@ -67,6 +67,16 @@ export default function RunsView({
     run.token_total > 0
       ? `fresh ${run.token_fresh.toLocaleString()} / total ${run.token_total.toLocaleString()}`
       : "-";
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && selectedRunId) {
+        setSelectedRunId(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedRunId]);
 
   if (loading) {
     return <LoadingState resource="runs" />;
@@ -255,7 +265,14 @@ export default function RunsView({
       )}
 
       <section>
-        <h2 style={{ marginTop: 0 }}>Run log</h2>
+        <h2 style={{ marginTop: 0 }}>
+          Run log
+          {selectedRunId && (
+            <span className="filter-meta" style={{ marginLeft: "8px", fontWeight: "normal" }}>
+              (Press Esc to close)
+            </span>
+          )}
+        </h2>
         <RunLogViewer
           selectedRunId={selectedRunId}
           selectedRunLogFile={selectedRun?.log_file ?? null}
