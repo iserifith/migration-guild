@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import type { Artifact, TimeDisplayMode } from "../types";
 import { STATUS_FILTER_OPTIONS, KIND_FILTER_OPTIONS } from "../constants";
 import ArtifactDetail from "./ArtifactDetail";
 import { EmptyState, ErrorState, LoadingState } from "./ViewState";
 
-export default function ArtifactList({
+// ⚡ Bolt: Memoize component to prevent unnecessary re-renders when App polls global state
+export default memo(function ArtifactList({
   artifacts,
   loading,
   error,
@@ -169,4 +170,4 @@ export default function ArtifactList({
       )}
     </>
   );
-}
+});

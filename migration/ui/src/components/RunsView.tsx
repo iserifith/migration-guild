@@ -1,11 +1,12 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { useRunLog } from "../hooks";
 import type { RunEntry, RunFilters, RunQuery, TimeDisplayMode } from "../types";
 import { formatDuration, formatTimestamp } from "../format";
 import { EmptyState, ErrorState, LoadingState } from "./ViewState";
 import RunLogViewer from "./RunLogViewer";
 
-export default function RunsView({
+// ⚡ Bolt: Memoize component to prevent unnecessary re-renders when App polls global state
+export default memo(function RunsView({
   runs,
   total,
   page,
@@ -267,4 +268,4 @@ export default function RunsView({
       </section>
     </div>
   );
-}
+});
