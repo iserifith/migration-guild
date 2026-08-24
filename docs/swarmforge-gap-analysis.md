@@ -4,15 +4,11 @@
 
 [SwarmForge](https://github.com/unclebob/swarm-forge) (Bob Martin) and Migration Guild are solving adjacent problems from opposite ends: SwarmForge is **local-first** — a pack of agent CLIs running in tmux panes, with a human (`Cockpit`) watching and steering them live. Migration Guild is **repo-first** — a registry-gated pipeline driven by `guildctl`, with agents claiming work from a SQLite blackboard and a human approving high-risk output after the fact (Spec-013).
 
-Two of SwarmForge's ideas apply to **the product** (the pipeline `guildctl` runs — registry, agents, dashboard). Two apply to **the meta-process** (how *this repository* gets developed — GitHub issues → Spec Kit → Claude Code coderunners). That distinction matters for where each idea actually lands, so each section below states which layer it targets before proposing anything.
-
-This is an analysis document, not an implementation. Each section: what SwarmForge does, where Migration Guild actually stands today (with file references), and a concrete, scoped proposal for whoever picks it up.
+This document scopes the comparison to the Migration Guild product itself — the pipeline `guildctl` runs (registry, `package/agents/`, dashboard) — and each proposal below targets that pipeline. It is an analysis document, not an implementation: what SwarmForge does, where Migration Guild actually stands today (with file references), and a concrete, scoped proposal for whoever picks it up.
 
 ---
 
 ## 1. Role constitutions as versioned prompt articles
-
-**Layer: product** (`package/agents/`)
 
 SwarmForge keeps every agent's behavioral contract in `constitution/articles/*.prompt` — reviewed, diffed, and tested like code, injected by the launcher at spawn time.
 
@@ -21,22 +17,19 @@ SwarmForge keeps every agent's behavioral contract in `constitution/articles/*.p
 What's genuinely missing, compared to SwarmForge's constitution:
 - **No test coverage on the prompts themselves.** SwarmForge's issues.md discipline (#5 below) is explicitly regression-tested; nothing in this repo asserts that `migration-agent.agent.md` still says "tests before production code" after an edit. A cheap `doc-consistency`-style test (the pattern already used for stale-path regressions per issue #148/PR #149) could grep each `.agent.md` for its load-bearing rules.
 - **No shared "articles" layer.** Each `.agent.md` restates its own guardrails (don't write to `legacy/`, no stubs, no TODOs) inline rather than importing a common constitutional base. SwarmForge's `articles/*.prompt` are composed per role; Migration Guild's agents duplicate the same handful of invariants across files. A `package/agents/_articles/` (or similar) directory with 2-3 shared fragments (workspace boundaries, no-stub discipline, evidence-before-claim) that each `.agent.md` references would cut duplication and make a guardrail change a one-file edit instead of an N-file grep-and-replace.
-- **No injection audit trail for the coderunner layer.** This is the meta-process gap: prompts fed to GitHub-issue-driven Claude Code sessions (the `coderunner` containers referenced in the original comparison) live in dispatch scripts/session prompts outside this repo, not in `.github/agents/*.agent.md` the way `package/agents/` is versioned for the product's own agents. `.github/agents/orchestrator.agent.md` and `.github/agents/documentation-agent.agent.md` exist and are a start, but they're two files covering a much larger set of ad hoc coderunner instructions. Extending that pattern — every repo-local agent role gets a `.github/agents/*.agent.md` file — would give the meta-process the same auditability the product's own agents already have.
 
-**Proposal:** (a) add a doc-consistency test asserting each `package/agents/*.agent.md` retains its numbered guardrail steps; (b) factor the 3-4 repeated invariants into a shared fragment; (c) treat `.github/agents/` as the versioned-constitution home for the meta-process layer and grow it in step with new coderunner roles instead of leaving them as one-off prompt text.
+**Proposal:** (a) add a doc-consistency test asserting each `package/agents/*.agent.md` retains its numbered guardrail steps; (b) factor the 3-4 repeated invariants into a shared fragment referenced by each agent file.
 
 ---
 
 ## 2. Structured handoff envelopes
 
-**Layer: product** (`migration/registry/commands/evidence.ts`, `serve.ts`)
-
 SwarmForge's handoffs are Maildir messages with `From`/`To`/`Task`/`Payload` headers, queued by `handoffd`, with rejection reasons routed back to the owning agent automatically.
 
-**Where Migration Guild actually stands:** Spec-013 (`specs/013-approval-gate-attempt-state/`) shipped the *gate* half of this — `POST /api/approvals/:id/decision` (US2 in `spec.md`), backed by `recordApprovalDecision`/`listPendingApprovals` in `evidence.ts`, plus an attempt-history schema (US3) that durably records each retry's failure reason and attempt number, surviving process restarts. What it does *not* have is a **message protocol**: agents don't address each other. Coordination is entirely implicit — an agent claims a row in the registry, mutates its status, and the next phase discovers that mutation by re-querying the DB. There's no `From`/`To`/`Task` envelope, and — this is the concrete gap — a reject reason recorded via the approval-gate decision endpoint does not automatically flow into the *next migrate attempt's prompt*. US3's acceptance criteria (`spec.md` Acceptance Scenario 2) only requires the reason be *queryable after the fact*, not injected back into remediation.
+**Where Migration Guild actually stands:** Spec-013 (`specs/013-approval-gate-attempt-state/`) shipped the *gate* half of this — `POST /api/approvals/:id/decision` (US2 in `spec.md`), backed by `recordApprovalDecision`/`listPendingApprovals` in `migration/registry/commands/evidence.ts`, plus an attempt-history schema (US3) that durably records each retry's failure reason and attempt number, surviving process restarts. What it does *not* have is a **message protocol**: agents don't address each other. Coordination is entirely implicit — an agent claims a row in the registry, mutates its status, and the next phase discovers that mutation by re-querying the DB. There's no `From`/`To`/`Task` envelope, and — this is the concrete gap — a reject reason recorded via the approval-gate decision endpoint does not automatically flow into the *next migrate attempt's prompt*. US3's acceptance criteria (`spec.md` Acceptance Scenario 2) only requires the reason be *queryable after the fact*, not injected back into remediation.
 
 **Proposal:** this doesn't need SwarmForge's Maildir transport — the registry is already the shared bus. It needs a thin envelope *convention* layered on what exists:
-- When `recordApprovalDecision` records a rejection, write the reason into the same `agent_context` table `context.ts` already writes to (`migration/artifacts/<slug>/context/<agent>.md`), tagged for the next remediation attempt, instead of leaving it queryable-only.
+- When `recordApprovalDecision` records a rejection, write the reason into the same `agent_context` table `migration/registry/commands/context.ts` already writes to (`migration/artifacts/<slug>/context/<agent>.md`), tagged for the next remediation attempt, instead of leaving it queryable-only.
 - Give `remediation-agent.agent.md` an explicit step: "before attempting, read the most recent rejection reason from context, if any" — turning US3's stored history into an actual input to the next attempt, closing exactly the loop SwarmForge's reject-routing gives for free.
 
 This is a small, additive change on top of Spec-013, not a new subsystem.
@@ -44,8 +37,6 @@ This is a small, additive change on top of Spec-013, not a new subsystem.
 ---
 
 ## 3. Adversarial lanes
-
-**Layer: product** (post-`review`, pre-approval-gate)
 
 SwarmForge runs a dedicated `adversaries` branch/pack whose sole job is attacking the other pack's implementation before merge.
 
@@ -57,46 +48,34 @@ SwarmForge runs a dedicated `adversaries` branch/pack whose sole job is attackin
 
 ## 4. Stuck-runner watchdog
 
-**Layer: both — mostly already solved in the product, genuinely missing in the meta-process**
-
 SwarmForge's `swarm-window-watchdog` watches tmux windows and reaps dead sessions; cleanup sweeps everything on exit.
 
-**Where Migration Guild actually stands — correcting the original "absent" framing:** the product-layer registry already has this, non-trivially:
+**Where Migration Guild actually stands — correcting the original "absent" framing:** the registry already has this, non-trivially:
 - `reapDeadRuns` (`migration/registry/commands/runs.ts`, wired into `migration/guildctl/supervisor/queue.ts:245`) and `reconcileStaleClaims` (`migration/registry/commands/claim.ts`, `queue.ts:246`) run automatically inside `guildctl auto`'s supervisor loop.
-- `guildctl doctor` (`migration/guildctl/doctor.ts:229-247`) actively flags "dangling active claims older than 1h" by checking `heartbeat_at`/`claimed_at` against the artifact_claims table.
+- `guildctl doctor` (`migration/guildctl/doctor.ts:229-247`) actively flags "dangling active claims older than 1h" by checking `heartbeat_at`/`claimed_at` against the `artifact_claims` table.
 - `guildctl recover` (`cli.ts:442`) and `guildctl release --all-stuck --older-than <mins>` (`cli.ts:410-413`) exist as explicit, human-triggerable reapers.
 
 So the registry-claim layer already has heartbeats, TTLs, and a reaper — SwarmForge's idea, already shipped, just under different names.
 
-**What's actually missing** is the layer the original comparison was really pointing at: the **coderunner container** running a GitHub-issue-assigned Claude Code session (issue #130 sat stuck since Aug 17, discovered manually) has no equivalent of `reapDeadRuns`/`doctor`. That's a different process entirely from the registry's `artifact_claims` — it's whatever spawns and supervises the container per issue, and it lives outside `migration/`, so there's nothing in this repo's own watchdog code to extend.
+**What's still a gap:** all of the above requires a human to *run* `guildctl doctor` or `guildctl recover` to surface a stuck claim — there's no automatic, always-on sweep the way SwarmForge's watchdog runs continuously in the background. `printStaleSessionWarnings` (`migration/guildctl/monitoring.ts:379`) prints staleness info but isn't wired into a standing reaper loop outside of `auto`'s supervisor.
 
-**Proposal:** don't rebuild the registry watchdog (it exists); port its *shape* to the coderunner layer specifically:
-1. Each coderunner session writes a heartbeat (timestamp file, or a periodic no-op API call) on a fixed interval — mirroring `artifact_claims.heartbeat_at`.
-2. A reaper (cron, or a step in whatever supervises the containers) checks heartbeat age against a TTL and flags/kills anything stale — mirroring `guildctl doctor`'s stale-claim check and `guildctl recover`'s reap step.
-3. Surface it the same way `doctor` does: a warning a maintainer sees, not a silent kill, at least initially — issue #130 was a discovery problem as much as a supervision problem.
-
-This is infrastructure work outside `migration/`, scoped to wherever coderunner containers are actually launched from — not a `migration-guild` code change.
+**Proposal:** add a periodic check inside the supervisor loop (`migration/guildctl/supervisor/queue.ts`) that calls the same `doctor` staleness check on a fixed interval during long-running `auto`/`auto-run` sessions, not just at startup — so a claim that goes stale mid-run gets flagged without a human having to think to run `doctor`.
 
 ---
 
 ## 5. Whole-card discipline
 
-**Layer: both**
-
 SwarmForge's `issues.md` #3 fixes card-slicing by putting it directly in the specifier's prompt: "finish the entire assigned card, then exactly one handoff" — and it's regression-tested.
 
-**Where Migration Guild actually stands:** by convention only, and only implicitly. Spec Kit's `tasks.md` files (`specs/*/tasks.md`, e.g. `specs/013-approval-gate-attempt-state/tasks.md`'s T024-T030) slice a feature into dependency-ordered, checkbox-tracked tasks — but nothing in `package/agents/migration-agent.agent.md` or any other agent prompt states "finish the whole assigned task before handing off" as an explicit rule. The closest thing is `migration-agent.agent.md`'s step 9 ("go back to step 1 and claim the next task") — implicit sequencing, not an explicit one-card-one-handoff contract, and there's no regression test enforcing it the way SwarmForge's is.
+**Where Migration Guild actually stands:** by convention only, and only implicitly, inside the pipeline's own task granularity. `package/agents/migration-agent.agent.md`'s numbered steps (claim → read → migrate dependencies → write test → write production → mark migrated → claim next) imply single-artifact completion, but nothing states it as an explicit rule the way SwarmForge does, and there's no regression test enforcing it.
 
 **Proposal:** this is the cheapest item on this list — a one-line, testable addition:
 - Add an explicit rule to the top of `package/agents/migration-agent.agent.md` (and `test-writer-agent.agent.md`, `codegen-agent.agent.md`): "Do not hand off partial work. Complete every step for the claimed artifact — test written, production code written, registry updated to `migrated` — before claiming the next one."
-- Add it to the meta-process side too: `.github/agents/orchestrator.agent.md`, since that's the role actually slicing GitHub issues into coderunner-sized work.
 - Pair it with the doc-consistency test proposed in §1, so the rule can't silently drop out of the prompt on a future edit — this is exactly the kind of thing SwarmForge treats as a regression test, not just prose.
 
 ---
 
 ## 6. Status inference for the operator dashboard
-
-**Layer: product** (`migration/ui`, `migration/registry/commands/serve.ts`)
 
 SwarmForge's Cockpit scrapes raw tmux `capture-pane` output, strips backend-specific chrome (Grok/Codex alt-screen sequences), and infers idle / working / waiting-for-approval / rejected states plus an activity-heat signal — all without instrumenting the agents themselves.
 
