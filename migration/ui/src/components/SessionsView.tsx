@@ -1,9 +1,10 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import type { SessionEntry, SessionFilters, SessionQuery, TimeDisplayMode } from "../types";
 import { formatAgeMinutes, formatTimestamp } from "../format";
 import { EmptyState, ErrorState, LoadingState } from "./ViewState";
 
-export default function SessionsView({
+// ⚡ Bolt: Memoize component to prevent unnecessary re-renders when App polls global state
+export default memo(function SessionsView({
   sessions,
   total,
   page,
@@ -200,4 +201,4 @@ export default function SessionsView({
       )}
     </div>
   );
-}
+});

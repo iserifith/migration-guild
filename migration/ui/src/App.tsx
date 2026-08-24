@@ -70,7 +70,7 @@ interface TabDef {
  * the shared useRegistryData shell) and posts decisions through the typed API
  * client, refetching pending + history after each submitted decision.
  */
-function ApprovalsTab({ timeMode }: { timeMode: TimeDisplayMode }) {
+const ApprovalsTab = React.memo(function ApprovalsTab({ timeMode }: { timeMode: TimeDisplayMode }) {
   const { pending, history, loading, error, reload } = useApprovals();
   const decide = React.useCallback(
     async (artifactId: string, body: ApprovalDecisionRequest) => {
@@ -90,7 +90,7 @@ function ApprovalsTab({ timeMode }: { timeMode: TimeDisplayMode }) {
       timeMode={timeMode}
     />
   );
-}
+});
 
 /** Pending-approval count badge for the Approvals tab (hidden when zero). */
 function ApprovalsBadge({ approvals }: { approvals: UseApprovalsResult }) {
