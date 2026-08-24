@@ -335,7 +335,7 @@ export function buildGooseInvocation(argv, options = {}) {
       // and --model expects the model name within that provider.
       //
       // However, for OpenAI-compatible providers the model name often
-      // contains slashes (e.g. "private-relay/pvt/glm-5.2"). In that case the
+      // contains slashes (e.g. "example-private/pvt/glm-5.2"). In that case the
       // entire string is the model name and the provider is set via
       // GOOSE_PROVIDER env var or --provider flag separately.
       //

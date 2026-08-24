@@ -88,7 +88,7 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
   nested `migration/` and `migration/ui/` installs (instead of assuming a fully-installed
   clone), and `DEVELOPMENT.md` documents all three install locations up front
   (FR-004..FR-005). (3) Provider defaults: the seeded `DEFAULT_GUILD_CONFIG` profile changes
-  from an undocumented personal `private-relay`/DashScope profile to a generic OpenAI-compatible
+  from an undocumented personal `example-private`/DashScope profile to a generic OpenAI-compatible
   default (`https://api.openai.com/v1` + `OPENAI_API_KEY`, DashScope-pointing
   dashscope/cheap/reviewer/qwen entries removed — DashScope stays usable via explicit user
   config), with `.env.example` and the shipped docs telling the same story
