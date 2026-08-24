@@ -5,10 +5,9 @@ import test from "node:test";
 
 /**
  * #215/#219: package/agents/*.agent.md are versioned prompt contracts, but
- * nothing previously asserted that a load-bearing rule survives an edit —
- * the exact gap the SwarmForge analysis flagged (docs/swarmforge-gap-analysis.md,
- * §1 and §5). This locks in the whole-card-discipline rule added by #219:
- * an artifact-claiming agent must not hand off partial work (test/production
+ * nothing previously asserted that a load-bearing rule survives an edit.
+ * This locks in the whole-card-discipline rule added by #219: an
+ * artifact-claiming agent must not hand off partial work (test/production
  * code written, registry updated) before claiming the next one.
  */
 
