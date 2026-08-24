@@ -12,7 +12,7 @@
  * owns the refetch-after-action wiring.
  */
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { formatTimestamp } from "../format";
 import type {
   ApprovalDecision,
@@ -74,7 +74,8 @@ function RejectForm({
   );
 }
 
-export default function ApprovalsPanel({
+// ⚡ Bolt: Memoize component to prevent unnecessary re-renders when App polls global state
+export default memo(function ApprovalsPanel({
   pending,
   history,
   loading,
@@ -247,4 +248,4 @@ export default function ApprovalsPanel({
       )}
     </section>
   );
-}
+});
