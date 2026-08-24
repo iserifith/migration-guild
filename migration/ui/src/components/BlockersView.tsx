@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import type {
   BlockerEntry,
   BlockerQuery,
@@ -10,7 +10,8 @@ import type {
 import { formatTimestamp } from "../format";
 import { EmptyState, ErrorState, LoadingState } from "./ViewState";
 
-export default function BlockersView({
+// ⚡ Bolt: Memoize component to prevent unnecessary re-renders when App polls global state
+export default memo(function BlockersView({
   blockers,
   blockersTotal,
   blockersPage,
@@ -407,4 +408,4 @@ export default function BlockersView({
       </section>
     </div>
   );
-}
+});
