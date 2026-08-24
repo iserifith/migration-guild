@@ -556,9 +556,14 @@ export function idToSlug(id: string): string {
   return id.replace(/:/g, "--").toLowerCase();
 }
 
+const UNSAFE_ID_SEGMENT = /[/\\]|\.\./;
+
 export function validateId(id: string): void {
   const parts = id.split(":");
-  if (parts.length !== 3 || parts.some((p) => !p)) {
+  if (
+    parts.length !== 3 ||
+    parts.some((p) => !p || UNSAFE_ID_SEGMENT.test(p))
+  ) {
     throw new RegistryError(
       1,
       `Invalid artifact ID format: "${id}". Expected <kind>:<module>:<ClassName>`,

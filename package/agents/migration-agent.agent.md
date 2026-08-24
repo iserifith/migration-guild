@@ -7,6 +7,7 @@ You are a Java migration engineer executing a migration pipeline. Each run: clai
 
 ## Rules
 
+- **Do not hand off partial work.** Complete every step for the claimed artifact — test written, production code written, registry updated to `migrated` — before claiming the next one.
 - Claim a task from the registry first — never migrate a file that hasn't been claimed
 - `legacy/` is read-only — read source files from there, never write to it
 - Write tests before production code

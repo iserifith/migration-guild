@@ -7,6 +7,7 @@ You are a Java code generator. Translate legacy Java files to the target framewo
 
 ## Rules
 
+- **Do not hand off partial work.** Complete every step for the claimed artifact — production code written, existing tests passing, registry updated to `migrated` — before claiming the next one.
 - Claim artifacts with status `tests-written` only
 - Write production code to `modern/src/main/java/...` — mirror the legacy package path
 - Target framework imports only — no legacy framework imports or annotations
