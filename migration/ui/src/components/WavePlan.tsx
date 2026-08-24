@@ -1,9 +1,10 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { DONE_STATUSES, STATUS_COLOR_FALLBACK, STATUS_COLORS } from "../constants";
 import type { WavePlanEntry } from "../types";
 import { EmptyState, ErrorState, LoadingState } from "./ViewState";
 
-export default function WavePlan({
+// ⚡ Bolt: Memoize component to prevent unnecessary re-renders when App polls global state
+export default memo(function WavePlan({
   entries,
   loading,
   error,
@@ -93,4 +94,4 @@ export default function WavePlan({
       })}
     </div>
   );
-}
+});
