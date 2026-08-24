@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import type { Artifact, TimeDisplayMode } from "../types";
 import { useEvents } from "../hooks";
 import { formatTimestamp } from "../format";
@@ -34,9 +34,19 @@ export default function ArtifactDetail({
     ["Updated",    formatTimestamp(artifact.updated_at, timeMode)],
   ];
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
     <div className="detail">
-      <button aria-label="Close details" className="close-btn" onClick={onClose}>×</button>
+      <button aria-label="Close details (Esc)" title="Close details (Esc)" className="close-btn" onClick={onClose}>×</button>
       <h2>{artifact.id}</h2>
 
       <div className="detail-grid">
