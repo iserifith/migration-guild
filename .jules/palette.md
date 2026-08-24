@@ -21,3 +21,6 @@
 ## 2026-08-22 - Inline loading states for async actions
 **Learning:** During latency on form actions, users lose context if buttons just do nothing. Using a combination of `aria-busy`, disabling controls, and changing button text to "[Action]ing..." provides immediate inline feedback that their interaction was recognized, specifically for the approvals panel in migration-guild.
 **Action:** Always implement disabled and `aria-busy` states when submitting asynchronous forms or calling endpoints, updating the button text to show activity, and disabling form fields to prevent double submission.
+## 2024-05-24 - Missing keyboard collapse interactions and form focus styles
+**Learning:** Expanding UI panels like Artifact Details and Run Logs often lack intuitive keyboard dismissal mechanisms like the `Escape` key, despite having expanded states (`aria-expanded`). Additionally, standard browser focus rings on complex custom form elements (like filter selects) can sometimes suffer from low contrast.
+**Action:** When implementing expandable panels or modal-like detail views, always add `Escape` key listeners to allow keyboard users to easily dismiss the view. For form controls, explicitly ensure focus states (`:focus-visible`) match the high-contrast accent colors of the design system.
