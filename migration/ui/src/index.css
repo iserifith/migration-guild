@@ -253,7 +253,9 @@ tr.clickable:focus-visible { outline: 2px solid var(--text-accent); outline-offs
 /* Accessibility: Focus visible styles for interactive elements */
 button:focus-visible,
 .tab:focus-visible,
-.close-btn:focus-visible {
+.close-btn:focus-visible,
+.filter-select:focus-visible,
+.filter-input:focus-visible {
   outline: 2px solid var(--text-accent);
   outline-offset: 2px;
 }
