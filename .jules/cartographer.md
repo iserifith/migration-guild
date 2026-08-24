@@ -33,3 +33,7 @@
 ## 2024-08-22 - UI Presentation Ordering via SQLite
 **Learning:** The CLI dashboard uses a hardcoded `ORDER BY CASE status WHEN 'pending' THEN 1 ... END` directly in SQLite queries (e.g. `printStatusSummary` in `migration/guildctl/dashboard.ts`) to enforce business-logic pipeline ordering of aggregated rows, avoiding the need for an in-memory JS sort step.
 **Action:** When adding new aggregations or UI views that have a logical pipeline order, implement the sorting directly in the SQL projection rather than fetching and mapping arrays in the backend.
+
+## 2024-08-25 - Pipeline Readiness Property Masking
+**Learning:** The CLI runner for the planner (`migration/guildctl/commands/plan.ts`) uses a single central struct for gating (`PlanningReadiness`), but evaluates gates sequentially across the lifecycle of the command rather than all at once. It achieves this by pulling the full struct via `evaluatePlanningReadiness`, but calling `formatPlanningBlockMessage` with artificially empty arrays for fields (like `unconfirmedDispositions`) that shouldn't trigger a block until a later stage in the run.
+**Action:** When documenting orchestration commands that reuse central validation logic, verify if the orchestration layer manually overrides or masks properties to bypass certain checks at different points in time.
