@@ -1,3 +1,6 @@
 ## 2024-06-25 - Prevent UI jank via memoization
 **Learning:** Polling hooks in App.tsx (like useRegistryData) re-render the entire app shell frequently. Since complex list views derive derived state inside the render function without wrapping the component in React.memo, this causes deep DOM updates. While useMemo is used internally in some lists, unmemoized list views still recalculate heavily on every polling tick.
 **Action:** Always wrap heavy list components or tabs in React.memo when they are subject to top-down prop updates driven by a global poller, preventing child tree re-evaluations when props remain structurally identical.
+## 2024-08-25 - React.memo() missing on detail components
+**Learning:** The `useRegistryData` hook generates new object references on every render during global state polling. While major list components like `ArtifactList` were wrapped in `React.memo()`, their child detail views (`ArtifactDetail`, `RunLogViewer`) were not, causing them to unnecessarily re-render on every poll tick even if their input props didn't change.
+**Action:** When finding missing React.memo() optimizations, always check both the parent list components and their respective detail view siblings for consistency.
