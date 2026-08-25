@@ -23,6 +23,10 @@ export default memo(function ArtifactList({
   const [filterKind, setFilterKind] = useState("");
   const [selected, setSelected] = useState<Artifact | null>(null);
 
+  // ⚡ Bolt: wrap onClose in useMemo so the detail view's React.memo isn't invalidated
+  // by a new inline function reference on every polling tick.
+  const closeDetail = useMemo(() => () => setSelected(null), []);
+
   if (loading) {
     return <LoadingState resource="artifacts" />;
   }
@@ -164,7 +168,7 @@ export default memo(function ArtifactList({
       {selected && (
         <ArtifactDetail
           artifact={selected}
-          onClose={() => setSelected(null)}
+          onClose={closeDetail}
           timeMode={timeMode}
         />
       )}

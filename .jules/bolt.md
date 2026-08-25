@@ -4,3 +4,6 @@
 ## 2024-08-25 - React.memo() missing on detail components
 **Learning:** The `useRegistryData` hook generates new object references on every render during global state polling. While major list components like `ArtifactList` were wrapped in `React.memo()`, their child detail views (`ArtifactDetail`, `RunLogViewer`) were not, causing them to unnecessarily re-render on every poll tick even if their input props didn't change.
 **Action:** When finding missing React.memo() optimizations, always check both the parent list components and their respective detail view siblings for consistency.
+## 2024-08-25 - React.memo() props stability
+**Learning:** Wrapping a component in `React.memo()` is ineffective if the parent component passes unstable inline references (like `onClose={() => setSelected(null)}`) as props. Since the parent still re-renders on every poll, the inline function creates a new reference, invalidating the memoization of the child.
+**Action:** When memoizing child components, also ensure their parent components pass referentially stable callback props (using `useCallback` or `useMemo` for inline handlers that rely on state dispatchers).
