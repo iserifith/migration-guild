@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, memo } from "react";
 import { EmptyState, ErrorState, LoadingState } from "./ViewState";
 
 interface RunLogViewerProps {
@@ -10,7 +10,8 @@ interface RunLogViewerProps {
   onRetry: () => void;
 }
 
-export default function RunLogViewer({
+// ⚡ Bolt: Memoize component to prevent unnecessary re-renders when parent lists poll global state
+export default memo(function RunLogViewer({
   selectedRunId,
   selectedRunLogFile,
   log,
@@ -111,4 +112,4 @@ export default function RunLogViewer({
       )}
     </div>
   );
-}
+});

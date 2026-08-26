@@ -1,10 +1,11 @@
-import React, { useEffect } from "react";
+import React, { useEffect, memo } from "react";
 import type { Artifact, TimeDisplayMode } from "../types";
 import { useEvents } from "../hooks";
 import { formatTimestamp } from "../format";
 import { EmptyState, ErrorState, LoadingState } from "./ViewState";
 
-export default function ArtifactDetail({
+// ⚡ Bolt: Memoize component to prevent unnecessary re-renders when parent lists poll global state
+export default memo(function ArtifactDetail({
   artifact,
   onClose,
   timeMode,
@@ -103,4 +104,4 @@ export default function ArtifactDetail({
       </div>
     </div>
   );
-}
+});
