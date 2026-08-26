@@ -1,0 +1,94 @@
+# Environment Precedence and Divergence
+
+## Overview
+
+The `migration/guildctl/env.ts` module implements the environment precedence rules defined in `specs/001-truthful-run-state/contracts/environment-precedence.md` §B. Its primary role is to resolve the runtime environment for a Migration Guild checkout, deciding when a workspace `.env` file should take precedence over the inherited shell environment.
+
+This module is not a simple wrapper around `dotenv`. To provide truthful, reportable run state (SC-003) and satisfy Fail-Closed safety constraints (US1/#119), it implements a custom snapshot-then-apply algorithm that computes the exact divergence between local files and the ambient environment before any variables are overridden.
+
+## Architecture & Precedence Rules
+
+The precedence algorithm operates in two possible modes:
+- **`project` (default)**: The workspace `.env` describes the runtime a checkout uses. Absent an explicit opt-in, it beats the same variable inherited from the surrounding shell.
+- **`ambient`**: The ambient environment takes precedence over the project `.env`.
+
+The mode is resolved in `migration/guildctl/env.ts:resolveEnvPrecedenceMode`. A project file cannot grant itself ambient precedence; it must be opted into via:
+1. The global CLI flag `--ambient-env`.
+2. The bootstrap setting `GUILD_ENV_PRECEDENCE=ambient`.
+
+Because the environment must be settled before module imports start executing, the CLI (`migration/guildctl/cli.ts`) scans the raw `process.argv` for the `--ambient-env` flag using `hasAmbientEnvFlag()` *before* Commander has parsed the arguments.
+
+### Fail-Closed Semantics
+
+A critical invariant enforced in `env.ts` is the "Fail-Closed" rule for credentials. If a project `.env` defines a variable as empty (e.g. `NINE_ROUTER_API_KEY=`) but the ambient environment still holds a working, non-empty value, the system will favor the ambient value even in `project` mode. This prevents an empty explicit value from overwriting a valid credential and causing a silent 401 error.
+
+## Step-by-Step Flow
+
+The main logic happens in `migration/guildctl/env.ts:loadGuildEnvironment`. It executes in four distinct phases:
+
+### 1. Snapshot the Ambient Environment
+
+Before any file is read, a complete copy of the target environment (usually `process.env`) is made.
+```typescript
+const ambient: NodeJS.ProcessEnv = { ...(options.ambient ?? target) };
+const ambientFlag = options.ambientFlag ?? hasAmbientEnvFlag(options.argv ?? process.argv);
+const mode = resolveEnvPrecedenceMode(ambient, ambientFlag);
+```
+Nothing below this step mutates the `ambient` snapshot, ensuring a stable basis for comparison.
+
+### 2. Parse Candidates (No Side Effects)
+
+The system checks candidate files. First, it parses the workspace `.env`.
+```typescript
+const workspaceEnvPath = path.resolve(cwd, ".env");
+const project = fs.existsSync(workspaceEnvPath) ? parseCandidate(workspaceEnvPath) : {};
+```
+Next, it parses fallback install-relative candidates (to preserve compatibility for older non-workspace installs). If a candidate cannot be read, `parseCandidate` safely catches the error and returns `{}`; an unreadable candidate is treated exactly as a missing file. At this stage, files are only parsed into dictionaries; the global `process.env` is not modified.
+
+### 3. Compute Divergence Set
+
+The divergence set is computed *before* precedence is applied. `env.ts` compares the `project` dictionary against the `ambient` snapshot to identify any variables that differ.
+
+```typescript
+for (const [variable, projectValue] of Object.entries(project)) {
+  const ambientValue = ambient[variable];
+  if (ambientValue === undefined || ambientValue === projectValue) continue;
+  // ... check secrets and fail-closed rule
+}
+```
+
+If the variable is sensitive (via `isSensitiveEnvName`), the literal values are swapped out for `<redacted>` to prevent secrets from appearing in the divergence report.
+
+It is during this stage that the Fail-Closed rule (empty project value vs working ambient value) is evaluated. If triggered, the `winner` is forced to `"ambient"`, and an `emptyButDefined: true` flag is set on the divergence record.
+
+### 4. Apply Precedence
+
+Finally, the target (usually `process.env`) is populated, and an `origin` map is built to record whether `"project-file"` or `"ambient"` won for each variable.
+```typescript
+for (const [key, value] of Object.entries(fileValues)) {
+  const ambientValue = ambient[key];
+  const fileWins = value !== "" && (ambientValue === undefined || (mode === "project" && key in project));
+
+  if (fileWins) {
+    target[key] = value;
+    origin[key] = "project-file";
+  } else {
+    // ... ambient wins
+  }
+}
+```
+Notably, `dotenv`'s `override: true` is deliberately avoided here. Overriding would destroy the ambient value *before* anything could compare it against the project file, making the always-on divergence report impossible.
+
+## Reporting and Presentation
+
+The `EnvLoadResult` generated by `loadGuildEnvironment` is stored at module scope inside `env.ts` (as `recordedLoad`), and can be retrieved via `lastEnvLoad()`, `envOriginMap()`, and `envDivergences()`.
+
+Step 5 of the specification—emitting the divergence report—deliberately does not happen inside `env.ts`. It is instead deferred to `migration/guildctl/runtime-report.ts:emitRuntimeReport`.
+
+When a phase starts, `emitRuntimeReport` renders the environment divergence block alongside the configuration block. Because `env.ts` already redacted secrets, `emitRuntimeReport` can blindly print the `EnvDivergence` records without risking accidental exposure.
+
+## Invariants and Gotchas
+
+* **No self-granting mode:** A `.env` file cannot set `GUILD_ENV_PRECEDENCE=ambient` to change how it is evaluated. The mode is strictly determined by the *ambient* snapshot or CLI flags.
+* **Install candidates don't diverge:** The install-relative fallback `.env` files (e.g., in `migration/dist/guildctl/`) never participate in the divergence calculation. They exist only to fill variables that nobody else defined.
+* **Load placement:** `loadGuildEnvironment` must execute at module scope in `cli.ts` (before command actions and imports), ensuring that nested dependencies don't accidentally read an unsettled `process.env`.

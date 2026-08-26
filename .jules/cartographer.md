@@ -36,3 +36,7 @@
 ## 2024-08-25 - Property Masking in Sequence Evaluation
 **Learning:** The CLI runner for the planner (`migration/guildctl/commands/plan.ts`) uses property masking on the `PlanningReadiness` struct (by passing artificially empty arrays via the spread operator) to evaluate gating checks sequentially across its lifecycle, rather than evaluating all checks simultaneously at the start.
 **Action:** When evaluating sequential gates or constraints across multiple domains, consider property masking to bypass specific checks while reusing the same underlying formatter logic.
+
+## 2024-03-24 - Environment Precedence and Divergence Evaluation
+**Learning:** The `guildctl` environment precedence system (`migration/guildctl/env.ts`) intentionally avoids `dotenv`'s `override: true` in favor of a custom snapshot-then-apply algorithm. Overriding natively would destroy the ambient value before anything could compare it against the project file, making the mandatory divergence report impossible.
+**Action:** When extending configuration or environment logic that requires reporting on "what was overridden", always capture a pure snapshot of the initial state before applying any side-effects or third-party mergers.
