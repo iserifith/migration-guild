@@ -36,3 +36,7 @@
 ## 2024-08-25 - Property Masking in Sequence Evaluation
 **Learning:** The CLI runner for the planner (`migration/guildctl/commands/plan.ts`) uses property masking on the `PlanningReadiness` struct (by passing artificially empty arrays via the spread operator) to evaluate gating checks sequentially across its lifecycle, rather than evaluating all checks simultaneously at the start.
 **Action:** When evaluating sequential gates or constraints across multiple domains, consider property masking to bypass specific checks while reusing the same underlying formatter logic.
+
+## 2024-08-25 - Environment Snapshot-Then-Apply
+**Learning:** Environment precedence (`migration/guildctl/env.ts`) deliberately avoids `dotenv`'s `override: true` to prevent silently overwriting ambient variables. It instead uses a custom snapshot-then-apply algorithm that computes the difference *before* applying. Crucially, it implements a "fail-closed" mechanism where an empty credential in `.env` will not overwrite a working ambient credential.
+**Action:** When working with environment configuration logic, do not assume simple overrides. Always trace how divergences are calculated and respect fail-closed protections for working credentials.
