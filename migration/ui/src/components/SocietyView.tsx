@@ -208,6 +208,7 @@ const SocietyViewContent = React.memo(function SocietyViewContent({ data, select
   );
 });
 
-export default function SocietyView({ data }: SocietyViewProps) {
+// ⚡ Bolt: Memoize component to prevent unnecessary re-renders when App polls global state
+export default React.memo(function SocietyView({ data }: SocietyViewProps) {
   return data ? <SocietyViewContent data={data} /> : <LiveSocietyView />;
-}
+});

@@ -212,6 +212,7 @@ const MissionControlView = React.memo(function MissionControlView({ data }: { da
   );
 });
 
-export default function MissionControl({ data }: MissionControlProps) {
+// ⚡ Bolt: Memoize component to prevent unnecessary re-renders when App polls global state
+export default React.memo(function MissionControl({ data }: MissionControlProps) {
   return data ? <MissionControlView data={data} /> : <LiveMissionControl />;
-}
+});
