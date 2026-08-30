@@ -25,7 +25,8 @@ const roleTokens: Record<SocietyRole, { foreground: string; background: string }
   arbiter: { foreground: "var(--text-pro)", background: "var(--bg-pro)" },
 };
 
-function LiveMissionControl() {
+// ⚡ Bolt: Memoize component to prevent unnecessary re-renders when App polls global state
+const LiveMissionControl = React.memo(function LiveMissionControl() {
   const statusHook = useStatus();
   const societyHook = useSociety();
   const wavePlanHook = useWavePlan();
@@ -82,7 +83,7 @@ function LiveMissionControl() {
       <MissionControlView data={data} />
     </>
   );
-}
+});
 
 const MissionControlView = React.memo(function MissionControlView({ data }: { data: MissionControlData }) {
   return (
@@ -212,7 +213,6 @@ const MissionControlView = React.memo(function MissionControlView({ data }: { da
   );
 });
 
-// ⚡ Bolt: Memoize component to prevent unnecessary re-renders when App polls global state
-export default React.memo(function MissionControl({ data }: MissionControlProps) {
+export default function MissionControl({ data }: MissionControlProps) {
   return data ? <MissionControlView data={data} /> : <LiveMissionControl />;
-});
+}

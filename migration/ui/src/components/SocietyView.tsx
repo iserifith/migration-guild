@@ -22,7 +22,8 @@ const stepToken = (kind: LifecycleStep["kind"]) => {
 
 const roleLabel = (role: SocietyRole) => role[0].toUpperCase() + role.slice(1);
 
-function LiveSocietyView() {
+// ⚡ Bolt: Memoize component to prevent unnecessary re-renders when App polls global state
+const LiveSocietyView = React.memo(function LiveSocietyView() {
   const { artifacts } = useArtifacts();
   const { sessions } = useSessions();
   const [selectedArtifactId, setSelectedArtifactId] = React.useState("");
@@ -71,7 +72,7 @@ function LiveSocietyView() {
     };
   }, [artifacts, sessions, selectedArtifactId, society, events]);
   return <SocietyViewContent data={data} selectedId={selectedArtifactId} onSelect={setSelectedArtifactId} />;
-}
+});
 
 const SocietyViewContent = React.memo(function SocietyViewContent({ data, selectedId, onSelect }: { data: SocietyViewData; selectedId?: string; onSelect?: (id: string) => void }) {
   const [selectedArtifactId, setSelectedArtifactId] = React.useState(data.initialArtifactId);
@@ -208,7 +209,6 @@ const SocietyViewContent = React.memo(function SocietyViewContent({ data, select
   );
 });
 
-// ⚡ Bolt: Memoize component to prevent unnecessary re-renders when App polls global state
-export default React.memo(function SocietyView({ data }: SocietyViewProps) {
+export default function SocietyView({ data }: SocietyViewProps) {
   return data ? <SocietyViewContent data={data} /> : <LiveSocietyView />;
-});
+}
