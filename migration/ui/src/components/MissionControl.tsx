@@ -212,6 +212,6 @@ const MissionControlView = React.memo(function MissionControlView({ data }: { da
   );
 });
 
-export default function MissionControl({ data }: MissionControlProps) {
+export default React.memo(function MissionControl({ data }: MissionControlProps) {
   return data ? <MissionControlView data={data} /> : <LiveMissionControl />;
-}
+});

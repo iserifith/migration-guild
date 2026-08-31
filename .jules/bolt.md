@@ -7,3 +7,6 @@
 ## 2024-08-25 - React.memo() props stability
 **Learning:** Wrapping a component in `React.memo()` is ineffective if the parent component passes unstable inline references (like `onClose={() => setSelected(null)}`) as props. Since the parent still re-renders on every poll, the inline function creates a new reference, invalidating the memoization of the child.
 **Action:** When memoizing child components, also ensure their parent components pass referentially stable callback props (using `useCallback` or `useMemo` for inline handlers that rely on state dispatchers).
+## 2024-08-31 - React.memo() missing on top-level tab components
+**Learning:** Top-level tab components like `MissionControl` and `SocietyView` were rendering child views (e.g., `LiveMissionControl`) without `React.memo()`. Because `App.tsx` has a global poller (`useRegistryData`) that causes the entire shell to re-render every few seconds, these unmemoized top-level components were unnecessarily re-rendered on every poll tick, even though their props did not change. This caused cascading re-renders and unnecessary re-evaluations inside their child components.
+**Action:** Always verify that top-level route or tab components are wrapped in `React.memo()` if their parent components are subject to frequent re-renders from global state polling.
