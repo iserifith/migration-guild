@@ -209,6 +209,6 @@ const SocietyViewContent = React.memo(function SocietyViewContent({ data, select
   );
 });
 
-export default function SocietyView({ data }: SocietyViewProps) {
+export default React.memo(function SocietyView({ data }: SocietyViewProps) {
   return data ? <SocietyViewContent data={data} /> : <LiveSocietyView />;
-}
+});
