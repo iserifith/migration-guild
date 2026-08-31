@@ -1,0 +1,42 @@
+# Phase 0 Research: Adversary Agent Role Between Review and the Approval Gate
+
+No NEEDS CLARIFICATION markers remained in the Technical Context after the spec's clarification session (see spec.md Clarifications, 2026-09-01) — all four open questions (reserved slot literal, inconclusive-probe handling, gate-bound pass visibility, attempt-state accounting) were resolved there. This document instead records the design decisions inherited from, and diverging from, issue #216's finished research/plan, since #216 is this feature's direct foundation.
+
+## Decision: Insertion point is the below-cutoff branch of `approveArtifactWithEvidence`, not a new gate
+
+**Decision**: The adversary-agent checkpoint sits inside `approveArtifactWithEvidence` (`migration/registry/commands/evidence.ts`), immediately before the `gateScope.inScope` branch decides between `pending-approval` and `reviewed` — specifically, gating the `setArtifactStatus(db, opts.artifactId, "reviewed")` call at the bottom of that function (line ~552 as read on this branch).
+
+**Rationale**: This is the exact code location the spec's "complete unattended" language refers to — the one place a below-cutoff artifact transitions to `reviewed` with zero further check today. Placing the adversary-agent checkpoint here (rather than as a separate CLI-driven pipeline stage the operator must remember to invoke) makes it structurally impossible to skip, matching FR-006's "runs regardless of risk tier" requirement and Constitution Principle VI (fail-closed automation) — an optional, separately-triggered step is not fail-closed by construction.
+
+**Alternatives considered**:
+- A new standalone CLI command (`adversary-check`) invoked as its own pipeline phase, analogous to `guildctl verify`. Rejected: this reintroduces exactly the "second parallel gate" the issue explicitly asks to avoid, and nothing in the pipeline's `auto-run` orchestration would structurally force it to run before `reviewed`, unlike a check embedded in the function that already owns that transition.
+- Running the check inside `review-agent` itself (folding "adversarial probe" into the existing critic pass). Rejected by the source proposal itself: review-agent's job is diagnosis against the spec, a fundamentally different mode from constructing an actively test-defeating case; conflating them risks neither being done well, and the spec's Constitution Principle IV framing (separation of powers) argues for a distinct role, not an expanded one.
+
+## Decision: Reuse `agent_context`/`writeContext`/`getContext` verbatim, add a second reserved key
+
+**Decision**: The adversary-agent's finding is stored via the same mechanism #216 built for `rejection-envelope` — a `writeAdversaryEnvelope`/`getAdversaryEnvelope` pair (or equivalent thin wrapper functions) that write/read one `agent_context` row keyed `(artifact_id, "adversary-envelope")`, following the identical synthesized-`## Summary` file convention `writeRejectionEnvelope` uses.
+
+**Rationale**: #216 already proved this pattern for exactly this shape of problem (relay a machine-readable reason to the next remediation attempt without a new table/transport). Reusing it verbatim — not just the concept but the actual helper functions and file-layout convention — is what makes this genuinely "reuse the plumbing" rather than a parallel reimplementation, satisfying FR-007. The two reserved keys (`rejection-envelope`, `adversary-envelope`) share the mechanism and diverge only in the one dimension that matters: which call site writes them, so a reader can distinguish origin by slot alone (FR-008), matching #216's own User Story 2 precedent that distinguishability-by-slot (not by prose) is the load-bearing property.
+
+**Alternatives considered**:
+- A single shared `rejection-envelope` slot carrying either a human or an adversary reason, disambiguated by a prefix in the text. Rejected: this was explicitly ruled out by the grounding investigation (see plan.md Summary) — it would make an automated adversary finding indistinguishable from a human judgment call except by parsing prose, which is precisely the anti-pattern #216's FR-002/FR-008 rejected for context vs. rejection reasons generally.
+- A brand-new table (`adversary_findings`) instead of reusing `agent_context`. Rejected: no new query pattern is needed beyond "latest finding per artifact," which `agent_context`'s existing upsert-by-`(artifact_id, agent)` semantics already provides for free; a new table would duplicate schema, migration, and read/write code for no added capability (#216's data-model.md made the identical call for its own envelope).
+
+## Decision: Do not reuse or modify `recordApprovalDecision`
+
+**Decision**: `recordApprovalDecision` (`migration/registry/commands/approval.ts`) is left untouched by this feature (FR-017). The adversary-agent's routing to `needs-rework` instead reuses the lower-level primitives that function itself is built on: `setArtifactStatus` and `appendEvent`.
+
+**Rationale**: Confirmed by reading the actual code (not just the issue text), `recordApprovalDecision` requires `getArtifactStatus(db, opts.artifactId) === "pending-approval"` as a hard precondition (throws `RegistryError(1, "Artifact is not awaiting approval.")` otherwise) and is a human-operator-credentialed flow (operator token validation, arbiter-independence check, evidence freshness). An adversary-agent probing a below-cutoff artifact acts on an artifact that will never reach `pending-approval` at all — the precondition can never hold. Independently, #216's own spec.md clarification states the scope explicitly: "Human operator rejections only; the automated-arbiter rejection path is out of scope for v1," and its data-model.md lifecycle notes the envelope is "Left untouched by ... the automated-arbiter rejection path (`rejectArtifactWithEvidence`) — out of scope per clarification." An automated adversary-agent finding is further still from "human operator" than the arbiter's own already-excluded automated path.
+
+**Alternatives considered**:
+- Extend `recordApprovalDecision`'s precondition to also accept a `"migrated"`/pre-gate status when the decision originates from the adversary-agent. Rejected: this would silently widen a function #216 explicitly scoped to the human operator flow, undermining the "human operator rejections only" boundary #216 deliberately drew, and would entangle two independently-evolving call sites (human-credentialed vs. agent-automated) inside one function's precondition logic.
+- Route through `rejectArtifactWithEvidence` (the arbiter's own automated rejection path) by having the adversary-agent call it under an `arbiter` identity. Rejected: that function's semantics are "the independent arbiter rejects based on evidence"; the adversary-agent is not the arbiter (Constitution Principle IV keeps these roles separate), and #216 already excludes this exact path from the envelope relay by name, so building on it would inherit that same v1 exclusion rather than solve it.
+
+## Decision: Inconclusive probe is fail-closed, not fail-open
+
+**Decision**: When the adversary-agent cannot run its probe at all (verify command missing/unusable for the stack), the artifact still routes to `needs-rework`, and the `adversary-envelope` slot records that the probe was inconclusive and why (FR-008a), rather than allowing the artifact to proceed toward `reviewed`.
+
+**Rationale**: Resolved directly in the spec's clarification session. This deliberately diverges from `review-agent.agent.md`'s existing tolerance pattern ("Compile checks are optional, never required... note it in your verdict and move on") because that precedent exists for a different failure mode (a missing *build* toolchain does not prevent diagnosis-by-reading), whereas an adversary-agent that cannot run any probe has produced no adversarial signal whatsoever for a below-cutoff artifact that will otherwise complete unattended — silently passing it through would completely defeat the feature's purpose.
+
+**Alternatives considered**:
+- Fail-open with a visibility flag only (artifact proceeds to `reviewed`, inconclusive note recorded for later audit). This was presented as the non-recommended option in the clarification question and not selected, precisely because it reintroduces the "complete unattended" gap for the subset of artifacts whose stack tooling is unavailable — likely correlated, not random, risk.
