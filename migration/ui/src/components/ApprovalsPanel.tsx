@@ -65,7 +65,16 @@ function RejectForm({
         aria-busy={isSubmitting}
         title={!trimmed ? "A rejection reason is required" : undefined}
       >
-        {isSubmitting ? "Rejecting..." : "Confirm rejection"}
+        <div className="button-content">
+          {isSubmitting ? (
+            <>
+              <span className="spinner" aria-hidden="true" />
+              <span>Rejecting...</span>
+            </>
+          ) : (
+            "Confirm rejection"
+          )}
+        </div>
       </button>
       <button className="state-button" onClick={onCancel} type="button" disabled={isSubmitting}>
         Cancel
@@ -191,7 +200,16 @@ export default memo(function ApprovalsPanel({
                           type="button"
                           aria-busy={submittingId === a.artifactId && submittingDecision === "approved"}
                         >
-                          {submittingId === a.artifactId && submittingDecision === "approved" ? "Approving..." : "Approve"}
+                          <div className="button-content">
+                            {submittingId === a.artifactId && submittingDecision === "approved" ? (
+                              <>
+                                <span className="spinner" aria-hidden="true" />
+                                <span>Approving...</span>
+                              </>
+                            ) : (
+                              "Approve"
+                            )}
+                          </div>
                         </button>
                         <button
                           className="state-button"

@@ -341,7 +341,16 @@ export default function App() {
             title={loading ? "Refreshing..." : "Refresh"}
             type="button"
           >
-            {loading ? "↻ refreshing..." : "↻ refresh"}
+            <div className="button-content">
+              {loading ? (
+                <>
+                  <span className="spinner" aria-hidden="true" />
+                  <span>refreshing...</span>
+                </>
+              ) : (
+                "↻ refresh"
+              )}
+            </div>
           </button>
         </div>
       </header>

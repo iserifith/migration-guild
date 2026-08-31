@@ -24,3 +24,7 @@
 ## 2024-05-24 - Missing keyboard collapse interactions and form focus styles
 **Learning:** Expanding UI panels like Artifact Details and Run Logs often lack intuitive keyboard dismissal mechanisms like the `Escape` key, despite having expanded states (`aria-expanded`). Additionally, standard browser focus rings on complex custom form elements (like filter selects) can sometimes suffer from low contrast.
 **Action:** When implementing expandable panels or modal-like detail views, always add `Escape` key listeners to allow keyboard users to easily dismiss the view. For form controls, explicitly ensure focus states (`:focus-visible`) match the high-contrast accent colors of the design system.
+
+## 2026-08-30 - Add loading spinners to async buttons
+**Learning:** Loading states for async operations in React can benefit from explicit visual spinners rather than just changing text, to clearly indicate that a process is running without feeling stuck, and should use standard ARIA `aria-busy` along with matching visual context.
+**Action:** When creating or updating components with async state, include inline loading spinners using common `.spinner` and `.button-content` CSS utilities instead of just swapping label text.
