@@ -8,6 +8,21 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ### September 1, 2026
 
+- Shipped Spec 015 — always-on supervisor staleness sweep (issue #218).
+  `runAutoQueue` (`migration/guildctl/supervisor/queue.ts`) now re-invokes the
+  existing `reapDeadRuns`/`reconcileStaleClaims` pair at loop-iteration
+  boundaries (not only once at startup), so a claim or run that goes stale
+  mid-`auto-run` session self-heals without an operator running `guildctl
+  doctor`/`guildctl repair`. The interval defaults to 10 minutes and is
+  configurable via `GUILDCTL_SWEEP_INTERVAL_MINS` (falls back to the default
+  on any unset/zero/negative/non-numeric value); an injectable clock keeps
+  the timing deterministic in tests. Periodic-sweep recoveries merge into the
+  existing `AutoQueueResult.recoveredArtifacts` array (deduplicated) and are
+  reported live via one distinctly-labeled `[guildctl]` line (silent on a
+  clean sweep) threaded through `AutoQueueOptions.write` from
+  `runAutoRunCommand`; a sweep that throws is caught and reported as
+  non-fatal, never aborting the queue. Standalone `guildctl auto` is
+  explicitly out of scope. See `specs/015-supervisor-staleness-sweep/`.
 - Shipped Spec 016 — a four-state run-status vocabulary (`working` / `idle` /
   `waiting-for-approval` / `rejected`) on the Mission Control operator dashboard (#220).
   A new read-only `queryRunStatusForUI` function in `migration/registry/commands/queries.ts`

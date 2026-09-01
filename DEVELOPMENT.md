@@ -217,6 +217,31 @@ Environment knobs introduced for migration pool reliability:
 
 If any of the above semantics change, update both maintainer docs (`DEVELOPMENT.md`, `CHANGELOGS.MD`) and any external maintainer-only runtime architecture notes.
 
+## Always-on supervisor staleness sweep (015-supervisor-staleness-sweep, issue #218)
+
+`runAutoQueue` (`migration/guildctl/supervisor/queue.ts`) re-invokes the same
+`reapDeadRuns`/`reconcileStaleClaims` pair it already runs once at startup at
+loop-iteration boundaries, so a claim or run that goes stale mid-`auto-run`
+session self-heals without an operator running `guildctl doctor`/`guildctl
+repair`.
+
+- New environment variable: `GUILDCTL_SWEEP_INTERVAL_MINS` — minutes between
+  periodic sweeps, default `10`. Unset, empty, `0`, negative, or non-numeric
+  values all fall back to the default (`resolveSweepIntervalMs()`), following
+  the same parsing convention as `GUILDCTL_STALL_MINS`
+  (`migration/guildctl/monitoring.ts`). Not exposed as a CLI flag.
+- Findings merge into the existing `AutoQueueResult.recoveredArtifacts` array
+  (deduplicated against the startup sweep); no new field was added to keep
+  existing JSON-output consumers unaffected.
+- A periodic sweep that recovers something writes one distinctly-labeled
+  `[guildctl]` line live (via `AutoQueueOptions.write`, threaded from
+  `runAutoRunCommand` in `migration/guildctl/commands/auto-run.ts`); a clean
+  sweep is silent; a sweep that throws is caught, reported as a non-fatal
+  warning line, and never aborts the queue.
+- Scope boundary: this applies to `auto-run`'s queue loop only. Standalone
+  `guildctl auto` (`migration/guildctl/commands/auto.ts`), `guildctl doctor`,
+  and `guildctl repair` are unchanged.
+
 ## Truthful run state (001-truthful-run-state)
 
 Run/claim lifecycle and reporting changes from this feature:

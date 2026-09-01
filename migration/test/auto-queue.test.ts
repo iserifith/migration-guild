@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import Database from "better-sqlite3";
-import { runAutoQueue, type QueueArtifactExecutor } from "../guildctl/supervisor/queue";
+import { resolveSweepIntervalMs, runAutoQueue, type QueueArtifactExecutor } from "../guildctl/supervisor/queue";
 import { runAutoRunCommand } from "../guildctl/commands/auto-run";
 import { DEFAULT_GUILD_CONFIG } from "../guildctl/config";
 import type { PreflightResult } from "../guildctl/preflight";
@@ -61,6 +62,19 @@ function sourceDep(db: Database.Database, dependentId: string, dependencyId: str
     INSERT INTO source_dependencies (dependent_id, dependency_id, signal, created_by)
     VALUES (?, ?, 'import', 'auto')
   `).run(dependentId, dependencyId);
+}
+
+/**
+ * T004: deterministic clock for periodic-sweep tests. `advance()` lets a test
+ * simulate the configured interval elapsing between loop iterations without a
+ * real wait.
+ */
+function createFakeClock(startMs: number): { now: () => number; advance: (ms: number) => void } {
+  let current = startMs;
+  return {
+    now: () => current,
+    advance: (ms: number) => { current += ms; },
+  };
 }
 
 function completingExecutor(db: Database.Database, calls: Array<{ id: string; resume: boolean }>): QueueArtifactExecutor {
@@ -370,4 +384,242 @@ test("terminal dependency with present modern output allows candidate selection"
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+// --- Periodic staleness sweep (spec 015, issue #218) ---------------------
+
+test("periodic sweep fires once the interval elapses mid-session and recovers a stale claim (US1)", async () => {
+  const db = createDb();
+  try {
+    const first = seed(db, "First");
+    const second = seed(db, "Second");
+    const staleTarget = seed(db, "StaleTarget");
+    const run = startRun(db, { runId: "mid-session-run", agent: "guildctl-auto", pid: null });
+    claimArtifactById(db, {
+      artifactId: staleTarget,
+      agent: "code-writer-agent",
+      ownerId: "guildctl-auto:StaleTarget",
+      runId: run.run_id,
+    });
+    const clock = createFakeClock(1_000_000);
+    const calls: string[] = [];
+
+    const result = await runAutoQueue(db, {
+      now: clock.now,
+      sweepIntervalMs: 5_000,
+      executeArtifact: async ({ artifactId }) => {
+        calls.push(artifactId);
+        if (artifactId === first) {
+          // Simulate the run backing `staleTarget`'s claim dying mid-session,
+          // and the configured interval elapsing before the next iteration.
+          finishRun(db, { runId: run.run_id, exitCode: 1, reason: "simulated crash" });
+          clock.advance(5_000);
+        }
+        setArtifactStatus(db, artifactId, "reviewed");
+        return { status: "complete", runId: `run-${calls.length}`, attempts: 1 };
+      },
+    });
+
+    // T008: the sweep-recovered artifact (not the one in flight) becomes
+    // selectable on a later iteration and shows up in processed + recoveredArtifacts.
+    assert.equal(result.status, "complete");
+    assert.deepEqual(calls, [first, second, staleTarget]);
+    assert.deepEqual(result.recoveredArtifacts, [staleTarget]);
+    assert.deepEqual(result.processed.map((p) => p.artifactId), [first, second, staleTarget]);
+    const active = db.prepare("SELECT COUNT(*) AS n FROM artifact_claims WHERE state = 'active'").get() as { n: number };
+    assert.equal(active.n, 0);
+  } finally {
+    db.close();
+  }
+});
+
+test("periodic sweep does not fire before the configured interval elapses (US1)", async () => {
+  const db = createDb();
+  try {
+    const first = seed(db, "First");
+    const staleTarget = seed(db, "StaleTarget");
+    const run = startRun(db, { runId: "not-yet-due-run", agent: "guildctl-auto", pid: null });
+    claimArtifactById(db, {
+      artifactId: staleTarget,
+      agent: "code-writer-agent",
+      ownerId: "guildctl-auto:StaleTarget",
+      runId: run.run_id,
+    });
+    const clock = createFakeClock(2_000_000);
+    const calls: string[] = [];
+
+    const result = await runAutoQueue(db, {
+      now: clock.now,
+      sweepIntervalMs: 5_000,
+      executeArtifact: async ({ artifactId }) => {
+        calls.push(artifactId);
+        if (artifactId === first) {
+          finishRun(db, { runId: run.run_id, exitCode: 1, reason: "simulated crash" });
+          // Advance by less than the interval — no periodic sweep should fire.
+          clock.advance(1_000);
+        }
+        setArtifactStatus(db, artifactId, "reviewed");
+        return { status: "complete", runId: `run-${calls.length}`, attempts: 1 };
+      },
+    });
+
+    // Only `first` was ever selectable; `staleTarget` stays claimed/in-progress
+    // because the interval never elapsed, so no periodic sweep ran.
+    assert.deepEqual(calls, [first]);
+    assert.deepEqual(result.recoveredArtifacts, []);
+    assert.equal(result.status, "stalled");
+    const active = db.prepare("SELECT COUNT(*) AS n FROM artifact_claims WHERE state = 'active'").get() as { n: number };
+    assert.equal(active.n, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test("a throwing periodic sweep is non-fatal and the queue reaches a normal terminal status (US1)", async () => {
+  const db = createDb();
+  try {
+    const first = seed(db, "First");
+    const second = seed(db, "Second");
+    const clock = createFakeClock(3_000_000);
+    const calls: string[] = [];
+
+    const result = await runAutoQueue(db, {
+      now: clock.now,
+      sweepIntervalMs: 1_000,
+      executeArtifact: async ({ artifactId }) => {
+        calls.push(artifactId);
+        if (artifactId === first) {
+          // Break the schema the periodic sweep's reconcileStaleClaims query
+          // depends on, simulating a sweep that throws. The startup sweep
+          // already ran successfully before this, so only the periodic
+          // sweep is affected.
+          db.exec("ALTER TABLE artifact_claims RENAME COLUMN lease_expires_at TO lease_expires_at_broken");
+          clock.advance(1_000);
+        }
+        setArtifactStatus(db, artifactId, "reviewed");
+        return { status: "complete", runId: `run-${calls.length}`, attempts: 1 };
+      },
+    });
+
+    assert.equal(result.status, "complete");
+    assert.equal(result.error, undefined);
+    assert.deepEqual(calls, [first, second]);
+  } finally {
+    db.close();
+  }
+});
+
+test("a periodic sweep that recovers something writes exactly one distinctly-labeled line (US2)", async () => {
+  const db = createDb();
+  try {
+    const first = seed(db, "First");
+    const staleTarget = seed(db, "StaleTarget");
+    const run = startRun(db, { runId: "mid-session-run-2", agent: "guildctl-auto", pid: null });
+    claimArtifactById(db, {
+      artifactId: staleTarget,
+      agent: "code-writer-agent",
+      ownerId: "guildctl-auto:StaleTarget",
+      runId: run.run_id,
+    });
+    const clock = createFakeClock(4_000_000);
+    const lines: string[] = [];
+    const calls: string[] = [];
+
+    await runAutoQueue(db, {
+      now: clock.now,
+      sweepIntervalMs: 2_000,
+      write: (text) => { lines.push(text); },
+      executeArtifact: async ({ artifactId }) => {
+        calls.push(artifactId);
+        if (artifactId === first) {
+          finishRun(db, { runId: run.run_id, exitCode: 1, reason: "simulated crash" });
+          clock.advance(2_000);
+        }
+        setArtifactStatus(db, artifactId, "reviewed");
+        return { status: "complete", runId: `run-${calls.length}`, attempts: 1 };
+      },
+    });
+
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], /^\[guildctl\] periodic sweep:/);
+    assert.match(lines[0], new RegExp(staleTarget.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  } finally {
+    db.close();
+  }
+});
+
+test("a clean periodic sweep produces zero additional output lines (US2)", async () => {
+  const db = createDb();
+  try {
+    seed(db, "First");
+    seed(db, "Second");
+    const clock = createFakeClock(5_000_000);
+    const lines: string[] = [];
+    const calls: string[] = [];
+
+    const result = await runAutoQueue(db, {
+      now: clock.now,
+      sweepIntervalMs: 500,
+      write: (text) => { lines.push(text); },
+      executeArtifact: async ({ artifactId }) => {
+        calls.push(artifactId);
+        clock.advance(500);
+        setArtifactStatus(db, artifactId, "reviewed");
+        return { status: "complete", runId: `run-${calls.length}`, attempts: 1 };
+      },
+    });
+
+    assert.equal(result.status, "complete");
+    assert.deepEqual(lines, []);
+  } finally {
+    db.close();
+  }
+});
+
+test("a periodic sweep error writes one non-fatal warning line distinct from a fatal auto-run failure (US2)", async () => {
+  const db = createDb();
+  try {
+    const first = seed(db, "First");
+    const second = seed(db, "Second");
+    const clock = createFakeClock(6_000_000);
+    const lines: string[] = [];
+    const calls: string[] = [];
+
+    const result = await runAutoQueue(db, {
+      now: clock.now,
+      sweepIntervalMs: 1_000,
+      write: (text) => { lines.push(text); },
+      executeArtifact: async ({ artifactId }) => {
+        calls.push(artifactId);
+        if (artifactId === first) {
+          db.exec("ALTER TABLE artifact_claims RENAME COLUMN lease_expires_at TO lease_expires_at_broken_2");
+          clock.advance(1_000);
+        }
+        setArtifactStatus(db, artifactId, "reviewed");
+        return { status: "complete", runId: `run-${calls.length}`, attempts: 1 };
+      },
+    });
+
+    assert.equal(result.status, "complete");
+    assert.equal(result.error, undefined);
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], /^\[guildctl\] periodic sweep failed \(non-fatal/);
+    assert.doesNotMatch(lines[0], /auto-run/);
+  } finally {
+    db.close();
+  }
+});
+
+test("resolveSweepIntervalMs falls back to the 10-minute default on unset/zero/negative/non-numeric input (US3)", () => {
+  assert.equal(resolveSweepIntervalMs(undefined), 10 * 60_000);
+  assert.equal(resolveSweepIntervalMs("0"), 10 * 60_000);
+  assert.equal(resolveSweepIntervalMs("-5"), 10 * 60_000);
+  assert.equal(resolveSweepIntervalMs("abc"), 10 * 60_000);
+  assert.equal(resolveSweepIntervalMs("3"), 3 * 60_000);
+});
+
+test("standalone guildctl auto path does not reference the periodic-sweep queue (US3)", () => {
+  const autoSourcePath = fileURLToPath(new URL("../guildctl/commands/auto.ts", import.meta.url));
+  const autoSource = fs.readFileSync(autoSourcePath, "utf8");
+  assert.doesNotMatch(autoSource, /runAutoQueue/);
 });
