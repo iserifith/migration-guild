@@ -18,6 +18,80 @@ function extractSummary(content: string): string {
   return match[1].trim();
 }
 
+// ─── Rejection envelope (#216) ────────────────────────────────────────────
+//
+// A reserved agent_context key that carries a human rejection's reason
+// forward to the next remediation attempt. The write side lives here
+// (called from recordApprovalDecision, migration/registry/commands/approval.ts)
+// and the read side is a thin wrapper over getContext below. Both sides share
+// this one constant so the reserved key can never drift between them.
+
+export const REJECTION_ENVELOPE_AGENT: Agent = "rejection-envelope";
+
+/**
+ * Write a human rejection's reason into the reserved rejection-envelope slot
+ * for one artifact (data-model.md, contracts/registry-commands.md). Synthesizes
+ * a minimal `## Summary` file at the canonical context path and upserts the
+ * corresponding agent_context row — the same upsert shape writeContext uses,
+ * scoped to (artifactId, REJECTION_ENVELOPE_AGENT) so it can never collide
+ * with any other agent's row for the same artifact (FR-002/FR-003). A second
+ * call for the same artifact upserts (overwrites) this same row, which is what
+ * makes "most recent rejection reason wins" automatic (FR-004).
+ *
+ * Not part of the module's public CLI-facing surface (no new CLI subcommand);
+ * used only by recordApprovalDecision, which wraps this call in a fail-open
+ * try/catch (FR-008) — this function itself may throw on filesystem/db errors.
+ */
+export function writeRejectionEnvelope(
+  db: Database.Database,
+  artifactId: string,
+  reason: string,
+): void {
+  const slug = idToSlug(artifactId);
+  const destDir = path.join("migration", "artifacts", slug, "context");
+  fs.mkdirSync(destDir, { recursive: true });
+
+  const destFile = path.join(destDir, `${REJECTION_ENVELOPE_AGENT}.md`);
+  const content = `## Summary\n\n${reason}\n`;
+  fs.writeFileSync(destFile, content, "utf-8");
+
+  db.prepare(
+    `
+    INSERT INTO agent_context (artifact_id, agent, file_path, summary, updated_at)
+    VALUES (@artifact_id, @agent, @file_path, @summary, datetime('now'))
+    ON CONFLICT (artifact_id, agent) DO UPDATE SET
+      file_path  = excluded.file_path,
+      summary    = excluded.summary,
+      updated_at = excluded.updated_at
+  `,
+  ).run({
+    artifact_id: artifactId,
+    agent: REJECTION_ENVELOPE_AGENT,
+    file_path: destFile,
+    summary: extractSummary(content),
+  });
+}
+
+/**
+ * Read back the most recent rejection reason recorded for an artifact, or
+ * null when none was ever recorded (FR-005/FR-007). Pure read, no side
+ * effects, safe for any artifact including one never rejected.
+ */
+export function getRejectionEnvelope(
+  db: Database.Database,
+  artifactId: string,
+): { reason: string } | null {
+  const response = getContext(db, artifactId, REJECTION_ENVELOPE_AGENT);
+  if (response.form === "none") {
+    return null;
+  }
+  const reason =
+    response.form === "file"
+      ? extractSummary(response.content ?? "")
+      : (response.content ?? "");
+  return { reason };
+}
+
 export function writeContext(
   db: Database.Database,
   id: string,
