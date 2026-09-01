@@ -9,6 +9,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type DependencyList,
@@ -61,6 +62,39 @@ interface LoadableState<T> {
   reload: () => void;
 }
 
+
+
+// Basic deep equality check for JSON-like API responses
+function isEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== typeof b) return false;
+  if (a === null || b === null) return false;
+
+  const isArrayA = Array.isArray(a);
+  const isArrayB = Array.isArray(b);
+  if (isArrayA !== isArrayB) return false;
+
+  if (isArrayA && isArrayB) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!isEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
+  if (typeof a === 'object' && typeof b === 'object') {
+    const keysA = Object.keys(a as Record<string, unknown>);
+    const keysB = Object.keys(b as Record<string, unknown>);
+    if (keysA.length !== keysB.length) return false;
+    for (const key of keysA) {
+      if (!Object.prototype.hasOwnProperty.call(b, key) || !isEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
 function useLoadableData<T>(
   loader: () => Promise<T>,
   initialData: T,
@@ -90,7 +124,9 @@ function useLoadableData<T>(
         if (requestIdRef.current !== requestId) {
           return;
         }
-        setData(result);
+        // ⚡ Bolt: Deep compare polling results to prevent unnecessary state updates
+        // and cascading re-renders in memoized child components
+        setData((prev) => isEqual(prev, result) ? prev : result);
         setLoading(false);
         hasLoadedOnceRef.current = true;
       })
@@ -111,7 +147,12 @@ function useLoadableData<T>(
     return () => window.clearInterval(timer);
   }, [load, pollIntervalMs]);
 
-  return { data, loading, error, reload: load };
+  // ⚡ Bolt: Memoize the hook result so object references remain stable
+  // when the parent component re-renders for other reasons
+  return useMemo(
+    () => ({ data, loading, error, reload: load }),
+    [data, loading, error, load]
+  );
 }
 
 // ── useArtifacts ──────────────────────────────────────────────────────────────
@@ -569,16 +610,30 @@ export function useRegistryData(
     runs.reload,
   ]);
 
-  return {
-    artifacts,
-    status,
-    wavePlan,
-    sessions,
-    blockers,
-    issues,
-    runs,
-    loading: artifacts.loading || status.loading,
-    error: artifacts.error ?? status.error,
-    reload,
-  };
+  // ⚡ Bolt: Memoize the registry data object so referential equality is preserved
+  // unless the underlying hooks actually return new references.
+  return useMemo(
+    () => ({
+      artifacts,
+      status,
+      wavePlan,
+      sessions,
+      blockers,
+      issues,
+      runs,
+      loading: artifacts.loading || status.loading,
+      error: artifacts.error ?? status.error,
+      reload,
+    }),
+    [
+      artifacts,
+      status,
+      wavePlan,
+      sessions,
+      blockers,
+      issues,
+      runs,
+      reload,
+    ]
+  );
 }
