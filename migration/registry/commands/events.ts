@@ -43,6 +43,9 @@ const VALID_EVENT_TYPES: readonly EventType[] = [
   "thread-created",
   "dependency-strategy-set",
   "remediation-confirmed-no-defect",
+  "adversary-flagged",
+  "adversary-inconclusive",
+  "adversary-probe-passed",
 ];
 
 export interface AppendEventOptions {

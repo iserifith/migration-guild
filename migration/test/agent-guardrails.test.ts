@@ -57,3 +57,28 @@ test("build-tool agents forbid hunting for a missing toolchain", () => {
   assert.match(instructions, /Do not hunt for a missing toolchain/);
   assert.match(instructions, /agent-reported-unverifiable/);
 });
+
+// #217 (building on #216): remediation-agent must read BOTH the human
+// rejection-envelope and the adversary-agent's adversary-envelope before
+// requeueing a needs-rework artifact, fold both in distinguishably when both
+// are present, and leave the reason/summary text unchanged when neither
+// resolves — mirrors T020-T025's contract.
+test("remediation agent reads both rejection-envelope and adversary-envelope, distinguishably, before requeueing", () => {
+  const remediation = readRepoFile("package", "agents", "remediation-agent.agent.md");
+
+  assert.match(remediation, /get-context --id "<id>" --agent rejection-envelope/);
+  assert.match(remediation, /get-context --id "<id>" --agent adversary-envelope/);
+  // The two origins must be distinguishably labeled when folded together.
+  assert.match(remediation, /Human rejection:/);
+  assert.match(remediation, /Adversary finding:/);
+  // Neither envelope resolving leaves the reason/summary text unchanged.
+  assert.match(remediation, /use the reason\/summary text unchanged/i);
+});
+
+test("adversary-agent procedure exists, is scoped to a single probe, and never routes artifacts itself", () => {
+  const adversary = readRepoFile("package", "agents", "adversary-agent.agent.md");
+
+  assert.match(adversary, /clean \| violation \| inconclusive/);
+  assert.match(adversary, /does \*\*not\*\* call `set-artifact-status`, `arbitrate`, or any other status-mutating CLI command/);
+  assert.match(adversary, /Never modify `legacy\/` or `modern\/`/);
+});

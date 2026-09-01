@@ -74,6 +74,7 @@ export function applySchema(db: Database.Database): void {
 
   ensureCharacterizationFixtureEvidenceType(db);
   ensureRemediationNoDefectEventType(db);
+  ensureAdversaryEnvelopeEventTypes(db);
 }
 
 /**
@@ -208,5 +209,118 @@ function ensureRemediationNoDefectEventType(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_events_artifact ON events(artifact_id);
     CREATE INDEX IF NOT EXISTS idx_events_type     ON events(type);
     CREATE INDEX IF NOT EXISTS idx_events_ts       ON events(ts);
+  `);
+}
+
+/**
+ * `events.type` is a CHECK-constrained column, so adding the adversary-agent
+ * checkpoint's three new literals (#217, building on #216: 'adversary-flagged',
+ * 'adversary-inconclusive', 'adversary-probe-passed') to an existing database
+ * requires the same table rebuild SQLite demands for any CHECK widening — the
+ * same pattern ensureRemediationNoDefectEventType already uses. Fresh
+ * databases get the widened CHECK from registry_schema.sql and this is a
+ * no-op there.
+ */
+function ensureAdversaryEnvelopeEventTypes(db: Database.Database): void {
+  const row = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'events'`)
+    .get() as { sql: string } | undefined;
+  if (!row || row.sql.includes("adversary-flagged")) return;
+
+  // Defensive: an earlier CHECK-widening rebuild (this function's own or a
+  // prior one's) that was interrupted before its DROP+RENAME can leave a
+  // stale `events_new` behind. Clear it first so this rebuild is idempotent
+  // rather than failing with "table events_new already exists".
+  db.exec(`DROP TABLE IF EXISTS events_new`);
+
+  // trg_artifact_status_change (AFTER UPDATE OF status ON artifacts) INSERTs
+  // into `events`. SQLite's ALTER TABLE ... RENAME TO recompiles every
+  // trigger/view/index that references the table being renamed as part of
+  // the rename itself — with `events` briefly absent (dropped, not yet
+  // renamed into place), that recompile fails with a confusing "error in
+  // trigger trg_artifact_status_change: no such table: main.events" even
+  // though the trigger body never actually runs. Drop the trigger before the
+  // rebuild and recreate it identically afterward so the rename has nothing
+  // referencing `events` to choke on.
+  db.exec(`DROP TRIGGER IF EXISTS trg_artifact_status_change`);
+
+  db.exec(`
+    CREATE TABLE events_new (
+        event_id     TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+        ts           TEXT NOT NULL DEFAULT (datetime('now')),
+        artifact_id  TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+        type         TEXT NOT NULL CHECK (type IN (
+                         'planned',
+                         'claimed',
+                         'claim-heartbeat',
+                         'claim-completed',
+                         'claim-released',
+                         'claim-expired',
+                         'run-reaped',
+                         'registered',
+                         'analyzed',
+                         'scaffolded',
+                         'migrated',
+                         'proposal-submitted',
+                         'evidence-submitted',
+                         'critique-issued',
+                         'arbitration-approved',
+                         'arbitration-rejected',
+                         'approval-gated',
+                         'approval-approved',
+                         'approval-rejected',
+                         'conflict-opened',
+                         'conflict-resolved',
+                         'benchmark-recorded',
+                         'reviewed',
+                         'remediated',
+                         'blocked',
+                         'unblocked',
+                         'completed',
+                         'issue-opened',
+                         'issue-resolved',
+                         'tag-added',
+                         'tag-removed',
+                         'context-written',
+                         'status-changed',
+                         'evaluated',
+                         'auto-completed',
+                         'auto-rework',
+                         'filesystem-violation',
+                         'thread-created',
+                         'dependency-strategy-set',
+                         'remediation-confirmed-no-defect',
+                         'adversary-flagged',
+                         'adversary-inconclusive',
+                         'adversary-probe-passed'
+                     )),
+        agent        TEXT NOT NULL,
+        model        TEXT,
+        summary      TEXT NOT NULL,
+        event_data   TEXT
+    );
+    INSERT INTO events_new SELECT * FROM events;
+    DROP TABLE events;
+    ALTER TABLE events_new RENAME TO events;
+    CREATE INDEX IF NOT EXISTS idx_events_artifact ON events(artifact_id);
+    CREATE INDEX IF NOT EXISTS idx_events_type     ON events(type);
+    CREATE INDEX IF NOT EXISTS idx_events_ts       ON events(ts);
+  `);
+
+  // Recreate the trigger dropped above, identical to registry_schema.sql's
+  // definition.
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS trg_artifact_status_change
+    AFTER UPDATE OF status ON artifacts
+    WHEN OLD.status != NEW.status
+    BEGIN
+      INSERT INTO events (artifact_id, type, agent, summary)
+      VALUES (
+        NEW.id,
+        'status-changed',
+        COALESCE(NEW.claimed_by, 'system'),
+        OLD.status || ' → ' || NEW.status
+      );
+    END;
   `);
 }

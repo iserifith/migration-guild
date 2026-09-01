@@ -40,6 +40,30 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
   into the Artifacts tab and the dashboard header on the existing poll cycle — no new
   polling mechanism. The existing `ApprovalsPanel` approve/reject data path and behavior
   are unchanged (regression-tested).
+- Shipped Spec 017 — an adversary-agent checkpoint between review and the
+  approval gate (#217, building on #216). `approveArtifactWithEvidence`
+  (`migration/registry/commands/evidence.ts`) now runs an adversary-agent
+  checkpoint unconditionally, before the below-cutoff `reviewed` transition
+  and before the gate-bound `pending-approval` hold: a clean probe changes
+  nothing (below-cutoff) or appends a signal-only `adversary-probe-passed`
+  event (gate-bound, never evidence, no `agent_context` write); a violating
+  or inconclusive probe routes the artifact to `needs-rework` regardless of
+  risk tier via the same `setArtifactStatus`/`appendEvent` primitives
+  `rejectArtifactWithEvidence` already uses, and appends an
+  `adversary-flagged`/`adversary-inconclusive` event. The finding is recorded
+  via new `writeAdversaryEnvelope`/`getAdversaryEnvelope` helpers
+  (`migration/registry/commands/context.ts`) under a new reserved
+  `agent_context` key, `adversary-envelope`, mirroring #216's
+  `rejection-envelope` write/read pattern exactly (upsert-by-`(artifact_id,
+  agent)`, synthesized `## Summary` file, fail-open write / fail-closed
+  status transition) — distinct from and never clobbering `rejection-envelope`.
+  `recordApprovalDecision` is unchanged (FR-017). A new
+  `package/agents/adversary-agent.agent.md` procedure defines the narrow
+  probe role itself (construct one input/test case that passes the existing
+  suite but violates spec intent); `remediation-agent.agent.md` gains a
+  second `get-context --agent adversary-envelope` read step alongside #216's
+  existing `rejection-envelope` read, folding both origins into the requeue
+  reason distinguishably when present. See `specs/017-adversary-agent-gate/`.
 
 ### August 21, 2026
 

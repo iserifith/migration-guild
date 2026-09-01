@@ -92,6 +92,84 @@ export function getRejectionEnvelope(
   return { reason };
 }
 
+// ─── Adversary envelope (#217, building on #216) ──────────────────────────
+//
+// A second reserved agent_context key, distinct from REJECTION_ENVELOPE_AGENT,
+// carrying an adversary-agent finding (or an inconclusive-probe reason)
+// forward to the next remediation attempt. Mirrors writeRejectionEnvelope /
+// getRejectionEnvelope exactly — same upsert-by-(artifact_id, agent) shape,
+// same synthesized `## Summary` file convention — so the two envelopes share
+// one mechanism and diverge only in which call site writes them (FR-007,
+// FR-008, data-model.md).
+
+export const ADVERSARY_ENVELOPE_AGENT: Agent = "adversary-envelope";
+
+/**
+ * Write an adversary-agent finding (or inconclusive-probe reason) into the
+ * reserved adversary-envelope slot for one artifact (data-model.md,
+ * contracts/registry-commands.md). Synthesizes a minimal `## Summary` file at
+ * the canonical context path and upserts the corresponding agent_context row,
+ * scoped to (artifactId, ADVERSARY_ENVELOPE_AGENT) so it can never collide
+ * with any other agent's row for the same artifact — including
+ * REJECTION_ENVELOPE_AGENT's row (FR-009). A second call for the same
+ * artifact upserts (overwrites) this same row — most-recent-finding-wins.
+ *
+ * Not part of the module's public CLI-facing surface (no new CLI subcommand);
+ * used only by approveArtifactWithEvidence's adversary-agent checkpoint,
+ * which wraps this call in a fail-open try/catch (FR-015) — this function
+ * itself may throw on filesystem/db errors.
+ */
+export function writeAdversaryEnvelope(
+  db: Database.Database,
+  artifactId: string,
+  finding: string,
+): void {
+  const slug = idToSlug(artifactId);
+  const destDir = path.join("migration", "artifacts", slug, "context");
+  fs.mkdirSync(destDir, { recursive: true });
+
+  const destFile = path.join(destDir, `${ADVERSARY_ENVELOPE_AGENT}.md`);
+  const content = `## Summary\n\n${finding}\n`;
+  fs.writeFileSync(destFile, content, "utf-8");
+
+  db.prepare(
+    `
+    INSERT INTO agent_context (artifact_id, agent, file_path, summary, updated_at)
+    VALUES (@artifact_id, @agent, @file_path, @summary, datetime('now'))
+    ON CONFLICT (artifact_id, agent) DO UPDATE SET
+      file_path  = excluded.file_path,
+      summary    = excluded.summary,
+      updated_at = excluded.updated_at
+  `,
+  ).run({
+    artifact_id: artifactId,
+    agent: ADVERSARY_ENVELOPE_AGENT,
+    file_path: destFile,
+    summary: extractSummary(content),
+  });
+}
+
+/**
+ * Read back the most recent adversary-agent finding recorded for an
+ * artifact, or null when none was ever recorded (FR-010, FR-013). Pure read,
+ * no side effects, safe for any artifact including one the adversary-agent
+ * never flagged.
+ */
+export function getAdversaryEnvelope(
+  db: Database.Database,
+  artifactId: string,
+): { finding: string } | null {
+  const response = getContext(db, artifactId, ADVERSARY_ENVELOPE_AGENT);
+  if (response.form === "none") {
+    return null;
+  }
+  const finding =
+    response.form === "file"
+      ? extractSummary(response.content ?? "")
+      : (response.content ?? "");
+  return { finding };
+}
+
 export function writeContext(
   db: Database.Database,
   id: string,
