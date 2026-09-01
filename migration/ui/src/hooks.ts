@@ -20,6 +20,7 @@ import {
   fetchIssues,
   fetchApprovalHistory,
   fetchPendingApprovals,
+  fetchRunStatus,
   getSociety,
   fetchRunLog,
   fetchRuns,
@@ -43,6 +44,7 @@ import type {
   RunFilters,
   RunListResult,
   RunQuery,
+  RunStatusEntry,
   SessionFilters,
   SessionListResult,
   SessionQuery,
@@ -477,6 +479,37 @@ export function useApprovals(): UseApprovalsResult {
     loading: pendingState.loading || historyState.loading,
     error: pendingState.error ?? historyState.error,
     reload,
+  };
+}
+
+// ── useRunStatus (spec 016, #220) ────────────────────────────────────────────
+
+export interface UseRunStatusResult {
+  runStatus: RunStatusEntry[];
+  loading: boolean;
+  error: Error | null;
+  reload: () => void;
+}
+
+/**
+ * Fetches the four-state working/idle/waiting-for-approval/rejected label
+ * per non-terminal artifact from GET /api/run-status, polling on the same
+ * cadence as the other live dashboard panels (events/society/approvals) —
+ * no new polling mechanism (FR-011).
+ */
+export function useRunStatus(): UseRunStatusResult {
+  const state = useLoadableData(
+    () => fetchRunStatus(),
+    [] as RunStatusEntry[],
+    [],
+    5_000,
+  );
+
+  return {
+    runStatus: state.data,
+    loading: state.loading,
+    error: state.error,
+    reload: state.reload,
   };
 }
 
