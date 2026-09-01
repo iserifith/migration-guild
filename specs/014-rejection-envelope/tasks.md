@@ -28,7 +28,7 @@ Single project (per plan.md): registry backend under `migration/registry/`, test
 
 **Purpose**: No new project scaffolding is needed — this feature is additive inside `migration/registry` and `package/agents`, both of which already exist and already build/test the way this feature's changes will.
 
-- [ ] T001 Confirm the local build/test loop works before changing anything: `cd migration/registry && npm run build` (or the repo's existing build script) and `npx vitest run migration/test/approval-gate.test.ts migration/test/approve-command.test.ts` to establish a clean baseline.
+- [x] T001 Confirm the local build/test loop works before changing anything: `cd migration/registry && npm run build` (or the repo's existing build script) and `npx vitest run migration/test/approval-gate.test.ts migration/test/approve-command.test.ts` to establish a clean baseline.
 
 ---
 
@@ -38,10 +38,10 @@ Single project (per plan.md): registry backend under `migration/registry/`, test
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T002 Add a single exported reserved-key constant (e.g. `REJECTION_ENVELOPE_AGENT = "rejection-envelope"`) in `migration/registry/commands/context.ts`, so the write side and read side share one source of truth and can never drift (data-model.md, contracts/registry-commands.md).
-- [ ] T003 Implement `writeRejectionEnvelope(db, artifactId, reason)` in `migration/registry/commands/context.ts`: synthesize a minimal file with a `## Summary` section wrapping `reason` verbatim, write it to `migration/artifacts/<slug>/context/rejection-envelope.md` (reusing `idToSlug`), and upsert the `agent_context` row for `(artifactId, REJECTION_ENVELOPE_AGENT)` using the same insert/upsert SQL shape `writeContext` already uses (contracts/registry-commands.md). Depends on T002.
-- [ ] T004 Implement `getRejectionEnvelope(db, artifactId)` in `migration/registry/commands/context.ts` as a thin wrapper over the existing `getContext(db, artifactId, REJECTION_ENVELOPE_AGENT)`, returning `null` when the response `form` is `"none"` and the extracted text otherwise (contracts/registry-commands.md). Depends on T002.
-- [ ] T005 [P] Write unit tests for `writeRejectionEnvelope`/`getRejectionEnvelope` round-tripping in a new `migration/test/rejection-envelope.test.ts`: write then read returns the exact reason text (FR-009); reading an artifact with no envelope returns `null`/`form: "none"` (FR-007). Depends on T003, T004.
+- [x] T002 Add a single exported reserved-key constant (e.g. `REJECTION_ENVELOPE_AGENT = "rejection-envelope"`) in `migration/registry/commands/context.ts`, so the write side and read side share one source of truth and can never drift (data-model.md, contracts/registry-commands.md).
+- [x] T003 Implement `writeRejectionEnvelope(db, artifactId, reason)` in `migration/registry/commands/context.ts`: synthesize a minimal file with a `## Summary` section wrapping `reason` verbatim, write it to `migration/artifacts/<slug>/context/rejection-envelope.md` (reusing `idToSlug`), and upsert the `agent_context` row for `(artifactId, REJECTION_ENVELOPE_AGENT)` using the same insert/upsert SQL shape `writeContext` already uses (contracts/registry-commands.md). Depends on T002.
+- [x] T004 Implement `getRejectionEnvelope(db, artifactId)` in `migration/registry/commands/context.ts` as a thin wrapper over the existing `getContext(db, artifactId, REJECTION_ENVELOPE_AGENT)`, returning `null` when the response `form` is `"none"` and the extracted text otherwise (contracts/registry-commands.md). Depends on T002.
+- [x] T005 [P] Write unit tests for `writeRejectionEnvelope`/`getRejectionEnvelope` round-tripping in a new `migration/test/rejection-envelope.test.ts`: write then read returns the exact reason text (FR-009); reading an artifact with no envelope returns `null`/`form: "none"` (FR-007). Depends on T003, T004.
 
 **Checkpoint**: Envelope read/write primitives exist and are independently tested — user story work can now begin.
 
@@ -55,15 +55,15 @@ Single project (per plan.md): registry backend under `migration/registry/`, test
 
 ### Tests for User Story 1
 
-- [ ] T006 [P] [US1] Add a test in `migration/test/rejection-envelope.test.ts` (or a new `migration/test/approval-rejection-envelope.test.ts`) asserting that calling `recordApprovalDecision` with `decision: "rejected"` and a reason results in `getRejectionEnvelope` returning that exact reason for the artifact (FR-001).
-- [ ] T007 [P] [US1] Add a test asserting that calling `recordApprovalDecision` with `decision: "approved"` does NOT write or alter any rejection-envelope entry (FR-001 scope boundary — approvals never populate the envelope).
-- [ ] T008 [P] [US1] Add a test asserting the envelope write is fail-open: simulate a filesystem failure in the envelope write path (e.g. mock/stub `writeRejectionEnvelope` to throw) and confirm `recordApprovalDecision` still inserts the `approval_decisions` row and transitions the artifact to `needs-rework` (FR-008, research.md "fail-open write, fail-closed decision").
+- [x] T006 [P] [US1] Add a test in `migration/test/rejection-envelope.test.ts` (or a new `migration/test/approval-rejection-envelope.test.ts`) asserting that calling `recordApprovalDecision` with `decision: "rejected"` and a reason results in `getRejectionEnvelope` returning that exact reason for the artifact (FR-001).
+- [x] T007 [P] [US1] Add a test asserting that calling `recordApprovalDecision` with `decision: "approved"` does NOT write or alter any rejection-envelope entry (FR-001 scope boundary — approvals never populate the envelope).
+- [x] T008 [P] [US1] Add a test asserting the envelope write is fail-open: simulate a filesystem failure in the envelope write path (e.g. mock/stub `writeRejectionEnvelope` to throw) and confirm `recordApprovalDecision` still inserts the `approval_decisions` row and transitions the artifact to `needs-rework` (FR-008, research.md "fail-open write, fail-closed decision").
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Wire `writeRejectionEnvelope` into `recordApprovalDecision` in `migration/registry/commands/approval.ts`: after the existing `needs-rework` transition, when `opts.decision === "rejected"`, call `writeRejectionEnvelope(db, opts.artifactId, opts.reason)` inside a `try { ... } catch { /* fail open */ }` block, per contracts/registry-commands.md. Depends on T003.
-- [ ] T010 [US1] Add an explicit step to `package/agents/remediation-agent.agent.md`'s Procedure, immediately before recovery action **B (Send back one step)**: run `node migration/registry/dist/cli.js get-context --id "<id>" --agent rejection-envelope` and, when it returns a reason (not the `form: "none"` fallback), fold it into the `--reason`/`--summary` text passed to the existing `set-artifact-status --status planned` and `append-event --type remediated` calls in that same section (contracts/registry-commands.md, FR-006).
-- [ ] T011 [US1] Update the Guardrails or Recovery goals section of `package/agents/remediation-agent.agent.md` with one line noting that the rejection-reason carry-forward is best-effort context, not a substitute for reading `get-events`/current evidence — keeps the existing "escalate when ambiguous" posture intact rather than over-trusting the envelope.
+- [x] T009 [US1] Wire `writeRejectionEnvelope` into `recordApprovalDecision` in `migration/registry/commands/approval.ts`: after the existing `needs-rework` transition, when `opts.decision === "rejected"`, call `writeRejectionEnvelope(db, opts.artifactId, opts.reason)` inside a `try { ... } catch { /* fail open */ }` block, per contracts/registry-commands.md. Depends on T003.
+- [x] T010 [US1] Add an explicit step to `package/agents/remediation-agent.agent.md`'s Procedure, immediately before recovery action **B (Send back one step)**: run `node migration/registry/dist/cli.js get-context --id "<id>" --agent rejection-envelope` and, when it returns a reason (not the `form: "none"` fallback), fold it into the `--reason`/`--summary` text passed to the existing `set-artifact-status --status planned` and `append-event --type remediated` calls in that same section (contracts/registry-commands.md, FR-006).
+- [x] T011 [US1] Update the Guardrails or Recovery goals section of `package/agents/remediation-agent.agent.md` with one line noting that the rejection-reason carry-forward is best-effort context, not a substitute for reading `get-events`/current evidence — keeps the existing "escalate when ambiguous" posture intact rather than over-trusting the envelope.
 
 **Checkpoint**: User Story 1 is fully functional and independently testable — reject with a reason, run remediation, confirm the reason appears in the requeue text; reject with no downstream remediation run yet, confirm nothing errors.
 
@@ -77,13 +77,13 @@ Single project (per plan.md): registry backend under `migration/registry/`, test
 
 ### Tests for User Story 2
 
-- [ ] T012 [P] [US2] Add a test in `migration/test/rejection-envelope.test.ts` asserting that writing context for an artifact under a real agent key (e.g. `context-agent`) via `writeContext`, then rejecting that artifact with a reason via `recordApprovalDecision`, leaves the `context-agent` row's `file_path`/`summary` unchanged (FR-003).
-- [ ] T013 [P] [US2] Add a test asserting that rejecting the same artifact twice with two different reasons results in `getRejectionEnvelope` returning only the second (most recent) reason — the first is no longer surfaced via this path (FR-004).
-- [ ] T014 [P] [US2] Add a test asserting `getRejectionEnvelope`'s result is read from the reserved `rejection-envelope` key specifically — i.e. `getContext(db, id, "rejection-envelope")` and `getContext(db, id, "context-agent")` (or any other real agent) never return each other's content, even when both exist for the same artifact simultaneously (FR-002).
+- [x] T012 [P] [US2] Add a test in `migration/test/rejection-envelope.test.ts` asserting that writing context for an artifact under a real agent key (e.g. `context-agent`) via `writeContext`, then rejecting that artifact with a reason via `recordApprovalDecision`, leaves the `context-agent` row's `file_path`/`summary` unchanged (FR-003).
+- [x] T013 [P] [US2] Add a test asserting that rejecting the same artifact twice with two different reasons results in `getRejectionEnvelope` returning only the second (most recent) reason — the first is no longer surfaced via this path (FR-004).
+- [x] T014 [P] [US2] Add a test asserting `getRejectionEnvelope`'s result is read from the reserved `rejection-envelope` key specifically — i.e. `getContext(db, id, "rejection-envelope")` and `getContext(db, id, "context-agent")` (or any other real agent) never return each other's content, even when both exist for the same artifact simultaneously (FR-002).
 
 ### Implementation for User Story 2
 
-- [ ] T015 [US2] Code-review pass over T003's `writeRejectionEnvelope`: confirm the upsert `WHERE`/`ON CONFLICT` clause is scoped to `(artifact_id, agent)` with `agent = REJECTION_ENVELOPE_AGENT` and cannot be reached with any other agent value — if T003 already satisfies this by construction (reusing the existing `agent_context` upsert), this task is a verification step, not new code.
+- [x] T015 [US2] Code-review pass over T003's `writeRejectionEnvelope`: confirm the upsert `WHERE`/`ON CONFLICT` clause is scoped to `(artifact_id, agent)` with `agent = REJECTION_ENVELOPE_AGENT` and cannot be reached with any other agent value — if T003 already satisfies this by construction (reusing the existing `agent_context` upsert), this task is a verification step, not new code.
 
 **Checkpoint**: Both user stories are independently functional — US1's carry-forward behavior and US2's non-clobbering/distinguishability guarantees are both covered by passing tests.
 
@@ -93,9 +93,9 @@ Single project (per plan.md): registry backend under `migration/registry/`, test
 
 **Purpose**: Final validation and documentation tidy-up affecting both stories.
 
-- [ ] T016 [P] Run the full `migration/test/` suite (not just the new/touched files) to confirm no regression in existing approval-gate, context, or evidence tests: `npx vitest run migration/test/`.
-- [ ] T017 Execute `specs/014-rejection-envelope/quickstart.md` Scenarios 1-4 end to end against a local registry DB, confirming each "Expected" outcome.
-- [ ] T018 [P] Re-read `specs/014-rejection-envelope/spec.md` Functional Requirements (FR-001 through FR-009) against the finished implementation and confirm each is met; note any gap found back into this tasks.md before considering the feature done.
+- [x] T016 [P] Run the full `migration/test/` suite (not just the new/touched files) to confirm no regression in existing approval-gate, context, or evidence tests: `npx vitest run migration/test/`.
+- [x] T017 Execute `specs/014-rejection-envelope/quickstart.md` Scenarios 1-4 end to end against a local registry DB, confirming each "Expected" outcome.
+- [x] T018 [P] Re-read `specs/014-rejection-envelope/spec.md` Functional Requirements (FR-001 through FR-009) against the finished implementation and confirm each is met; note any gap found back into this tasks.md before considering the feature done.
 
 ---
 

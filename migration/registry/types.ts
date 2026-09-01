@@ -105,7 +105,12 @@ export type Agent =
   | "code-writer-agent"
   | "migration-orchestrator"
   | "remediation-agent"
-  | "orchestrator";
+  | "orchestrator"
+  // Reserved key (#216): never used by a real context-writing agent. Written
+  // only by recordApprovalDecision's fail-open rejection-envelope side effect
+  // (migration/registry/commands/context.ts, migration/registry/commands/approval.ts)
+  // and read only by getRejectionEnvelope / the remediation-agent procedure.
+  | "rejection-envelope";
 
 export const TAG_VOCABULARY = [
   "analyzed",
