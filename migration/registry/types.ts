@@ -105,7 +105,12 @@ export type Agent =
   | "code-writer-agent"
   | "migration-orchestrator"
   | "remediation-agent"
-  | "orchestrator";
+  | "orchestrator"
+  // Reserved key (#216): never used by a real context-writing agent. Written
+  // only by recordApprovalDecision's fail-open rejection-envelope side effect
+  // (migration/registry/commands/context.ts, migration/registry/commands/approval.ts)
+  // and read only by getRejectionEnvelope / the remediation-agent procedure.
+  | "rejection-envelope";
 
 export const TAG_VOCABULARY = [
   "analyzed",
@@ -210,6 +215,42 @@ export interface ArbitrationDecision {
   reason: string;
   evidence_ids: string;
   decided_at: string;
+}
+
+// ─── Run status vocabulary (spec 016, #220) ──────────────────────────────────
+// A read-time-only, four-state label derived per non-terminal artifact from
+// existing `artifact_claims`/`artifacts`/`arbitration_decisions` data — no
+// schema changes, no new persisted state (see data-model.md).
+
+/**
+ * How recent an active claim's `heartbeat_at` (or `claimed_at` fallback, per
+ * FR-006) must be for the artifact to read as "working" rather than "idle".
+ *
+ * Deliberately a SEPARATE constant from `guildctl doctor`'s
+ * `danglingClaimThresholdMs` (default 60 minutes, see migration/guildctl/doctor.ts)
+ * — that threshold answers "has this claim probably been abandoned?" for
+ * operator triage; this one answers "is this claim actively progressing right
+ * now?" for the dashboard. Per spec.md Assumptions (resolved, no reconciliation
+ * with issue #218's supervisor sweep interval needed), the two numbers are
+ * unrelated by construction and intentionally allowed to diverge.
+ */
+export const WORKING_RECENCY_THRESHOLD_MS = 5 * 60 * 1000;
+
+export type RunStatusLabel = "working" | "idle" | "waiting-for-approval" | "rejected";
+
+/**
+ * One resolved four-state label per non-terminal artifact (data-model.md
+ * "RunStatusLabel" derived entity). Not persisted — recomputed on every read.
+ */
+export interface RunStatusEntry {
+  artifact_id: string;
+  label: RunStatusLabel;
+  /**
+   * Milliseconds since the recency signal (heartbeat_at, falling back to
+   * claimed_at) was last updated. Null when the label is
+   * waiting-for-approval/rejected and no active claim exists.
+   */
+  heartbeat_age_ms: number | null;
 }
 
 

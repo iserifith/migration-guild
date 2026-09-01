@@ -67,6 +67,11 @@ Use this agent when any of these are true:
 
    **B. Send back one step** — use when the artifact itself needs another pass.
    - For review findings or narrow migration defects, usually return the artifact to `planned` so migration can reclaim it cleanly.
+   - Before requeueing, check for a rejection reason left by a human operator's approval-gate decision (#216):
+     ```bash
+     node migration/registry/dist/cli.js get-context --id "<id>" --agent rejection-envelope
+     ```
+     When this returns a recorded reason (not the `form: "none"` fallback), fold it into the `--reason`/`--summary` text below instead of using the generic text verbatim — e.g. `"Requeued after remediation review: <rejection reason>"`. When it returns `form: "none"`, use the reason/summary text unchanged.
    ```bash
    node migration/registry/dist/cli.js set-artifact-status \
      --id "<id>" \
@@ -114,6 +119,7 @@ Use this agent when any of these are true:
 - Do not guess when run-to-artifact attribution is weak; escalate instead
 - Prefer releasing a stuck claim over inventing partial progress
 - Leave every action with a reason in the registry
+- The rejection-reason carry-forward (`get-context --agent rejection-envelope`) is best-effort context, not a substitute for reading `get-events`/current evidence — if the envelope's reason conflicts with or doesn't explain what you see, escalate instead of over-trusting it
 
 ## Output Format
 

@@ -20,6 +20,49 @@ export interface AutoQueueOptions {
   limit?: number;
   resume?: boolean;
   workspaceRoot?: string;
+  /**
+   * Overrides the resolved periodic-sweep interval (ms). Primarily for tests;
+   * operators tune this via `GUILDCTL_SWEEP_INTERVAL_MINS` instead.
+   */
+  sweepIntervalMs?: number;
+  /** Injectable clock for the periodic sweep; defaults to `Date.now`. Primarily for tests. */
+  now?: () => number;
+  /**
+   * Sink for operator-facing periodic-sweep output; defaults to
+   * `process.stdout.write`. Mirrors `AutoRunCommandDependencies.write`.
+   */
+  write?: (text: string) => void;
+}
+
+/** Default periodic-sweep interval, in minutes, when `GUILDCTL_SWEEP_INTERVAL_MINS` is unset or invalid. */
+const DEFAULT_SWEEP_INTERVAL_MINUTES = 10;
+
+/**
+ * Resolves the periodic staleness-sweep interval from the
+ * `GUILDCTL_SWEEP_INTERVAL_MINS` environment variable, mirroring the
+ * `STALL_MINUTES` parsing pattern in `migration/guildctl/monitoring.ts`.
+ * Falls back to the 10-minute default whenever the parsed value is not a
+ * finite positive number (unset, empty, `"0"`, negative, or non-numeric).
+ */
+export function resolveSweepIntervalMs(envValue: string | undefined): number {
+  const parsed = parseInt(envValue ?? String(DEFAULT_SWEEP_INTERVAL_MINUTES), 10);
+  const minutes = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SWEEP_INTERVAL_MINUTES;
+  return minutes * 60_000;
+}
+
+const SWEEP_LINE_PREFIX = "[guildctl]";
+
+/** Formats one periodic-sweep console line (contract §4) — omitted entirely on a clean sweep. */
+function formatPeriodicSweepLine(reapedRunIds: string[], reconciledArtifactIds: string[]): string {
+  const parts: string[] = [];
+  if (reapedRunIds.length > 0) parts.push(`reaped run(s) ${reapedRunIds.join(", ")}`);
+  if (reconciledArtifactIds.length > 0) parts.push(`recovered artifact(s) ${reconciledArtifactIds.join(", ")}`);
+  return `${SWEEP_LINE_PREFIX} periodic sweep: ${parts.join("; ")}\n`;
+}
+
+function formatPeriodicSweepErrorLine(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `${SWEEP_LINE_PREFIX} periodic sweep failed (non-fatal, will retry next interval): ${message}\n`;
 }
 
 export interface AutoQueueRemaining {
@@ -242,14 +285,45 @@ export async function runAutoQueue(
     throw new Error("auto queue limit must be a positive integer");
   }
 
+  const now = opts.now ?? Date.now;
+  const write = opts.write ?? ((text: string) => { process.stdout.write(text); });
+  const sweepIntervalMs = opts.sweepIntervalMs
+    ?? resolveSweepIntervalMs(process.env["GUILDCTL_SWEEP_INTERVAL_MINS"]);
+
   reapDeadRuns(db);
   const recoveredArtifacts = reconcileStaleClaims(db, "guildctl-auto-run").map((artifact) => artifact.id);
+  const recoveredArtifactIds = new Set(recoveredArtifacts);
+  let lastSweepAt = now();
   const processedIds = new Set<string>();
   const outputBlockedIds = new Set<string>();
   const processed: AutoQueueResult["processed"] = [];
   let completed = 0;
 
   while (opts.limit == null || processed.length < opts.limit) {
+    if (now() - lastSweepAt >= sweepIntervalMs) {
+      // Sweep at loop-iteration boundaries only — never concurrently with an
+      // in-flight `executeArtifact` call (research.md "Sweep trigger mechanism").
+      lastSweepAt = now();
+      try {
+        const reapedRuns = reapDeadRuns(db);
+        const reconciled = reconcileStaleClaims(db, "guildctl-auto-run");
+        const reconciledArtifactIds = reconciled.map((artifact) => artifact.id);
+        for (const id of reconciledArtifactIds) {
+          if (!recoveredArtifactIds.has(id)) {
+            recoveredArtifactIds.add(id);
+            recoveredArtifacts.push(id);
+          }
+        }
+        const reapedRunIds = reapedRuns.map((run) => run.run_id);
+        if (reapedRunIds.length > 0 || reconciledArtifactIds.length > 0) {
+          write(formatPeriodicSweepLine(reapedRunIds, reconciledArtifactIds));
+        }
+      } catch (error) {
+        // FR-007 / Constitution VI: never abort the queue over a sweep failure.
+        write(formatPeriodicSweepErrorLine(error));
+      }
+    }
+
     const candidate = selectCandidate(db, opts, processedIds);
     if (!candidate) break;
     if (opts.workspaceRoot && terminalDepsMissingOutput(db, candidate.id, opts.workspaceRoot)) {

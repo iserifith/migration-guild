@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
-import { RegistryError, validateId } from "../types";
-import type { Artifact, ArtifactTier, EventType, Kind, Status, Tag } from "../types";
+import { RegistryError, validateId, WORKING_RECENCY_THRESHOLD_MS } from "../types";
+import type { Artifact, ArtifactTier, EventType, Kind, RunStatusEntry, Status, Tag } from "../types";
 import { listPendingApprovals } from "./approval";
 import type { ApprovalDecision, PendingApproval } from "./approval";
 
@@ -1046,6 +1046,120 @@ export function queryApprovalHistoryForUI(db: Database.Database): ApprovalDecisi
     operatorTokenHash: row.operator_token_hash,
     decidedAt: row.decided_at,
   }));
+}
+
+// ── /api/run-status (spec 016, #220) ────────────────────────────────────────
+
+/**
+ * Terminal artifact statuses excluded from the four-state run-status
+ * vocabulary (spec.md Assumptions): a completed/reviewed/migrated/skipped
+ * artifact is neither working, idle, waiting-for-approval, nor rejected in
+ * any meaningful sense.
+ */
+const RUN_STATUS_TERMINAL_STATUSES: ReadonlySet<Status> = new Set([
+  "migrated",
+  "reviewed",
+  "completed",
+  "skipped",
+]);
+
+interface RunStatusRow {
+  artifact_id: string;
+  status: Status;
+  heartbeat_at: string | null;
+  claimed_at: string | null;
+  latest_arbitration_decision: "approved" | "rejected" | null;
+}
+
+// SQLite datetime('now') values are UTC but omit a timezone suffix. JavaScript
+// otherwise interprets them as local time and inflates claim age by the host
+// timezone offset. Mirrors guildctl/doctor.ts's parseRegistryTimestamp.
+function parseRunStatusTimestamp(raw: string): number {
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw);
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  return Date.parse(hasTimezone ? normalized : `${normalized}Z`);
+}
+
+/**
+ * T004 (spec 016, #220) — derive the four-state run-status label
+ * (`working` | `idle` | `waiting-for-approval` | `rejected`) for every
+ * non-terminal artifact (data-model.md precedence order):
+ *
+ *   1. Most recent arbitration_decisions row is `rejected`  → `rejected`
+ *   2. Else artifact is currently held at pending-approval   → `waiting-for-approval`
+ *   3. Else an active claim's recency signal is within
+ *      WORKING_RECENCY_THRESHOLD_MS                          → `working`
+ *   4. Else                                                  → `idle`
+ *
+ * Reuses `listPendingApprovals` verbatim for step 2 (FR-007/FR-013 parity —
+ * the dashboard must show exactly the same pending-approval set the CLI
+ * does) and the same correlated-subquery "latest arbitration_decisions row
+ * per artifact" JOIN pattern `listPendingApprovals` already uses (see
+ * approval.ts) for step 1, rather than a separate/duplicated read.
+ */
+export function queryRunStatusForUI(db: Database.Database): RunStatusEntry[] {
+  const pendingApprovalIds = new Set(
+    listPendingApprovals(db).map((p) => p.artifactId),
+  );
+
+  const rows = db.prepare(
+    `SELECT
+       a.id            AS artifact_id,
+       a.status        AS status,
+       ac.heartbeat_at AS heartbeat_at,
+       ac.claimed_at   AS claimed_at,
+       latest.decision AS latest_arbitration_decision
+     FROM artifacts a
+     LEFT JOIN artifact_claims ac
+       ON ac.artifact_id = a.id
+      AND ac.state = 'active'
+     LEFT JOIN arbitration_decisions latest
+       ON latest.artifact_id = a.id
+      AND latest.rowid = (
+        SELECT ad2.rowid
+        FROM arbitration_decisions ad2
+        WHERE ad2.artifact_id = a.id
+        ORDER BY ad2.decided_at DESC, ad2.rowid DESC
+        LIMIT 1
+      )`,
+  ).all() as RunStatusRow[];
+
+  const now = Date.now();
+  const entries: RunStatusEntry[] = [];
+
+  for (const row of rows) {
+    if (RUN_STATUS_TERMINAL_STATUSES.has(row.status)) {
+      continue;
+    }
+
+    if (row.latest_arbitration_decision === "rejected") {
+      entries.push({ artifact_id: row.artifact_id, label: "rejected", heartbeat_age_ms: null });
+      continue;
+    }
+
+    if (pendingApprovalIds.has(row.artifact_id)) {
+      entries.push({ artifact_id: row.artifact_id, label: "waiting-for-approval", heartbeat_age_ms: null });
+      continue;
+    }
+
+    // FR-006: heartbeat_at is the primary recency signal; NULL falls back to
+    // claimed_at, mirroring guildctl doctor's dangling-claim check.
+    const recencyRaw = row.heartbeat_at ?? row.claimed_at;
+    if (recencyRaw != null) {
+      const recencyAt = parseRunStatusTimestamp(recencyRaw);
+      const ageMs = Number.isFinite(recencyAt) ? now - recencyAt : null;
+      if (ageMs != null && ageMs <= WORKING_RECENCY_THRESHOLD_MS) {
+        entries.push({ artifact_id: row.artifact_id, label: "working", heartbeat_age_ms: ageMs });
+        continue;
+      }
+      entries.push({ artifact_id: row.artifact_id, label: "idle", heartbeat_age_ms: ageMs });
+      continue;
+    }
+
+    entries.push({ artifact_id: row.artifact_id, label: "idle", heartbeat_age_ms: null });
+  }
+
+  return entries;
 }
 
 // ── /api/runs ───────────────────────────────────────────────────────────────

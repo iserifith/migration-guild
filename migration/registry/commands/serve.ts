@@ -21,6 +21,7 @@ import {
   queryRunHistoryPage,
   queryPendingApprovalsForUI,
   queryApprovalHistoryForUI,
+  queryRunStatusForUI,
 } from "./queries";
 import { recordApprovalDecision } from "./approval";
 import { RegistryError } from "../types";
@@ -143,6 +144,15 @@ export function startServer(db: Database.Database, port = 3322) {
     // Decided history for the approvals panel (newest first).
     if (req.method === "GET" && p === "/api/approvals/history") {
       return json(res, queryApprovalHistoryForUI(db));
+    }
+
+    // ── /api/run-status (spec 016, #220) ───────────────────────────────────
+    // Thin dispatcher: the read delegates to queryRunStatusForUI, which
+    // derives the four-state working/idle/waiting-for-approval/rejected
+    // label per non-terminal artifact from existing claim/heartbeat and
+    // arbitration-decision data. No new query logic lives here.
+    if (req.method === "GET" && p === "/api/run-status") {
+      return json(res, queryRunStatusForUI(db));
     }
 
     // ── POST /api/approvals/<id>/decision (US4, spec 013) ─────────────────

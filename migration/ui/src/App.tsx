@@ -17,11 +17,19 @@ import ApprovalsPanel from "./components/ApprovalsPanel";
 import ArtifactList from "./components/ArtifactList";
 import BlockersView from "./components/BlockersView";
 import MissionControl from "./components/MissionControl";
+import { RunStatusLegend } from "./components/RunStatusBadge";
 import RunsView from "./components/RunsView";
 import SessionsView from "./components/SessionsView";
 import SocietyView from "./components/SocietyView";
 import WavePlan from "./components/WavePlan";
-import { useApprovals, useRegistryData, type UseApprovalsResult, type UseRegistryDataResult } from "./hooks";
+import {
+  useApprovals,
+  useRegistryData,
+  useRunStatus,
+  type UseApprovalsResult,
+  type UseRegistryDataResult,
+  type UseRunStatusResult,
+} from "./hooks";
 import type {
   ApprovalDecisionRequest,
   BlockerQuery,
@@ -44,6 +52,8 @@ export interface TabProps {
   runs: UseRegistryDataResult["runs"];
   /** Live approvals state, used only for the Approvals tab's nav badge. */
   approvals: UseApprovalsResult;
+  /** Live four-state run-status labels, keyed by artifact_id (spec 016, #220). */
+  runStatus: UseRunStatusResult;
   timeMode: TimeDisplayMode;
   sessionQuery: SessionQuery;
   updateSessionQuery: (updates: Partial<SessionQuery>) => void;
@@ -119,13 +129,14 @@ const TABS: TabDef[] = [
   {
     id: "Artifacts",
     label: "Artifacts",
-    render: ({ artifacts, timeMode }) => (
+    render: ({ artifacts, runStatus, timeMode }) => (
       <ArtifactList
         artifacts={artifacts.artifacts}
         loading={artifacts.loading}
         error={artifacts.error}
         onRetry={artifacts.reload}
         timeMode={timeMode}
+        runStatus={runStatus.runStatus}
       />
     ),
   },
@@ -272,6 +283,9 @@ export default function App() {
   // Live approvals state for the Approvals tab's nav badge; the tab's own
   // content fetches independently inside ApprovalsTab.
   const approvals = useApprovals();
+  // Live four-state run-status labels (spec 016, #220), polled on the same
+  // cadence as approvals/events/society — recomputed on every poll (FR-011).
+  const runStatus = useRunStatus();
   const updateSessionQuery = React.useCallback(
     (updates: Partial<SessionQuery>) =>
       setSessionQuery((current) => ({ ...current, ...updates })),
@@ -320,6 +334,7 @@ export default function App() {
               ))
             )}
           </div>
+          <RunStatusLegend />
           <label className="time-control">
             <span className="time-label">Time</span>
             <select
@@ -386,6 +401,7 @@ export default function App() {
                     issues,
                     runs,
                     approvals,
+                    runStatus,
                     timeMode,
                     sessionQuery,
                     updateSessionQuery,
@@ -417,6 +433,7 @@ export default function App() {
           issues,
           runs,
           approvals,
+          runStatus,
           timeMode,
           sessionQuery,
           updateSessionQuery,

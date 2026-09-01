@@ -6,7 +6,7 @@
  * with the backend vocabulary.
  */
 
-import type { ArtifactStatus } from "./types";
+import type { ArtifactStatus, RunStatusLabel } from "./types";
 
 // ── Status semantics ──────────────────────────────────────────────────────────
 
@@ -67,6 +67,28 @@ export const STATUS_COLORS: Readonly<Record<string, string>> = {
 
 /** Fallback colour when a status has no explicit entry in STATUS_COLORS. */
 export const STATUS_COLOR_FALLBACK = "#888";
+
+// ── Run status vocabulary (spec 016, #220) ────────────────────────────────────
+//
+// Four-state label shown by RunStatusBadge — precedence rejected >
+// waiting-for-approval > working > idle (data-model.md). "waiting-for-approval"
+// and "rejected" reuse the same colours ApprovalsPanel/decision-history badges
+// already use ("pending-approval" and "needs-rework" in STATUS_COLORS above)
+// so the vocabulary reads as one consistent system across the dashboard.
+
+export const RUN_STATUS_LABELS: Readonly<Record<RunStatusLabel, string>> = {
+  working: "working",
+  idle: "idle",
+  "waiting-for-approval": "waiting for approval",
+  rejected: "rejected",
+};
+
+export const RUN_STATUS_COLORS: Readonly<Record<RunStatusLabel, string>> = {
+  working: "#34d399",
+  idle: "#94a3b8",
+  "waiting-for-approval": "#fbbf24",
+  rejected: "#f87171",
+};
 
 // ── Tab registry ──────────────────────────────────────────────────────────────
 //

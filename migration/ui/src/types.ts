@@ -335,3 +335,14 @@ export interface ApprovalDecisionRequest {
   runId?: string;
   operatorToken?: string;
 }
+
+// ── Run status vocabulary (spec 016, #220) ────────────────────────────────────
+
+export type RunStatusLabel = "working" | "idle" | "waiting-for-approval" | "rejected";
+
+/** Shape of each element returned by GET /api/run-status (spec 016, #220). */
+export interface RunStatusEntry {
+  artifact_id: string;
+  label: RunStatusLabel;
+  heartbeat_age_ms: number | null;
+}

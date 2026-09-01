@@ -4,6 +4,7 @@ import { resolveRiskSpec } from "../../guildctl/risk";
 import { RegistryError, validateId } from "../types";
 import { setArtifactStatus } from "./artifacts";
 import { validateRunOperatorCredential } from "./claim";
+import { writeRejectionEnvelope } from "./context";
 import { appendEvent } from "./events";
 import { checkEvidenceFreshness, commitPromotedArtifact, getLatestArbitrationDecision } from "./evidence";
 
@@ -306,6 +307,19 @@ export function recordApprovalDecision(
   // `reviewed` must commit its outputs too, not just the arbiter's approval.
   if (promotion.targetStatus === "reviewed" && promotion.arbitration) {
     commitPromotedArtifact(db, opts.artifactId, promotion.arbitration, opts.workspaceRoot);
+  }
+  // #216: relay the rejection reason forward into the reserved rejection-envelope
+  // context slot so the next remediation attempt can read why this attempt was
+  // sent back, without querying approval_decisions directly. Best-effort and
+  // fail-open (research.md "fail-open write, fail-closed decision") — the
+  // decision record and status transition above are already durable; this side
+  // effect must never turn a successful rejection into an error (FR-008).
+  if (opts.decision === "rejected") {
+    try {
+      writeRejectionEnvelope(db, opts.artifactId, opts.reason!);
+    } catch {
+      // fail open — intentionally swallowed.
+    }
   }
   return decision;
 }
