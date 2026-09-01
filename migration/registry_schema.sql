@@ -154,7 +154,10 @@ CREATE TABLE IF NOT EXISTS events (
                      'filesystem-violation',
                       'thread-created',
                       'dependency-strategy-set',
-                      'remediation-confirmed-no-defect'
+                      'remediation-confirmed-no-defect',
+                      'adversary-flagged',
+                      'adversary-inconclusive',
+                      'adversary-probe-passed'
                   )),
     agent        TEXT NOT NULL,
     model        TEXT,

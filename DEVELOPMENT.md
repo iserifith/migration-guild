@@ -410,6 +410,61 @@ derivation, precedence, FR-006 recency-fallback, terminal-status exclusion) and
 `migration/ui/src/components/RunStatusBadge.test.tsx` covers the four-state rendering and
 the poll-cycle badge update (SC-003/FR-011).
 
+### Spec 017 — adversary-agent gate between review and the approval gate (#217, building on #216)
+
+- **A third checkpoint runs unconditionally inside `approveArtifactWithEvidence`**
+  (`migration/registry/commands/evidence.ts`), before the below-cutoff `reviewed` transition
+  and before the gate-bound `pending-approval` hold — an adversary-agent probe result arrives
+  via the new optional `opts.adversaryProbe` field (`{ outcome: "clean" | "violation" |
+  "inconclusive"; finding?: string }`, defaulting to `"clean"` when omitted so pre-feature
+  callers/tests are unaffected). A violation or inconclusive result routes the artifact to
+  `needs-rework` regardless of risk tier — this is deliberately fail-closed (FR-008a treats
+  "inconclusive" the same as "violation"), the opposite of `review-agent`'s existing
+  missing-toolchain tolerance.
+- **New reserved `agent_context` key `adversary-envelope`**, distinct from #216's
+  `rejection-envelope`, written/read via `writeAdversaryEnvelope`/`getAdversaryEnvelope`
+  (`migration/registry/commands/context.ts`) — an exact mirror of #216's
+  write/read pair and upsert-by-`(artifact_id, agent)` shape, so the two envelopes share one
+  mechanism and diverge only in which call site writes them. The write is fail-open (wrapped
+  in try/catch outside the transaction, symmetric with `recordApprovalDecision`'s
+  `writeRejectionEnvelope` call in `migration/registry/commands/approval.ts`); the
+  `needs-rework` status transition and `adversary-flagged`/`adversary-inconclusive` event are
+  fail-closed and always land inside the transaction, so a write failure never silently lets
+  an artifact through — the event record alone still proves the routing happened.
+- **Three new `events.type` literals**: `adversary-flagged`, `adversary-inconclusive` (both →
+  `needs-rework`), and `adversary-probe-passed` (gate-bound clean probe only — signal-only,
+  no `agent_context` write, never selectable as approval/arbitration evidence since it lives
+  in the separate `events` table). Admitted to the CHECK-constrained `events.type` column via
+  the same table-rebuild pattern `ensureRemediationNoDefectEventType` established
+  (`ensureAdversaryEnvelopeEventTypes` in `migration/registry/db/schema.ts`); fresh databases
+  get the widened CHECK directly from `registry_schema.sql`.
+- **`recordApprovalDecision` (`migration/registry/commands/approval.ts`) is untouched** (FR-017)
+  — confirmed by re-reading it after this feature's changes landed. The adversary-agent's
+  routing reuses `setArtifactStatus`/`appendEvent` directly, the same lower-level primitives
+  `recordApprovalDecision` and `rejectArtifactWithEvidence` are themselves built on.
+- **New `package/agents/adversary-agent.agent.md`** defines the narrow probe role (construct
+  one input/test case that passes the existing suite but violates spec intent); it never calls
+  a status-mutating CLI command itself — the checkpoint embedded in
+  `approveArtifactWithEvidence` is what actually routes the artifact, keeping the check
+  structurally unskippable rather than a second, separately-triggered gate.
+  `package/agents/remediation-agent.agent.md` gained a second `get-context --agent
+  adversary-envelope` read step alongside #216's existing `rejection-envelope` read, folding
+  both origins into the requeue reason distinguishably (`Human rejection:` / `Adversary
+  finding:`) when present, unchanged when neither resolves.
+
+Maintainer checklist answers for this feature: repo-only + shipped — `package/agents/` updated
+(new `adversary-agent.agent.md`, `remediation-agent.agent.md` gains a second read step);
+`migration/` updated (`context.ts` envelope pair, `evidence.ts` checkpoint wiring,
+`registry_schema.sql` + `schema.ts` CHECK widening, `types.ts` new `Agent`/`EventType`
+literals, `events.ts` allowlist); this file and `CHANGELOGS.MD` updated (Spec 017 entry under
+Unreleased).
+
+New `migration/test/adversary-envelope.test.ts` covers the envelope primitives (round-trip,
+non-clobber against `rejection-envelope`, per-artifact isolation), the checkpoint's routing
+across below-cutoff/gate-bound and clean/violation/inconclusive outcomes (US1), and the
+fail-open write / fail-closed routing asymmetry (US3). `migration/test/agent-guardrails.test.ts`
+gained doc-content coverage for both agent procedure files (US2).
+
 ## Docs expectations for this repo
 
 Use docs by audience:

@@ -16,6 +16,7 @@ import type {
 } from "../types";
 import { setArtifactStatus } from "./artifacts";
 import { deriveExpectedOutputPaths, validateRunOperatorCredential } from "./claim";
+import { writeAdversaryEnvelope } from "./context";
 import { appendEvent } from "./events";
 import { readFixtureFile, sha256Json } from "./fixture-file";
 import { resolveGateScope } from "./approval";
@@ -52,6 +53,27 @@ export interface CanApproveArtifactResult {
   reason: string;
 }
 
+/**
+ * Outcome of the adversary-agent checkpoint (#217, building on #216) for one
+ * approveArtifactWithEvidence call: "clean" (no violating case found),
+ * "violation" (a spec-violating case was constructed), or "inconclusive"
+ * (the probe could not run at all — treated the same as "violation" for
+ * routing purposes, fail-closed per FR-008a).
+ */
+export type AdversaryProbeOutcome = "clean" | "violation" | "inconclusive";
+
+export interface AdversaryProbeResult {
+  outcome: AdversaryProbeOutcome;
+  /**
+   * Verbatim finding text (FR-016): the constructed violating case and the
+   * spec intent it violates, or a description of why the probe could not
+   * run. Required in practice when outcome is "violation"/"inconclusive" —
+   * an omitted finding falls back to a generic placeholder so the envelope
+   * write and event are never blocked on it.
+   */
+  finding?: string;
+}
+
 export interface ApproveArtifactWithEvidenceOptions {
   artifactId: string;
   arbiter: string;
@@ -61,6 +83,15 @@ export interface ApproveArtifactWithEvidenceOptions {
   operatorToken?: string | null;
   /** Workspace root to commit the promoted artifact in; defaults to resolveWorkspaceRoot(). */
   workspaceRoot?: string;
+  /**
+   * Result of the adversary-agent checkpoint for this approval cycle
+   * (#217, building on #216; FR-001, FR-006). Defaults to a clean probe
+   * (`{ outcome: "clean" }`) when omitted, preserving pre-feature behavior
+   * for callers that do not yet wire the adversary-agent step. Callers
+   * integrating the real checkpoint MUST supply this on every call so the
+   * check is not silently skipped (research.md "Insertion point").
+   */
+  adversaryProbe?: AdversaryProbeResult;
 }
 
 export interface RejectArtifactWithEvidenceOptions {
@@ -525,13 +556,47 @@ export function approveArtifactWithEvidence(
       }),
     });
 
+    // Adversary-agent checkpoint (#217, building on #216; FR-001, FR-006):
+    // runs unconditionally for every artifact reaching this point, before the
+    // gate-scope branch below decides between pending-approval and reviewed
+    // — a violation or inconclusive probe routes to needs-rework regardless
+    // of risk tier, so the checkpoint cannot be skipped by a high-risk
+    // artifact's gate hold either. FR-008a treats "inconclusive" the same as
+    // "violation" for routing purposes (fail-closed): an adversary-agent
+    // that could not run its probe at all must not let the artifact proceed.
+    const probe: AdversaryProbeResult = opts.adversaryProbe ?? { outcome: "clean" };
+    const gateScope = resolveGateScope(db, opts.artifactId);
+
+    if (probe.outcome !== "clean") {
+      const finding =
+        probe.finding ??
+        (probe.outcome === "inconclusive"
+          ? "Adversary-agent probe was inconclusive; no finding text was supplied."
+          : "Adversary-agent probe found a spec-violating case; no finding text was supplied.");
+      setArtifactStatus(db, opts.artifactId, "needs-rework");
+      appendEvent(db, {
+        id: opts.artifactId,
+        type: probe.outcome === "violation" ? "adversary-flagged" : "adversary-inconclusive",
+        agent: opts.arbiter,
+        summary: `Adversary-agent routed artifact to needs-rework: ${finding}`,
+        data: JSON.stringify({
+          role: "adversary-agent",
+          decision_id: decision.decision_id,
+          target_status: "needs-rework",
+          outcome: probe.outcome,
+        }),
+      });
+      // gated: true skips commitPromotedArtifact below — this artifact did
+      // not reach "reviewed", so there is nothing to promote.
+      return { decision, gated: true as const, adversaryFinding: finding };
+    }
+
     // US1 approval gate (spec 013, FR-001/FR-002/FR-011): the arbiter verdict is
     // recorded either way (arbitration-approved above), but an above-cutoff
     // high-risk artifact holds at pending-approval for the human decision
     // instead of transitioning straight to reviewed. The gate check lives inside
     // the transaction so the status write and the approval-gated event are
     // atomic with the verdict.
-    const gateScope = resolveGateScope(db, opts.artifactId);
     if (gateScope.inScope) {
       setArtifactStatus(db, opts.artifactId, "pending-approval");
       appendEvent(db, {
@@ -546,16 +611,47 @@ export function approveArtifactWithEvidence(
           reason: gateScope.reason,
         }),
       });
-      return { decision, gated: true as const };
+      // Adversary-probe-passed (#217, FR-008b): a signal-only event so the
+      // human operator's context at the gate reflects that the adversarial
+      // check ran and found nothing. It carries no agent_context write and
+      // MUST NOT alter targetStatus or be selectable as approval/arbitration
+      // evidence (Constitution Principle I) — the events table is not the
+      // acceptance_evidence table, so it cannot be selected as such.
+      appendEvent(db, {
+        id: opts.artifactId,
+        type: "adversary-probe-passed",
+        agent: opts.arbiter,
+        summary: "Adversary-agent probe found no spec-violating case.",
+        data: JSON.stringify({
+          role: "adversary-agent",
+          decision_id: decision.decision_id,
+        }),
+      });
+      return { decision, gated: true as const, adversaryFinding: undefined as string | undefined };
     }
 
     setArtifactStatus(db, opts.artifactId, "reviewed");
-    return { decision, gated: false as const };
+    return { decision, gated: false as const, adversaryFinding: undefined as string | undefined };
   });
 
-  const { decision, gated } = tx();
+  const { decision, gated, adversaryFinding } = tx();
   if (!gated) {
     commitPromotedArtifact(db, opts.artifactId, decision, opts.workspaceRoot);
+  }
+  // Adversary-envelope write (#217, FR-015): best-effort and fail-open,
+  // symmetric with #216's writeRejectionEnvelope call in approval.ts — the
+  // needs-rework status transition and adversary-flagged/adversary-inconclusive
+  // event above are already durable (recorded inside the transaction); this
+  // side effect must never turn a successful fail-closed routing decision
+  // into an error. If it throws, the finding text is simply unavailable —
+  // the event record alone still proves "this artifact was sent back by the
+  // adversary-agent" (FR-015, US3).
+  if (adversaryFinding !== undefined) {
+    try {
+      writeAdversaryEnvelope(db, opts.artifactId, adversaryFinding);
+    } catch {
+      // fail open — intentionally swallowed.
+    }
   }
   return decision;
 }

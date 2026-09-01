@@ -89,7 +89,17 @@ export type EventType =
   | "filesystem-violation"
   | "thread-created"
   | "dependency-strategy-set"
-  | "remediation-confirmed-no-defect";
+  | "remediation-confirmed-no-defect"
+  // Adversary-agent checkpoint (#217, building on #216): recorded by
+  // approveArtifactWithEvidence's adversary-agent checkpoint
+  // (migration/registry/commands/evidence.ts). "adversary-flagged"/
+  // "adversary-inconclusive" both route the artifact to needs-rework (the
+  // latter fail-closed on an unrunnable probe); "adversary-probe-passed" is a
+  // signal-only event for a gate-bound artifact's clean probe — it is never
+  // evidence and never changes artifacts.status.
+  | "adversary-flagged"
+  | "adversary-inconclusive"
+  | "adversary-probe-passed";
 
 export type Agent =
   | "context-agent"
@@ -110,7 +120,15 @@ export type Agent =
   // only by recordApprovalDecision's fail-open rejection-envelope side effect
   // (migration/registry/commands/context.ts, migration/registry/commands/approval.ts)
   // and read only by getRejectionEnvelope / the remediation-agent procedure.
-  | "rejection-envelope";
+  | "rejection-envelope"
+  // Reserved key (#217, building on #216): never used by a real
+  // context-writing agent. Written only by approveArtifactWithEvidence's
+  // fail-open adversary-envelope side effect (migration/registry/commands/
+  // context.ts, migration/registry/commands/evidence.ts) and read only by
+  // getAdversaryEnvelope / the remediation-agent procedure. Distinct from
+  // "rejection-envelope" so a reader can tell a human rejection apart from an
+  // automated adversary-agent finding by slot alone (FR-008).
+  | "adversary-envelope";
 
 export const TAG_VOCABULARY = [
   "analyzed",

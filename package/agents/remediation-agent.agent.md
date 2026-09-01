@@ -67,11 +67,16 @@ Use this agent when any of these are true:
 
    **B. Send back one step** — use when the artifact itself needs another pass.
    - For review findings or narrow migration defects, usually return the artifact to `planned` so migration can reclaim it cleanly.
-   - Before requeueing, check for a rejection reason left by a human operator's approval-gate decision (#216):
+   - Before requeueing, check for a rejection reason left by a human operator's approval-gate decision (#216), **and** for an adversary-agent finding left by the adversary-agent checkpoint (#217, building on #216):
      ```bash
      node migration/registry/dist/cli.js get-context --id "<id>" --agent rejection-envelope
+     node migration/registry/dist/cli.js get-context --id "<id>" --agent adversary-envelope
      ```
-     When this returns a recorded reason (not the `form: "none"` fallback), fold it into the `--reason`/`--summary` text below instead of using the generic text verbatim — e.g. `"Requeued after remediation review: <rejection reason>"`. When it returns `form: "none"`, use the reason/summary text unchanged.
+     Run **both** calls — they are independent origins of a `needs-rework` status and neither implies the other. For each call that returns a recorded reason/finding (not the `form: "none"` fallback), fold it into the `--reason`/`--summary` text below, distinguishably labeled by origin:
+     - Only the rejection envelope returned a result: `"Requeued after remediation review: Human rejection: <rejection reason>"`.
+     - Only the adversary envelope returned a result: `"Requeued after remediation review: Adversary finding: <adversary finding>"`.
+     - Both returned a result: include both, each under its own label, e.g. `"Requeued after remediation review: Human rejection: <rejection reason>; Adversary finding: <adversary finding>"` — neither origin overwrites or replaces the other.
+     - Neither returned a result (`form: "none"` for both): use the reason/summary text unchanged — do not fabricate a reason.
    ```bash
    node migration/registry/dist/cli.js set-artifact-status \
      --id "<id>" \
@@ -119,7 +124,7 @@ Use this agent when any of these are true:
 - Do not guess when run-to-artifact attribution is weak; escalate instead
 - Prefer releasing a stuck claim over inventing partial progress
 - Leave every action with a reason in the registry
-- The rejection-reason carry-forward (`get-context --agent rejection-envelope`) is best-effort context, not a substitute for reading `get-events`/current evidence — if the envelope's reason conflicts with or doesn't explain what you see, escalate instead of over-trusting it
+- The rejection-reason and adversary-finding carry-forwards (`get-context --agent rejection-envelope` / `--agent adversary-envelope`) are best-effort context, not a substitute for reading `get-events`/current evidence — if either envelope's content conflicts with or doesn't explain what you see, escalate instead of over-trusting it
 
 ## Output Format
 
