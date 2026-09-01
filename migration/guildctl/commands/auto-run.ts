@@ -101,6 +101,7 @@ export async function runAutoRunCommand(
     limit: opts.limit,
     resume: opts.resume,
     workspaceRoot,
+    write,
   });
 
   if (opts.setExitCode !== false) {

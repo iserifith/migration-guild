@@ -28,7 +28,7 @@ Single project (existing `migration/guildctl` + `migration/registry` CLI/registr
 
 **Purpose**: Extend the shared type surface both user stories build on, with zero behavior change yet.
 
-- [ ] T001 [P] Extend `AutoQueueOptions` in `migration/guildctl/supervisor/queue.ts` with optional `sweepIntervalMs?: number` and `now?: () => number` fields, per `contracts/supervisor-queue-sweep.md` §1. No behavior change — fields are unused until Phase 2.
+- [X] T001 [P] Extend `AutoQueueOptions` in `migration/guildctl/supervisor/queue.ts` with optional `sweepIntervalMs?: number` and `now?: () => number` fields, per `contracts/supervisor-queue-sweep.md` §1. No behavior change — fields are unused until Phase 2.
 
 ---
 
@@ -38,9 +38,9 @@ Single project (existing `migration/guildctl` + `migration/registry` CLI/registr
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T002 Implement `resolveSweepIntervalMs(envValue: string | undefined): number` in `migration/guildctl/supervisor/queue.ts`: parse with `parseInt(envValue ?? "10", 10)` minutes, convert to ms, and fall back to the 10-minute default (600000ms) when the parsed value is not a finite positive number — mirrors the existing `STALL_MINUTES` pattern in `migration/guildctl/monitoring.ts`. Reads `process.env["GUILDCTL_SWEEP_INTERVAL_MINS"]` when `AutoQueueOptions.sweepIntervalMs` is not supplied.
-- [ ] T003 In `runAutoQueue` (`migration/guildctl/supervisor/queue.ts`), initialize a `lastSweepAt` timestamp (using `opts.now ?? Date.now`) immediately after the existing startup `reapDeadRuns`/`reconcileStaleClaims` calls, and resolve the effective interval via T002. No sweep-triggering logic yet — this just establishes the clock state the loop will read in Phase 3.
-- [ ] T004 [P] Add a `createFakeClock(startMs: number)` test helper (returns `{ now, advance(ms) }`) to `migration/test/auto-queue.test.ts`, for deterministic interval-elapsed simulation across all sweep tests (depends on T001).
+- [X] T002 Implement `resolveSweepIntervalMs(envValue: string | undefined): number` in `migration/guildctl/supervisor/queue.ts`: parse with `parseInt(envValue ?? "10", 10)` minutes, convert to ms, and fall back to the 10-minute default (600000ms) when the parsed value is not a finite positive number — mirrors the existing `STALL_MINUTES` pattern in `migration/guildctl/monitoring.ts`. Reads `process.env["GUILDCTL_SWEEP_INTERVAL_MINS"]` when `AutoQueueOptions.sweepIntervalMs` is not supplied.
+- [X] T003 In `runAutoQueue` (`migration/guildctl/supervisor/queue.ts`), initialize a `lastSweepAt` timestamp (using `opts.now ?? Date.now`) immediately after the existing startup `reapDeadRuns`/`reconcileStaleClaims` calls, and resolve the effective interval via T002. No sweep-triggering logic yet — this just establishes the clock state the loop will read in Phase 3.
+- [X] T004 [P] Add a `createFakeClock(startMs: number)` test helper (returns `{ now, advance(ms) }`) to `migration/test/auto-queue.test.ts`, for deterministic interval-elapsed simulation across all sweep tests (depends on T001).
 
 **Checkpoint**: Foundation ready — user story implementation can now begin.
 
@@ -56,16 +56,16 @@ Single project (existing `migration/guildctl` + `migration/registry` CLI/registr
 
 > Write these tests FIRST; confirm they FAIL before starting implementation tasks below.
 
-- [ ] T005 [P] [US1] Test: with the fake clock advanced past the configured interval between two loop iterations, `runAutoQueue` re-invokes reap/reconcile and a previously-stale claim/run fixture is recovered, in `migration/test/auto-queue.test.ts`.
-- [ ] T006 [P] [US1] Test: with the fake clock advanced by less than the interval, no additional reap/reconcile call happens beyond the startup sweep, in `migration/test/auto-queue.test.ts`.
-- [ ] T007 [P] [US1] Test: when the periodic sweep call throws, `runAutoQueue` catches it, does not abort, and continues processing remaining queued artifacts to a normal terminal status, in `migration/test/auto-queue.test.ts`.
-- [ ] T008 [P] [US1] Test: an artifact recovered by a periodic sweep (not the artifact currently in flight) is selectable by `selectCandidate` on the next loop iteration and appears in the final `processed`/`recoveredArtifacts` output, in `migration/test/auto-queue.test.ts`.
+- [X] T005 [P] [US1] Test: with the fake clock advanced past the configured interval between two loop iterations, `runAutoQueue` re-invokes reap/reconcile and a previously-stale claim/run fixture is recovered, in `migration/test/auto-queue.test.ts`.
+- [X] T006 [P] [US1] Test: with the fake clock advanced by less than the interval, no additional reap/reconcile call happens beyond the startup sweep, in `migration/test/auto-queue.test.ts`.
+- [X] T007 [P] [US1] Test: when the periodic sweep call throws, `runAutoQueue` catches it, does not abort, and continues processing remaining queued artifacts to a normal terminal status, in `migration/test/auto-queue.test.ts`.
+- [X] T008 [P] [US1] Test: an artifact recovered by a periodic sweep (not the artifact currently in flight) is selectable by `selectCandidate` on the next loop iteration and appears in the final `processed`/`recoveredArtifacts` output, in `migration/test/auto-queue.test.ts`.
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] In the `while` loop body of `runAutoQueue` (`migration/guildctl/supervisor/queue.ts`), at the top of each iteration (before `selectCandidate`), compare `(opts.now?.() ?? Date.now()) - lastSweepAt` against the resolved interval; when due, call `reapDeadRuns(db)` and `reconcileStaleClaims(db, "guildctl-auto-run")` again and update `lastSweepAt`. Depends on T002, T003.
-- [ ] T010 [US1] Wrap the periodic sweep call from T009 in try/catch: on error, do not rethrow or abort the loop; record the error for non-fatal reporting (consumed by US2's output task) and still update `lastSweepAt` so a persistently-failing sweep doesn't spin every iteration (FR-007). In `migration/guildctl/supervisor/queue.ts`. Depends on T009.
-- [ ] T011 [US1] Merge each periodic sweep's `reconcileStaleClaims` return value into the function-scoped `recoveredArtifacts` array already returned in `AutoQueueResult`, de-duplicating against existing entries (including the startup sweep's), in `migration/guildctl/supervisor/queue.ts`. Depends on T009.
+- [X] T009 [US1] In the `while` loop body of `runAutoQueue` (`migration/guildctl/supervisor/queue.ts`), at the top of each iteration (before `selectCandidate`), compare `(opts.now?.() ?? Date.now()) - lastSweepAt` against the resolved interval; when due, call `reapDeadRuns(db)` and `reconcileStaleClaims(db, "guildctl-auto-run")` again and update `lastSweepAt`. Depends on T002, T003.
+- [X] T010 [US1] Wrap the periodic sweep call from T009 in try/catch: on error, do not rethrow or abort the loop; record the error for non-fatal reporting (consumed by US2's output task) and still update `lastSweepAt` so a persistently-failing sweep doesn't spin every iteration (FR-007). In `migration/guildctl/supervisor/queue.ts`. Depends on T009.
+- [X] T011 [US1] Merge each periodic sweep's `reconcileStaleClaims` return value into the function-scoped `recoveredArtifacts` array already returned in `AutoQueueResult`, de-duplicating against existing entries (including the startup sweep's), in `migration/guildctl/supervisor/queue.ts`. Depends on T009.
 
 **Checkpoint**: Run `node --import tsx --test migration/test/auto-queue.test.ts` — all US1 tests pass. User Story 1 is independently functional: a long `auto-run` session self-heals mid-session staleness.
 
@@ -79,15 +79,15 @@ Single project (existing `migration/guildctl` + `migration/registry` CLI/registr
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T012 [P] [US2] Test: a periodic sweep that reaps/reconciles something produces exactly one console line via the injected `write` function, labeled distinctly from the startup sweep's report (if any) and naming what was recovered, in `migration/test/auto-queue.test.ts`.
-- [ ] T013 [P] [US2] Test: a periodic sweep that finds nothing stale produces zero additional output lines, in `migration/test/auto-queue.test.ts`.
-- [ ] T014 [P] [US2] Test: a periodic sweep that errors (per T010) produces one non-fatal warning line distinguishable from a fatal `auto-run` failure, in `migration/test/auto-queue.test.ts`.
+- [X] T012 [P] [US2] Test: a periodic sweep that reaps/reconciles something produces exactly one console line via the injected `write` function, labeled distinctly from the startup sweep's report (if any) and naming what was recovered, in `migration/test/auto-queue.test.ts`.
+- [X] T013 [P] [US2] Test: a periodic sweep that finds nothing stale produces zero additional output lines, in `migration/test/auto-queue.test.ts`.
+- [X] T014 [P] [US2] Test: a periodic sweep that errors (per T010) produces one non-fatal warning line distinguishable from a fatal `auto-run` failure, in `migration/test/auto-queue.test.ts`.
 
 ### Implementation for User Story 2
 
-- [ ] T015 [US2] Add an optional `write?: (text: string) => void` field to `AutoQueueOptions` in `migration/guildctl/supervisor/queue.ts`, and thread `dependencies.write` from `runAutoRunCommand` (`migration/guildctl/commands/auto-run.ts`) into the `runAutoQueue` call, defaulting to `process.stdout.write` — mirrors the existing `AutoRunCommandDependencies.write` pattern already used for the runtime report. Depends on T001.
-- [ ] T016 [US2] In `migration/guildctl/supervisor/queue.ts`, after each periodic sweep (T009) that reaps or reconciles at least one item, call `opts.write` with one formatted line naming the reaped run ID(s)/reconciled artifact ID(s) and marking it as a mid-session/periodic sweep (per `contracts/supervisor-queue-sweep.md` §4). Emit nothing when the sweep is clean (FR-006). Depends on T009, T015.
-- [ ] T017 [US2] In `migration/guildctl/supervisor/queue.ts`, on a caught periodic-sweep error (T010), call `opts.write` with one non-fatal warning line clearly distinct from the `auto-run` failure summary format used in `migration/guildctl/commands/auto-run.ts`. Depends on T010, T015.
+- [X] T015 [US2] Add an optional `write?: (text: string) => void` field to `AutoQueueOptions` in `migration/guildctl/supervisor/queue.ts`, and thread `dependencies.write` from `runAutoRunCommand` (`migration/guildctl/commands/auto-run.ts`) into the `runAutoQueue` call, defaulting to `process.stdout.write` — mirrors the existing `AutoRunCommandDependencies.write` pattern already used for the runtime report. Depends on T001.
+- [X] T016 [US2] In `migration/guildctl/supervisor/queue.ts`, after each periodic sweep (T009) that reaps or reconciles at least one item, call `opts.write` with one formatted line naming the reaped run ID(s)/reconciled artifact ID(s) and marking it as a mid-session/periodic sweep (per `contracts/supervisor-queue-sweep.md` §4). Emit nothing when the sweep is clean (FR-006). Depends on T009, T015.
+- [X] T017 [US2] In `migration/guildctl/supervisor/queue.ts`, on a caught periodic-sweep error (T010), call `opts.write` with one non-fatal warning line clearly distinct from the `auto-run` failure summary format used in `migration/guildctl/commands/auto-run.ts`. Depends on T010, T015.
 
 **Checkpoint**: Run `node --import tsx --test migration/test/auto-queue.test.ts` — all US1 + US2 tests pass. Operators running `auto-run` can see periodic sweep activity live.
 
@@ -101,14 +101,14 @@ Single project (existing `migration/guildctl` + `migration/registry` CLI/registr
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T018 [P] [US3] Test: `resolveSweepIntervalMs` (T002) falls back to the 10-minute default for unset, `"0"`, `"-5"`, and `"abc"` input, and honors a valid positive value, in `migration/test/auto-queue.test.ts`.
-- [ ] T019 [P] [US3] Test/assertion: `migration/guildctl/commands/auto.ts` (the standalone `guildctl auto` path) does not call `runAutoQueue` and is unaffected by this feature — a static import/reference check or an explicit regression test confirming its existing test suite (if any covers it) still passes unchanged, in `migration/test/auto-queue.test.ts` or the nearest existing `auto`-path test file.
+- [X] T018 [P] [US3] Test: `resolveSweepIntervalMs` (T002) falls back to the 10-minute default for unset, `"0"`, `"-5"`, and `"abc"` input, and honors a valid positive value, in `migration/test/auto-queue.test.ts`.
+- [X] T019 [P] [US3] Test/assertion: `migration/guildctl/commands/auto.ts` (the standalone `guildctl auto` path) does not call `runAutoQueue` and is unaffected by this feature — a static import/reference check or an explicit regression test confirming its existing test suite (if any covers it) still passes unchanged, in `migration/test/auto-queue.test.ts` or the nearest existing `auto`-path test file.
 
 ### Implementation for User Story 3
 
-- [ ] T020 [US3] Verify (and adjust if needed) that T002's `resolveSweepIntervalMs` fallback logic in `migration/guildctl/supervisor/queue.ts` satisfies T018 exactly — no separate implementation needed if T002 was written correctly; this task exists to close the loop on the edge case explicitly called out in spec.md's Edge Cases.
-- [ ] T021 [US3] Add a short note to `DEVELOPMENT.md` documenting the new `GUILDCTL_SWEEP_INTERVAL_MINS` environment variable, its default, and the explicit scope boundary (periodic sweep applies to `auto-run`'s queue loop only, not standalone `auto`), per the constitution's Development Workflow gate ("Changes to claim, lease, evidence, or run-lifecycle semantics MUST update both maintainer docs...").
-- [ ] T022 [P] [US3] Add an entry under `Unreleased` in `CHANGELOGS.MD` describing the always-on staleness sweep, citing issue #218.
+- [X] T020 [US3] Verify (and adjust if needed) that T002's `resolveSweepIntervalMs` fallback logic in `migration/guildctl/supervisor/queue.ts` satisfies T018 exactly — no separate implementation needed if T002 was written correctly; this task exists to close the loop on the edge case explicitly called out in spec.md's Edge Cases.
+- [X] T021 [US3] Add a short note to `DEVELOPMENT.md` documenting the new `GUILDCTL_SWEEP_INTERVAL_MINS` environment variable, its default, and the explicit scope boundary (periodic sweep applies to `auto-run`'s queue loop only, not standalone `auto`), per the constitution's Development Workflow gate ("Changes to claim, lease, evidence, or run-lifecycle semantics MUST update both maintainer docs...").
+- [X] T022 [P] [US3] Add an entry under `Unreleased` in `CHANGELOGS.MD` describing the always-on staleness sweep, citing issue #218.
 
 **Checkpoint**: All three user stories are independently functional and documented.
 
@@ -118,9 +118,9 @@ Single project (existing `migration/guildctl` + `migration/registry` CLI/registr
 
 **Purpose**: Final validation across all stories.
 
-- [ ] T023 Run `npm --prefix migration test` (full suite, not just `auto-queue.test.ts`) and confirm no regressions in `migration/test/supervisor-held-approval.test.ts`, `migration/test/supervisor-failures.test.ts`, or any other test touching `runAutoQueue`/`AutoQueueOptions`.
-- [ ] T024 Execute the manual validation steps in `specs/015-supervisor-staleness-sweep/quickstart.md` §2 against a scratch workspace (or `package/mock/` fixtures) to confirm end-to-end behavior outside the unit-test harness.
-- [ ] T025 [P] Re-read `specs/015-supervisor-staleness-sweep/spec.md` Functional Requirements (FR-001 through FR-010) and confirm each is satisfied by the merged implementation; note any gaps as follow-up tasks rather than silently closing them out.
+- [X] T023 Run `npm --prefix migration test` (full suite, not just `auto-queue.test.ts`) and confirm no regressions in `migration/test/supervisor-held-approval.test.ts`, `migration/test/supervisor-failures.test.ts`, or any other test touching `runAutoQueue`/`AutoQueueOptions`.
+- [X] T024 Execute the manual validation steps in `specs/015-supervisor-staleness-sweep/quickstart.md` §2 against a scratch workspace (or `package/mock/` fixtures) to confirm end-to-end behavior outside the unit-test harness.
+- [X] T025 [P] Re-read `specs/015-supervisor-staleness-sweep/spec.md` Functional Requirements (FR-001 through FR-010) and confirm each is satisfied by the merged implementation; note any gaps as follow-up tasks rather than silently closing them out.
 
 ---
 
