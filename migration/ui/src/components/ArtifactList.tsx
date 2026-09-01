@@ -1,7 +1,8 @@
 import { memo, useMemo, useState } from "react";
-import type { Artifact, TimeDisplayMode } from "../types";
+import type { Artifact, RunStatusEntry, TimeDisplayMode } from "../types";
 import { STATUS_FILTER_OPTIONS, KIND_FILTER_OPTIONS } from "../constants";
 import ArtifactDetail from "./ArtifactDetail";
+import RunStatusBadge from "./RunStatusBadge";
 import { EmptyState, ErrorState, LoadingState } from "./ViewState";
 
 // ⚡ Bolt: Memoize component to prevent unnecessary re-renders when App polls global state
@@ -11,13 +12,20 @@ export default memo(function ArtifactList({
   error,
   onRetry,
   timeMode,
+  runStatus = [],
 }: {
   artifacts: Artifact[];
   loading: boolean;
   error: Error | null;
   onRetry: () => void;
   timeMode: TimeDisplayMode;
+  /** Working/idle/waiting-for-approval/rejected label per artifact (spec 016, #220). */
+  runStatus?: RunStatusEntry[];
 }) {
+  const runStatusByArtifact = useMemo(
+    () => new Map(runStatus.map((entry) => [entry.artifact_id, entry])),
+    [runStatus],
+  );
   const [filterStatus, setFilterStatus] = useState("");
   const [filterModule, setFilterModule] = useState("");
   const [filterKind, setFilterKind] = useState("");
@@ -113,13 +121,14 @@ export default memo(function ArtifactList({
               <th>Module</th>
               <th>Wave</th>
               <th>Status</th>
+              <th>Run status</th>
               <th>Path</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="empty">
+                <td colSpan={7} className="empty">
                   No artifacts match filters.
                 </td>
               </tr>
@@ -155,6 +164,13 @@ export default memo(function ArtifactList({
                 </td>
                 <td>
                   <span className={`badge ${a.status}`}>{a.status}</span>
+                </td>
+                <td>
+                  {runStatusByArtifact.has(a.id) ? (
+                    <RunStatusBadge label={runStatusByArtifact.get(a.id)!.label} />
+                  ) : (
+                    <span style={{ color: "#333" }}>-</span>
+                  )}
                 </td>
                 <td>
                   <span className="path">{a.path}</span>

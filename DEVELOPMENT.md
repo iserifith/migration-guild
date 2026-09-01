@@ -348,6 +348,43 @@ preflight, `registry_schema.sql`); (6) also touches shipped prompt/agent templat
 `package/stacks/` parity copy restored. `migration/` updated as above; this file and
 `CHANGELOGS.MD` updated.
 
+### Spec 016 — run status vocabulary on the operator dashboard (#220)
+
+- **Four-state label, derived at read time, no schema changes:** a new
+  `queryRunStatusForUI` function in `migration/registry/commands/queries.ts` computes
+  `working` | `idle` | `waiting-for-approval` | `rejected` per non-terminal artifact
+  (precedence in that order) from `artifact_claims.state`/`heartbeat_at`/`claimed_at` and
+  the existing spec-013 `listPendingApprovals`/`arbitration_decisions` read paths — no new
+  tables/columns, no duplicated query logic.
+- **`WORKING_RECENCY_THRESHOLD_MS`** (5 minutes, `migration/registry/types.ts`) governs the
+  `working`/`idle` split. Deliberately separate from `guildctl doctor`'s 60-minute
+  `danglingClaimThresholdMs` and from issue #218's supervisor sweep interval (default 10
+  minutes) — the three answer different questions ("actively progressing right now" vs.
+  "probably abandoned" vs. "how often the supervisor re-checks staleness") and are not
+  reconciled by this feature (see spec.md Assumptions).
+- **Mission Control API:** `GET /api/run-status` — array of `{ artifact_id, label,
+  heartbeat_age_ms }`, one entry per non-terminal artifact.
+- **UI:** a shared `RunStatusBadge`/`RunStatusLegend` component
+  (`migration/ui/src/components/RunStatusBadge.tsx`) renders the four-state vocabulary,
+  wired into the Artifacts tab (per-artifact "Run status" column) and the dashboard header
+  legend via a new `useRunStatus()` hook polling on the existing 5s cadence — no new polling
+  mechanism. The existing `ApprovalsPanel` approve/reject data path and behavior are
+  unchanged (regression-tested by `test/approval-dashboard-parity.test.ts` and
+  `ApprovalsPanel.test.tsx`, run unmodified).
+
+Maintainer checklist answers for this feature: repo-only runtime change (registry + Mission
+Control UI — no new shipped Agent artifact, no `package/` capability change required);
+`package/` NOT updated (no user-workspace-facing capability added); `migration/` updated
+(`queryRunStatusForUI` + `GET /api/run-status` + `RunStatusBadge` UI, no schema changes);
+`DEVELOPMENT.md` updated (this section); `CHANGELOGS.MD` updated (Spec 016 entry under
+Unreleased).
+
+New `migration/test/` suites added by this feature: `run-status.test.ts` (registry-layer
+derivation, precedence, FR-006 recency-fallback, terminal-status exclusion) and
+`serve-run-status.test.ts` (`GET /api/run-status` HTTP plumbing). New
+`migration/ui/src/components/RunStatusBadge.test.tsx` covers the four-state rendering and
+the poll-cycle badge update (SC-003/FR-011).
+
 ## Docs expectations for this repo
 
 Use docs by audience:

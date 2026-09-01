@@ -6,6 +6,26 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### September 1, 2026
+
+- Shipped Spec 016 — a four-state run-status vocabulary (`working` / `idle` /
+  `waiting-for-approval` / `rejected`) on the Mission Control operator dashboard (#220).
+  A new read-only `queryRunStatusForUI` function in `migration/registry/commands/queries.ts`
+  derives one label per non-terminal artifact at read time from existing
+  `artifact_claims.state`/`heartbeat_at`/`claimed_at` data and the existing spec-013
+  pending-approval/arbitration-decision data paths (`listPendingApprovals`, the
+  `arbitration_decisions` latest-row JOIN pattern) — precedence `rejected` >
+  `waiting-for-approval` > `working` > `idle`, no schema changes, no duplicated query logic.
+  A claim reads as `working` when its active claim's heartbeat (falling back to `claimed_at`
+  per FR-006) is within a new `WORKING_RECENCY_THRESHOLD_MS` (5 minutes) — a constant kept
+  deliberately separate from `guildctl doctor`'s 60-minute dangling-claim threshold and
+  from issue #218's supervisor sweep interval; the three answer different questions and are
+  not reconciled by this feature. Exposed via a new `GET /api/run-status` endpoint and
+  consumed by a new shared `RunStatusBadge` UI component (plus a `RunStatusLegend`), wired
+  into the Artifacts tab and the dashboard header on the existing poll cycle — no new
+  polling mechanism. The existing `ApprovalsPanel` approve/reject data path and behavior
+  are unchanged (regression-tested).
+
 ### August 21, 2026
 
 - Shipped Spec 013 — approval gate for high-risk artifacts + attempt-scoped retry history

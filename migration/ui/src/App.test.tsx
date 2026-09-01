@@ -15,6 +15,7 @@ vi.mock("./hooks", () => ({
   useRegistryData: vi.fn(),
   useRunLog: vi.fn(),
   useApprovals: () => ({ pending: [], history: [], loading: false, error: null, reload: vi.fn() }),
+  useRunStatus: () => ({ runStatus: [], loading: false, error: null, reload: vi.fn() }),
   useStatus: () => ({ status: null, loading: false, error: null, reload: vi.fn() }),
   useSociety: () => ({ society: null, loading: false, error: null, reload: vi.fn() }),
   useWavePlan: () => ({ wavePlan: [], loading: false, error: null, reload: vi.fn() }),

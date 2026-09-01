@@ -29,7 +29,7 @@ Existing monorepo layout (see plan.md Project Structure): `migration/registry/` 
 
 **Purpose**: No new project scaffolding is needed — this feature extends existing `migration/registry` and `migration/ui` packages. This phase only confirms the starting point compiles/tests clean.
 
-- [ ] T001 Run `npm test` from repo root on a clean `016-run-status-vocabulary` branch to confirm the existing suite (migration + migration/ui) passes before any changes, per the constitution's Development Workflow gate
+- [X] T001 Run `npm test` from repo root on a clean `016-run-status-vocabulary` branch to confirm the existing suite (migration + migration/ui) passes before any changes, per the constitution's Development Workflow gate
 
 ---
 
@@ -39,12 +39,12 @@ Existing monorepo layout (see plan.md Project Structure): `migration/registry/` 
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T002 [P] Add `WORKING_RECENCY_THRESHOLD_MS` constant (5 minutes, `5 * 60 * 1000`) and the `RunStatusLabel`/`RunStatusEntry` types to `migration/registry/types.ts`, with a comment distinguishing it from `guildctl doctor`'s separate 60-minute `danglingClaimThresholdMs` (research.md)
-- [ ] T003 [US-shared] Write a registry-layer test in `migration/test/` (new file, e.g. `run-status.test.ts`) covering the precedence rules from data-model.md: recent-heartbeat active claim → `working`; stale-heartbeat/no active claim → `idle`; `pending-approval` status → `waiting-for-approval`; recorded `rejected` arbitration decision → `rejected`; an artifact satisfying both an active recent claim and a `rejected` decision → `rejected` (precedence); NULL `heartbeat_at` falls back to `claimed_at` (FR-006). Write this test to FAIL before T004 exists.
-- [ ] T004 Implement the derivation function (e.g. `queryRunStatusForUI`) in `migration/registry/commands/queries.ts`, reusing `listPendingApprovals` (or its underlying `pending-approval` check) and the `arbitration_decisions` read pattern from `migration/registry/commands/approval.ts` per FR-007/FR-008 — no duplicated query logic. Run T003 to green.
-- [ ] T005 Add `GET /api/run-status` to `migration/registry/commands/serve.ts`, dispatching directly to the T004 function, following the existing `GET /api/approvals` dispatcher pattern (serve.ts ~lines 137-140)
-- [ ] T006 [P] Add `fetchRunStatus()` to `migration/ui/src/api.ts` and mirror the `RunStatusEntry` DTO type in `migration/ui/src/types.ts`
-- [ ] T007 [P] Add badge colors/labels for the four-state vocabulary to `migration/ui/src/constants.ts` (parallel to existing `STATUS_COLORS`), and add a hook in `migration/ui/src/hooks.ts` that fetches `/api/run-status` using the existing `pollIntervalMs`-driven shared fetch pattern already used elsewhere in that file
+- [X] T002 [P] Add `WORKING_RECENCY_THRESHOLD_MS` constant (5 minutes, `5 * 60 * 1000`) and the `RunStatusLabel`/`RunStatusEntry` types to `migration/registry/types.ts`, with a comment distinguishing it from `guildctl doctor`'s separate 60-minute `danglingClaimThresholdMs` (research.md)
+- [X] T003 [US-shared] Write a registry-layer test in `migration/test/` (new file, e.g. `run-status.test.ts`) covering the precedence rules from data-model.md: recent-heartbeat active claim → `working`; stale-heartbeat/no active claim → `idle`; `pending-approval` status → `waiting-for-approval`; recorded `rejected` arbitration decision → `rejected`; an artifact satisfying both an active recent claim and a `rejected` decision → `rejected` (precedence); NULL `heartbeat_at` falls back to `claimed_at` (FR-006). Write this test to FAIL before T004 exists.
+- [X] T004 Implement the derivation function (e.g. `queryRunStatusForUI`) in `migration/registry/commands/queries.ts`, reusing `listPendingApprovals` (or its underlying `pending-approval` check) and the `arbitration_decisions` read pattern from `migration/registry/commands/approval.ts` per FR-007/FR-008 — no duplicated query logic. Run T003 to green.
+- [X] T005 Add `GET /api/run-status` to `migration/registry/commands/serve.ts`, dispatching directly to the T004 function, following the existing `GET /api/approvals` dispatcher pattern (serve.ts ~lines 137-140)
+- [X] T006 [P] Add `fetchRunStatus()` to `migration/ui/src/api.ts` and mirror the `RunStatusEntry` DTO type in `migration/ui/src/types.ts`
+- [X] T007 [P] Add badge colors/labels for the four-state vocabulary to `migration/ui/src/constants.ts` (parallel to existing `STATUS_COLORS`), and add a hook in `migration/ui/src/hooks.ts` that fetches `/api/run-status` using the existing `pollIntervalMs`-driven shared fetch pattern already used elsewhere in that file
 
 **Checkpoint**: Foundation ready — `/api/run-status` returns correct four-state labels for all fixture cases; UI has data access. User story implementation (which is now mostly presentation/wiring) can begin.
 
@@ -58,12 +58,12 @@ Existing monorepo layout (see plan.md Project Structure): `migration/registry/` 
 
 ### Tests for User Story 1 ⚠️
 
-- [ ] T008 [P] [US1] Write a UI test in `migration/ui/src/components/RunStatusBadge.test.tsx` asserting the badge renders "working" for a `working`-labeled entry, and that a poll-cycle refetch (advance the existing `pollIntervalMs` timer, same pattern as other polling hook tests) that changes the entry from `working` to `idle` updates the badge without a manual reload (SC-003, FR-011). Write to FAIL before T010 exists.
+- [X] T008 [P] [US1] Write a UI test in `migration/ui/src/components/RunStatusBadge.test.tsx` asserting the badge renders "working" for a `working`-labeled entry, and that a poll-cycle refetch (advance the existing `pollIntervalMs` timer, same pattern as other polling hook tests) that changes the entry from `working` to `idle` updates the badge without a manual reload (SC-003, FR-011). Write to FAIL before T010 exists.
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Create the shared `RunStatusBadge` component in `migration/ui/src/components/RunStatusBadge.tsx`, rendering the label/color from `migration/ui/src/constants.ts` (T007) for a single `RunStatusEntry`
-- [ ] T010 [US1] Wire the T007 hook + `RunStatusBadge` into `migration/ui/src/App.tsx` (or the artifact list/detail composition point, e.g. `ArtifactList.tsx`/`ArtifactDetail.tsx`) so artifacts with a `working` label are visibly indicated. Run T008 to green.
+- [X] T009 [US1] Create the shared `RunStatusBadge` component in `migration/ui/src/components/RunStatusBadge.tsx`, rendering the label/color from `migration/ui/src/constants.ts` (T007) for a single `RunStatusEntry`
+- [X] T010 [US1] Wire the T007 hook + `RunStatusBadge` into `migration/ui/src/App.tsx` (or the artifact list/detail composition point, e.g. `ArtifactList.tsx`/`ArtifactDetail.tsx`) so artifacts with a `working` label are visibly indicated. Run T008 to green.
 
 **Checkpoint**: User Story 1 fully functional and independently testable — operators can see "working" artifacts live.
 
@@ -77,11 +77,11 @@ Existing monorepo layout (see plan.md Project Structure): `migration/registry/` 
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T011 [P] [US2] Extend `migration/ui/src/components/RunStatusBadge.test.tsx` (or add a sibling test) asserting the badge renders "idle" for an `idle`-labeled entry, and that it is visually distinct from the "working" badge style (FR-009). Write to FAIL before T012 exists.
+- [X] T011 [P] [US2] Extend `migration/ui/src/components/RunStatusBadge.test.tsx` (or add a sibling test) asserting the badge renders "idle" for an `idle`-labeled entry, and that it is visually distinct from the "working" badge style (FR-009). Write to FAIL before T012 exists.
 
 ### Implementation for User Story 2
 
-- [ ] T012 [US2] Confirm/finish `RunStatusBadge`'s `idle` rendering path (styling per T007's constants) — this is largely covered by T009's generic implementation; this task closes any `idle`-specific gap (e.g., default/fallback styling, empty-claim edge case verification against T003's fixtures). Run T011 to green.
+- [X] T012 [US2] Confirm/finish `RunStatusBadge`'s `idle` rendering path (styling per T007's constants) — this is largely covered by T009's generic implementation; this task closes any `idle`-specific gap (e.g., default/fallback styling, empty-claim edge case verification against T003's fixtures). Run T011 to green.
 
 **Checkpoint**: User Stories 1 AND 2 both work independently — the two new derived states are both visible and correctly distinguished.
 
@@ -95,12 +95,12 @@ Existing monorepo layout (see plan.md Project Structure): `migration/registry/` 
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T013 [P] [US3] Add a UI test asserting `RunStatusBadge` renders `waiting-for-approval` and `rejected` labels using the same shared styling system as `working`/`idle` (not `ApprovalsPanel`-specific styling), in `migration/ui/src/components/RunStatusBadge.test.tsx`
-- [ ] T014 [P] [US3] Run the existing `migration/ui/src/components/ApprovalsPanel.test.tsx` suite unmodified and confirm it still passes (regression guard for FR-007/SC-004 — this feature must not alter approval endpoint/panel behavior)
+- [X] T013 [P] [US3] Add a UI test asserting `RunStatusBadge` renders `waiting-for-approval` and `rejected` labels using the same shared styling system as `working`/`idle` (not `ApprovalsPanel`-specific styling), in `migration/ui/src/components/RunStatusBadge.test.tsx`
+- [X] T014 [P] [US3] Run the existing `migration/ui/src/components/ApprovalsPanel.test.tsx` suite unmodified and confirm it still passes (regression guard for FR-007/SC-004 — this feature must not alter approval endpoint/panel behavior)
 
 ### Implementation for User Story 3
 
-- [ ] T015 [US3] Add a small shared legend (or consistent badge treatment) referencing all four labels, placed near existing status displays in `migration/ui/src/App.tsx`, so `waiting-for-approval`/`rejected` (sourced from the existing `ApprovalsPanel` data path per FR-007/FR-008) read as part of the same vocabulary as the new `working`/`idle` badges. Run T013/T014 to green.
+- [X] T015 [US3] Add a small shared legend (or consistent badge treatment) referencing all four labels, placed near existing status displays in `migration/ui/src/App.tsx`, so `waiting-for-approval`/`rejected` (sourced from the existing `ApprovalsPanel` data path per FR-007/FR-008) read as part of the same vocabulary as the new `working`/`idle` badges. Run T013/T014 to green.
 
 **Checkpoint**: All three user stories independently functional — dashboard tells one coherent four-state story.
 
@@ -110,10 +110,10 @@ Existing monorepo layout (see plan.md Project Structure): `migration/registry/` 
 
 **Purpose**: Constitution's Development Workflow gate and final validation.
 
-- [ ] T016 Run `quickstart.md`'s full validation sequence (registry-layer, API, UI, and optional manual end-to-end check) against the finished implementation
-- [ ] T017 Run `npm test` from repo root and confirm the full suite (migration + migration/ui) passes
-- [ ] T018 [P] Update `CHANGELOGS.MD` under `Unreleased` noting the new four-state dashboard vocabulary, per the constitution's Development Workflow gate
-- [ ] T019 Answer the constitution's maintainer checklist (repo-only vs. shipped; `package/` update needed?; `migration/` updated; `DEVELOPMENT.md` update needed?) — this feature is `migration/`-only (registry + UI runtime code), so confirm no `package/` mirror is required per the "Runtime code MUST NOT be mirrored between `migration/` and `package/`" boundary
+- [X] T016 Run `quickstart.md`'s full validation sequence (registry-layer, API, UI, and optional manual end-to-end check) against the finished implementation
+- [X] T017 Run `npm test` from repo root and confirm the full suite (migration + migration/ui) passes
+- [X] T018 [P] Update `CHANGELOGS.MD` under `Unreleased` noting the new four-state dashboard vocabulary, per the constitution's Development Workflow gate
+- [X] T019 Answer the constitution's maintainer checklist (repo-only vs. shipped; `package/` update needed?; `migration/` updated; `DEVELOPMENT.md` update needed?) — this feature is `migration/`-only (registry + UI runtime code), so confirm no `package/` mirror is required per the "Runtime code MUST NOT be mirrored between `migration/` and `package/`" boundary
 
 ---
 

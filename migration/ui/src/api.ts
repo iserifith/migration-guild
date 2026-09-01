@@ -25,6 +25,7 @@ import type {
   PagedResult,
   PendingApproval,
   RunEntry,
+  RunStatusEntry,
   RunFilters,
   RunListResult,
   RunQuery,
@@ -217,4 +218,9 @@ export function postApprovalDecision(
     `/api/approvals/${encodeURIComponent(artifactId)}/decision`,
     body,
   );
+}
+
+/** GET /api/run-status — four-state working/idle/waiting-for-approval/rejected label per non-terminal artifact (spec 016, #220). */
+export function fetchRunStatus(): Promise<RunStatusEntry[]> {
+  return get<RunStatusEntry[]>("/api/run-status");
 }
