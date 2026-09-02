@@ -76,7 +76,7 @@ function RejectForm({
           )}
         </div>
       </button>
-      <button className="state-button" onClick={onCancel} type="button" disabled={isSubmitting}>
+      <button className="state-button" onClick={onCancel} type="button" disabled={isSubmitting} title={isSubmitting ? "Cannot cancel while submitting" : "Cancel"}>
         Cancel
       </button>
     </div>
@@ -199,6 +199,7 @@ export default memo(function ApprovalsPanel({
                           }
                           type="button"
                           aria-busy={submittingId === a.artifactId && submittingDecision === "approved"}
+                          title={submittingId === a.artifactId ? "Decision in progress" : "Approve"}
                         >
                           <div className="button-content">
                             {submittingId === a.artifactId && submittingDecision === "approved" ? (
@@ -216,6 +217,7 @@ export default memo(function ApprovalsPanel({
                           disabled={submittingId === a.artifactId}
                           onClick={() => setRejectingId(a.artifactId)}
                           type="button"
+                          title={submittingId === a.artifactId ? "Decision in progress" : "Reject"}
                         >
                           Reject
                         </button>
