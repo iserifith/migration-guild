@@ -109,11 +109,16 @@ function ApprovalsBadge({ approvals }: { approvals: UseApprovalsResult }) {
   ) : null;
 }
 
+// ⚡ Bolt: wrap parameterless top-level tab components in React.memo to prevent
+// cascading re-renders when App.tsx polls global state via useRegistryData.
+const MissionControlTab = React.memo(() => <MissionControl />);
+const SocietyTab = React.memo(() => <SocietyView />);
+
 const TABS: TabDef[] = [
   {
     id: "Mission Control",
     label: "Mission Control",
-    render: () => <MissionControl />,
+    render: () => <MissionControlTab />,
   },
   {
     id: "Approvals",
@@ -124,7 +129,7 @@ const TABS: TabDef[] = [
   {
     id: "Society",
     label: "Society",
-    render: () => <SocietyView />,
+    render: () => <SocietyTab />,
   },
   {
     id: "Artifacts",
