@@ -36,3 +36,19 @@
 ## 2024-08-25 - Property Masking in Sequence Evaluation
 **Learning:** The CLI runner for the planner (`migration/guildctl/commands/plan.ts`) uses property masking on the `PlanningReadiness` struct (by passing artificially empty arrays via the spread operator) to evaluate gating checks sequentially across its lifecycle, rather than evaluating all checks simultaneously at the start.
 **Action:** When evaluating sequential gates or constraints across multiple domains, consider property masking to bypass specific checks while reusing the same underlying formatter logic.
+
+## 2025-05-20 - [Documentation Topic: sourceDeps and Parallel Pools]
+**Learning:** Found the algorithm that manages parallel waves mapping dependencies (`buildParallelPools`). The planner relies on Strongly Connected Components (Tarjan's algorithm).
+**Action:** Can write a deep dive on this.
+
+## 2025-05-20 - [Documentation strategy: Protocol vs Code structural mapping]
+**Learning:** Documenting protocol/algorithmic logic requires detailing the input, output, failure scenarios, and the rationale behind specific data structures (like DAGs and SCCs), as well as tracing how they interact with SQLite.
+**Action:** Use this structure for future deep-dives into core protocol logic.
+
+## 2025-05-20 - [Documentation strategy: Protocol vs Code structural mapping]
+**Learning:** Documenting protocol/algorithmic logic requires detailing the input, output, failure scenarios, and the rationale behind specific data structures (like DAGs and SCCs), as well as tracing how they interact with SQLite.
+**Action:** Use this structure for future deep-dives into core protocol logic.
+
+## 2025-05-20 - [Documentation strategy: Protocol vs Code structural mapping]
+**Learning:** Documenting protocol/algorithmic logic requires detailing the input, output, failure scenarios, and the rationale behind specific data structures (like DAGs and SCCs), as well as tracing how they interact with SQLite.
+**Action:** Use this structure for future deep-dives into core protocol logic.
