@@ -79,6 +79,20 @@ const SocietyViewContent = React.memo(function SocietyViewContent({ data, select
   const effectiveId = selectedId ?? selectedArtifactId;
   const lifecycle = data.lifecycles.find((item) => item.artifactId === effectiveId);
 
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && effectiveId) {
+        if (onSelect) {
+          onSelect("");
+        } else {
+          setSelectedArtifactId("");
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [effectiveId, onSelect]);
+
   return (
     <section className="society-view" aria-labelledby="society-title">
       <style>{`
