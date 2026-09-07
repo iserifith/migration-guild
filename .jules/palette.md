@@ -27,7 +27,6 @@
 
 ## 2026-08-30 - Add loading spinners to async buttons
 **Learning:** Loading states for async operations in React can benefit from explicit visual spinners rather than just changing text, to clearly indicate that a process is running without feeling stuck, and should use standard ARIA `aria-busy` along with matching visual context.
-**Action:** When creating or updating components with async state, include inline loading spinners using common `.spinner` and `.button-content` CSS utilities instead of just swapping label text.
-## $(date +%Y-%m-%d) - Escape listener in SocietyView
+## 2024-09-07 - Escape listener in SocietyView
 **Learning:** Found that the modal-like detail view in the `SocietyView` didn't have an `Escape` key listener, although the application rules require one for accessibility. The missing detail view `onSelect` callback could easily handle an `undefined` or empty state fallback.
 **Action:** Always verify if newly created or selected components have standard accessibility event listeners.
