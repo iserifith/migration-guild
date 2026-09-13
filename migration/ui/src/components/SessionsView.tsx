@@ -181,6 +181,7 @@ export default memo(function SessionsView({
             onClick={() => onQueryChange({ page: page - 1 })}
             type="button"
             title={!canPageBackward ? "First page reached" : "Previous page"}
+            aria-label="Previous page"
           >
             Previous
           </button>
@@ -190,6 +191,7 @@ export default memo(function SessionsView({
             onClick={() => onQueryChange({ page: page + 1 })}
             type="button"
             title={!canPageForward ? "Last page reached" : "Next page"}
+            aria-label="Next page"
           >
             Next
           </button>
