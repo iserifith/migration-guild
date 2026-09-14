@@ -29,6 +29,12 @@ import {
   type UseApprovalsResult,
   type UseRegistryDataResult,
   type UseRunStatusResult,
+  type UseArtifactsResult,
+  type UseWavePlanResult,
+  type UseSessionsResult,
+  type UseBlockersResult,
+  type UseIssuesResult,
+  type UseRunsResult
 } from "./hooks";
 import type {
   ApprovalDecisionRequest,
@@ -114,27 +120,11 @@ function ApprovalsBadge({ approvals }: { approvals: UseApprovalsResult }) {
 const MissionControlTab = React.memo(() => <MissionControl />);
 const SocietyTab = React.memo(() => <SocietyView />);
 
-const TABS: TabDef[] = [
-  {
-    id: "Mission Control",
-    label: "Mission Control",
-    render: () => <MissionControlTab />,
-  },
-  {
-    id: "Approvals",
-    label: "Approvals",
-    badge: ({ approvals }) => <ApprovalsBadge approvals={approvals} />,
-    render: ({ timeMode }) => <ApprovalsTab timeMode={timeMode} />,
-  },
-  {
-    id: "Society",
-    label: "Society",
-    render: () => <SocietyTab />,
-  },
-  {
-    id: "Artifacts",
-    label: "Artifacts",
-    render: ({ artifacts, runStatus, timeMode }) => (
+// ⚡ Bolt: Extracted inline tab components and wrapped in React.memo.
+// This prevents unnecessary cascading re-renders across all tabs when App.tsx
+// polls global state via useRegistryData.
+// Impact: Significant reduction in React re-renders when data structures haven't changed.
+const ArtifactsTab = React.memo(({ artifacts, runStatus, timeMode }: { artifacts: UseArtifactsResult, runStatus: UseRunStatusResult, timeMode: TimeDisplayMode }) => (
       <ArtifactList
         artifacts={artifacts.artifacts}
         loading={artifacts.loading}
@@ -143,24 +133,18 @@ const TABS: TabDef[] = [
         timeMode={timeMode}
         runStatus={runStatus.runStatus}
       />
-    ),
-  },
-  {
-    id: "Wave Plan",
-    label: "Wave Plan",
-    render: ({ wavePlan }) => (
+));
+
+const WavePlanTab = React.memo(({ wavePlan }: { wavePlan: UseWavePlanResult }) => (
       <WavePlan
         entries={wavePlan.wavePlan}
         loading={wavePlan.loading}
         error={wavePlan.error}
         onRetry={wavePlan.reload}
       />
-    ),
-  },
-  {
-    id: "Sessions",
-    label: "Sessions",
-    render: ({ sessions, sessionQuery, updateSessionQuery, timeMode }) => (
+));
+
+const SessionsTab = React.memo(({ sessions, sessionQuery, updateSessionQuery, timeMode }: { sessions: UseSessionsResult, sessionQuery: SessionQuery, updateSessionQuery: (u: Partial<SessionQuery>) => void, timeMode: TimeDisplayMode }) => (
       <SessionsView
         sessions={sessions.sessions}
         total={sessions.total}
@@ -175,20 +159,9 @@ const TABS: TabDef[] = [
         onQueryChange={updateSessionQuery}
         timeMode={timeMode}
       />
-    ),
-  },
-  {
-    id: "Blockers",
-    label: "Blockers",
-    render: ({
-      blockers,
-      issues,
-      blockerQuery,
-      updateBlockerQuery,
-      issueQuery,
-      updateIssueQuery,
-      timeMode,
-    }) => (
+));
+
+const BlockersTab = React.memo(({ blockers, issues, blockerQuery, updateBlockerQuery, issueQuery, updateIssueQuery, timeMode }: { blockers: UseBlockersResult, issues: UseIssuesResult, blockerQuery: BlockerQuery, updateBlockerQuery: (u: Partial<BlockerQuery>) => void, issueQuery: IssueQuery, updateIssueQuery: (u: Partial<IssueQuery>) => void, timeMode: TimeDisplayMode }) => (
       <BlockersView
         blockers={blockers.blockers}
         blockersTotal={blockers.total}
@@ -213,12 +186,9 @@ const TABS: TabDef[] = [
         onIssueQueryChange={updateIssueQuery}
         timeMode={timeMode}
       />
-    ),
-  },
-  {
-    id: "Runs",
-    label: "Runs",
-    render: ({ runs, runQuery, updateRunQuery, timeMode }) => (
+));
+
+const RunsTab = React.memo(({ runs, runQuery, updateRunQuery, timeMode }: { runs: UseRunsResult, runQuery: RunQuery, updateRunQuery: (u: Partial<RunQuery>) => void, timeMode: TimeDisplayMode }) => (
       <RunsView
         runs={runs.runs}
         total={runs.total}
@@ -233,7 +203,54 @@ const TABS: TabDef[] = [
         onQueryChange={updateRunQuery}
         timeMode={timeMode}
       />
-    ),
+));
+
+const TABS: TabDef[] = [
+  {
+    id: "Mission Control",
+    label: "Mission Control",
+    render: () => <MissionControlTab />,
+  },
+  {
+    id: "Approvals",
+    label: "Approvals",
+    badge: ({ approvals }) => <ApprovalsBadge approvals={approvals} />,
+    render: ({ timeMode }) => <ApprovalsTab timeMode={timeMode} />,
+  },
+  {
+    id: "Society",
+    label: "Society",
+    render: () => <SocietyTab />,
+  },
+  {
+    id: "Artifacts",
+    label: "Artifacts",
+    render: ({ artifacts, runStatus, timeMode }) => <ArtifactsTab artifacts={artifacts} runStatus={runStatus} timeMode={timeMode} />,
+
+  },
+  {
+    id: "Wave Plan",
+    label: "Wave Plan",
+    render: ({ wavePlan }) => <WavePlanTab wavePlan={wavePlan} />,
+
+  },
+  {
+    id: "Sessions",
+    label: "Sessions",
+    render: ({ sessions, sessionQuery, updateSessionQuery, timeMode }) => <SessionsTab sessions={sessions} sessionQuery={sessionQuery} updateSessionQuery={updateSessionQuery} timeMode={timeMode} />,
+
+  },
+  {
+    id: "Blockers",
+    label: "Blockers",
+    render: ({ blockers, issues, blockerQuery, updateBlockerQuery, issueQuery, updateIssueQuery, timeMode }) => <BlockersTab blockers={blockers} issues={issues} blockerQuery={blockerQuery} updateBlockerQuery={updateBlockerQuery} issueQuery={issueQuery} updateIssueQuery={updateIssueQuery} timeMode={timeMode} />,
+
+  },
+  {
+    id: "Runs",
+    label: "Runs",
+    render: ({ runs, runQuery, updateRunQuery, timeMode }) => <RunsTab runs={runs} runQuery={runQuery} updateRunQuery={updateRunQuery} timeMode={timeMode} />,
+
   },
 ];
 
