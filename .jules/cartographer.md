@@ -36,3 +36,6 @@
 ## 2024-08-25 - Property Masking in Sequence Evaluation
 **Learning:** The CLI runner for the planner (`migration/guildctl/commands/plan.ts`) uses property masking on the `PlanningReadiness` struct (by passing artificially empty arrays via the spread operator) to evaluate gating checks sequentially across its lifecycle, rather than evaluating all checks simultaneously at the start.
 **Action:** When evaluating sequential gates or constraints across multiple domains, consider property masking to bypass specific checks while reusing the same underlying formatter logic.
+## 2024-03-24 - Vitest Tap Output Quirk
+**Learning:** When running vitest in the migration backend (e.g., `npx vitest run`), a "no test suite found" output might occur for test files at the end of the suite. This is a known upstream bug with TAP outputs in newer vitest versions used in this project.
+**Action:** When validating test suites with vitest in this repository, rely on the visible test assertions in the TAP output stream (which print `ok 1 - ...`) to confirm the tests actually executed and passed, rather than solely relying on the final file summary which may spuriously report failure.
