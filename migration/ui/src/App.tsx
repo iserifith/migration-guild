@@ -114,6 +114,119 @@ function ApprovalsBadge({ approvals }: { approvals: UseApprovalsResult }) {
 const MissionControlTab = React.memo(() => <MissionControl />);
 const SocietyTab = React.memo(() => <SocietyView />);
 
+const ArtifactsTab = React.memo(function ArtifactsTab({
+  artifacts,
+  runStatus,
+  timeMode,
+}: Pick<TabProps, "artifacts" | "runStatus" | "timeMode">) {
+  return (
+    <ArtifactList
+      artifacts={artifacts.artifacts}
+      loading={artifacts.loading}
+      error={artifacts.error}
+      onRetry={artifacts.reload}
+      timeMode={timeMode}
+      runStatus={runStatus.runStatus}
+    />
+  );
+});
+
+const WavePlanTab = React.memo(function WavePlanTab({ wavePlan }: Pick<TabProps, "wavePlan">) {
+  return (
+    <WavePlan
+      entries={wavePlan.wavePlan}
+      loading={wavePlan.loading}
+      error={wavePlan.error}
+      onRetry={wavePlan.reload}
+    />
+  );
+});
+
+const SessionsTab = React.memo(function SessionsTab({
+  sessions,
+  sessionQuery,
+  updateSessionQuery,
+  timeMode,
+}: Pick<TabProps, "sessions" | "sessionQuery" | "updateSessionQuery" | "timeMode">) {
+  return (
+    <SessionsView
+      sessions={sessions.sessions}
+      total={sessions.total}
+      page={sessions.page}
+      pageSize={sessions.pageSize}
+      totalPages={sessions.totalPages}
+      availableFilters={sessions.availableFilters}
+      loading={sessions.loading}
+      error={sessions.error}
+      onRetry={sessions.reload}
+      query={sessionQuery}
+      onQueryChange={updateSessionQuery}
+      timeMode={timeMode}
+    />
+  );
+});
+
+const BlockersTab = React.memo(function BlockersTab({
+  blockers,
+  issues,
+  blockerQuery,
+  updateBlockerQuery,
+  issueQuery,
+  updateIssueQuery,
+  timeMode,
+}: Pick<TabProps, "blockers" | "issues" | "blockerQuery" | "updateBlockerQuery" | "issueQuery" | "updateIssueQuery" | "timeMode">) {
+  return (
+    <BlockersView
+      blockers={blockers.blockers}
+      blockersTotal={blockers.total}
+      blockersPage={blockers.page}
+      blockersPageSize={blockers.pageSize}
+      blockersTotalPages={blockers.totalPages}
+      blockersLoading={blockers.loading}
+      blockersError={blockers.error}
+      blockersOnRetry={blockers.reload}
+      blockerQuery={blockerQuery}
+      onBlockerQueryChange={updateBlockerQuery}
+      issues={issues.issues}
+      issuesTotal={issues.total}
+      issuesPage={issues.page}
+      issuesPageSize={issues.pageSize}
+      issuesTotalPages={issues.totalPages}
+      issueFilters={issues.availableFilters}
+      issuesLoading={issues.loading}
+      issuesError={issues.error}
+      issuesOnRetry={issues.reload}
+      issueQuery={issueQuery}
+      onIssueQueryChange={updateIssueQuery}
+      timeMode={timeMode}
+    />
+  );
+});
+
+const RunsTab = React.memo(function RunsTab({
+  runs,
+  runQuery,
+  updateRunQuery,
+  timeMode,
+}: Pick<TabProps, "runs" | "runQuery" | "updateRunQuery" | "timeMode">) {
+  return (
+    <RunsView
+      runs={runs.runs}
+      total={runs.total}
+      page={runs.page}
+      pageSize={runs.pageSize}
+      totalPages={runs.totalPages}
+      availableFilters={runs.availableFilters}
+      loading={runs.loading}
+      error={runs.error}
+      onRetry={runs.reload}
+      query={runQuery}
+      onQueryChange={updateRunQuery}
+      timeMode={timeMode}
+    />
+  );
+});
+
 const TABS: TabDef[] = [
   {
     id: "Mission Control",
@@ -135,46 +248,21 @@ const TABS: TabDef[] = [
     id: "Artifacts",
     label: "Artifacts",
     render: ({ artifacts, runStatus, timeMode }) => (
-      <ArtifactList
-        artifacts={artifacts.artifacts}
-        loading={artifacts.loading}
-        error={artifacts.error}
-        onRetry={artifacts.reload}
-        timeMode={timeMode}
-        runStatus={runStatus.runStatus}
-      />
+      <ArtifactsTab artifacts={artifacts} runStatus={runStatus} timeMode={timeMode} />
     ),
   },
   {
     id: "Wave Plan",
     label: "Wave Plan",
     render: ({ wavePlan }) => (
-      <WavePlan
-        entries={wavePlan.wavePlan}
-        loading={wavePlan.loading}
-        error={wavePlan.error}
-        onRetry={wavePlan.reload}
-      />
+      <WavePlanTab wavePlan={wavePlan} />
     ),
   },
   {
     id: "Sessions",
     label: "Sessions",
     render: ({ sessions, sessionQuery, updateSessionQuery, timeMode }) => (
-      <SessionsView
-        sessions={sessions.sessions}
-        total={sessions.total}
-        page={sessions.page}
-        pageSize={sessions.pageSize}
-        totalPages={sessions.totalPages}
-        availableFilters={sessions.availableFilters}
-        loading={sessions.loading}
-        error={sessions.error}
-        onRetry={sessions.reload}
-        query={sessionQuery}
-        onQueryChange={updateSessionQuery}
-        timeMode={timeMode}
-      />
+      <SessionsTab sessions={sessions} sessionQuery={sessionQuery} updateSessionQuery={updateSessionQuery} timeMode={timeMode} />
     ),
   },
   {
@@ -189,50 +277,14 @@ const TABS: TabDef[] = [
       updateIssueQuery,
       timeMode,
     }) => (
-      <BlockersView
-        blockers={blockers.blockers}
-        blockersTotal={blockers.total}
-        blockersPage={blockers.page}
-        blockersPageSize={blockers.pageSize}
-        blockersTotalPages={blockers.totalPages}
-        blockersLoading={blockers.loading}
-        blockersError={blockers.error}
-        blockersOnRetry={blockers.reload}
-        blockerQuery={blockerQuery}
-        onBlockerQueryChange={updateBlockerQuery}
-        issues={issues.issues}
-        issuesTotal={issues.total}
-        issuesPage={issues.page}
-        issuesPageSize={issues.pageSize}
-        issuesTotalPages={issues.totalPages}
-        issueFilters={issues.availableFilters}
-        issuesLoading={issues.loading}
-        issuesError={issues.error}
-        issuesOnRetry={issues.reload}
-        issueQuery={issueQuery}
-        onIssueQueryChange={updateIssueQuery}
-        timeMode={timeMode}
-      />
+      <BlockersTab blockers={blockers} issues={issues} blockerQuery={blockerQuery} updateBlockerQuery={updateBlockerQuery} issueQuery={issueQuery} updateIssueQuery={updateIssueQuery} timeMode={timeMode} />
     ),
   },
   {
     id: "Runs",
     label: "Runs",
     render: ({ runs, runQuery, updateRunQuery, timeMode }) => (
-      <RunsView
-        runs={runs.runs}
-        total={runs.total}
-        page={runs.page}
-        pageSize={runs.pageSize}
-        totalPages={runs.totalPages}
-        availableFilters={runs.availableFilters}
-        loading={runs.loading}
-        error={runs.error}
-        onRetry={runs.reload}
-        query={runQuery}
-        onQueryChange={updateRunQuery}
-        timeMode={timeMode}
-      />
+      <RunsTab runs={runs} runQuery={runQuery} updateRunQuery={updateRunQuery} timeMode={timeMode} />
     ),
   },
 ];
