@@ -36,3 +36,7 @@
 ## 2024-08-25 - Property Masking in Sequence Evaluation
 **Learning:** The CLI runner for the planner (`migration/guildctl/commands/plan.ts`) uses property masking on the `PlanningReadiness` struct (by passing artificially empty arrays via the spread operator) to evaluate gating checks sequentially across its lifecycle, rather than evaluating all checks simultaneously at the start.
 **Action:** When evaluating sequential gates or constraints across multiple domains, consider property masking to bypass specific checks while reusing the same underlying formatter logic.
+
+## 2026-09-18 - Failure Budget Seeding
+**Learning:** FailureBudget reconstructs state via FailureBudgetSeed from getPersistedBudgetState so that restarted supervisors resume attempts properly without resetting.
+**Action:** When working with autonomous loop memory, rely on registry state (attempt_records) to seed memory structs rather than trusting purely in-memory maps.
