@@ -54,6 +54,11 @@ export default memo(function WavePlan({
               </span>
             </div>
             <div
+              role="progressbar"
+              aria-label={`Wave ${entry.wave} progress`}
+              aria-valuenow={pct}
+              aria-valuemin={0}
+              aria-valuemax={100}
               style={{
                 height: 6,
                 background: "#252525",
