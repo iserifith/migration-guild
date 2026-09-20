@@ -36,3 +36,11 @@
 ## 2024-08-25 - Property Masking in Sequence Evaluation
 **Learning:** The CLI runner for the planner (`migration/guildctl/commands/plan.ts`) uses property masking on the `PlanningReadiness` struct (by passing artificially empty arrays via the spread operator) to evaluate gating checks sequentially across its lifecycle, rather than evaluating all checks simultaneously at the start.
 **Action:** When evaluating sequential gates or constraints across multiple domains, consider property masking to bypass specific checks while reusing the same underlying formatter logic.
+
+## 2024-10-24 - Characterization Fixtures Evidence Integrity
+**Learning:** Characterization fixtures (`migration/guildctl/commands/capture-fixture.ts` and `migration/registry/commands/evidence.ts`) perfectly demonstrate the core invariant of the Evidence Layer: the SQLite database (`acceptance_evidence`) holds the verifiable claim, while the file system (`.guild/evidence/characterization/`) only holds the payload. A fixture without a database row is untethered and ignored, while a database row verifies file integrity via `contentSha256`.
+**Action:** When documenting any subsystem that produces artifacts in `.guild/evidence`, always explain the dual-write flow: generating the file, hashing it, and inserting the database claim.
+
+## 2024-10-24 - Error Tolerance in Subprocess Execution
+**Learning:** `runCaptureFixture` intentionally suppresses non-zero exit codes from child processes via `catch` block wrapping, returning a graceful `captured: false` state rather than throwing. This is crucial for pipeline robustness when dealing with legacy seams that require unconfigured live environments.
+**Action:** When documenting CLI commands that invoke legacy code or tools, explicitly check and note whether subprocess errors are suppressed, swallowed, or propagated, as this drastically alters pipeline fault tolerance.
