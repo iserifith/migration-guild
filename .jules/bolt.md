@@ -10,3 +10,7 @@
 ## 2024-08-31 - React.memo() missing on top-level tab components
 **Learning:** Top-level tab components like `MissionControl` and `SocietyView` were rendering child views (e.g., `LiveMissionControl`) without `React.memo()`. Because `App.tsx` has a global poller (`useRegistryData`) that causes the entire shell to re-render every few seconds, these unmemoized top-level components were unnecessarily re-rendered on every poll tick, even though their props did not change. This caused cascading re-renders and unnecessary re-evaluations inside their child components.
 **Action:** Always verify that top-level route or tab components are wrapped in `React.memo()` if their parent components are subject to frequent re-renders from global state polling.
+
+## 2026-09-20 - Memoize hook return values for object stability
+**Learning:** In React, hooks like `useArtifacts` returning object literals (e.g. `{ artifacts: state.data, loading: state.loading, error: state.error, reload: state.reload }`) construct new object references on every render. Even when deeply wrapping child components in `React.memo`, if intermediate hooks don't memoize their return values, the object reference will change on every poll, invalidating memoization further down the tree.
+**Action:** Use `useMemo` to wrap return values containing object literals in custom hooks (especially API data hooks that return combinations of data, loading states, and reload callbacks), ensuring referential equality is preserved across renders.
