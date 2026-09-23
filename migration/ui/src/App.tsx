@@ -114,185 +114,20 @@ function ApprovalsBadge({ approvals }: { approvals: UseApprovalsResult }) {
 const MissionControlTab = React.memo(() => <MissionControl />);
 const SocietyTab = React.memo(() => <SocietyView />);
 
-const WavePlanTab = React.memo(function WavePlanTab({
-  entries,
-  loading,
-  error,
-  onRetry,
-}: {
-  entries: TabProps["wavePlan"]["wavePlan"];
-  loading: boolean;
-  error: Error | null;
-  onRetry: () => void;
-}) {
-  return (
-    <WavePlan entries={entries} loading={loading} error={error} onRetry={onRetry} />
-  );
+const WavePlanTab = React.memo(function WavePlanTab(props: React.ComponentProps<typeof WavePlan>) {
+  return <WavePlan {...props} />;
 });
 
-const SessionsTab = React.memo(function SessionsTab({
-  sessions,
-  total,
-  page,
-  pageSize,
-  totalPages,
-  availableFilters,
-  loading,
-  error,
-  onRetry,
-  sessionQuery,
-  updateSessionQuery,
-  timeMode,
-}: {
-  sessions: TabProps["sessions"]["sessions"];
-  total: number;
-  page: number;
-  pageSize: number;
-  totalPages: number;
-  availableFilters: TabProps["sessions"]["availableFilters"];
-  loading: boolean;
-  error: Error | null;
-  onRetry: () => void;
-  sessionQuery: SessionQuery;
-  updateSessionQuery: (updates: Partial<SessionQuery>) => void;
-  timeMode: TimeDisplayMode;
-}) {
-  return (
-    <SessionsView
-      sessions={sessions}
-      total={total}
-      page={page}
-      pageSize={pageSize}
-      totalPages={totalPages}
-      availableFilters={availableFilters}
-      loading={loading}
-      error={error}
-      onRetry={onRetry}
-      query={sessionQuery}
-      onQueryChange={updateSessionQuery}
-      timeMode={timeMode}
-    />
-  );
+const SessionsTab = React.memo(function SessionsTab(props: React.ComponentProps<typeof SessionsView>) {
+  return <SessionsView {...props} />;
 });
 
-const BlockersTab = React.memo(function BlockersTab({
-  blockers,
-  blockersTotal,
-  blockersPage,
-  blockersPageSize,
-  blockersTotalPages,
-  blockersLoading,
-  blockersError,
-  blockersOnRetry,
-  blockerQuery,
-  updateBlockerQuery,
-  issues,
-  issuesTotal,
-  issuesPage,
-  issuesPageSize,
-  issuesTotalPages,
-  issueFilters,
-  issuesLoading,
-  issuesError,
-  issuesOnRetry,
-  issueQuery,
-  updateIssueQuery,
-  timeMode,
-}: {
-  blockers: TabProps["blockers"]["blockers"];
-  blockersTotal: number;
-  blockersPage: number;
-  blockersPageSize: number;
-  blockersTotalPages: number;
-  blockersLoading: boolean;
-  blockersError: Error | null;
-  blockersOnRetry: () => void;
-  blockerQuery: BlockerQuery;
-  updateBlockerQuery: (updates: Partial<BlockerQuery>) => void;
-  issues: TabProps["issues"]["issues"];
-  issuesTotal: number;
-  issuesPage: number;
-  issuesPageSize: number;
-  issuesTotalPages: number;
-  issueFilters: TabProps["issues"]["availableFilters"];
-  issuesLoading: boolean;
-  issuesError: Error | null;
-  issuesOnRetry: () => void;
-  issueQuery: IssueQuery;
-  updateIssueQuery: (updates: Partial<IssueQuery>) => void;
-  timeMode: TimeDisplayMode;
-}) {
-  return (
-    <BlockersView
-      blockers={blockers}
-      blockersTotal={blockersTotal}
-      blockersPage={blockersPage}
-      blockersPageSize={blockersPageSize}
-      blockersTotalPages={blockersTotalPages}
-      blockersLoading={blockersLoading}
-      blockersError={blockersError}
-      blockersOnRetry={blockersOnRetry}
-      blockerQuery={blockerQuery}
-      onBlockerQueryChange={updateBlockerQuery}
-      issues={issues}
-      issuesTotal={issuesTotal}
-      issuesPage={issuesPage}
-      issuesPageSize={issuesPageSize}
-      issuesTotalPages={issuesTotalPages}
-      issueFilters={issueFilters}
-      issuesLoading={issuesLoading}
-      issuesError={issuesError}
-      issuesOnRetry={issuesOnRetry}
-      issueQuery={issueQuery}
-      onIssueQueryChange={updateIssueQuery}
-      timeMode={timeMode}
-    />
-  );
+const BlockersTab = React.memo(function BlockersTab(props: React.ComponentProps<typeof BlockersView>) {
+  return <BlockersView {...props} />;
 });
 
-const RunsTab = React.memo(function RunsTab({
-  runs,
-  total,
-  page,
-  pageSize,
-  totalPages,
-  availableFilters,
-  loading,
-  error,
-  onRetry,
-  runQuery,
-  updateRunQuery,
-  timeMode,
-}: {
-  runs: TabProps["runs"]["runs"];
-  total: number;
-  page: number;
-  pageSize: number;
-  totalPages: number;
-  availableFilters: TabProps["runs"]["availableFilters"];
-  loading: boolean;
-  error: Error | null;
-  onRetry: () => void;
-  runQuery: RunQuery;
-  updateRunQuery: (updates: Partial<RunQuery>) => void;
-  timeMode: TimeDisplayMode;
-}) {
-  return (
-    <RunsView
-      runs={runs}
-      total={total}
-      page={page}
-      pageSize={pageSize}
-      totalPages={totalPages}
-      availableFilters={availableFilters}
-      loading={loading}
-      error={error}
-      onRetry={onRetry}
-      query={runQuery}
-      onQueryChange={updateRunQuery}
-      timeMode={timeMode}
-    />
-  );
+const RunsTab = React.memo(function RunsTab(props: React.ComponentProps<typeof RunsView>) {
+  return <RunsView {...props} />;
 });
 
 const TABS: TabDef[] = [
@@ -352,8 +187,8 @@ const TABS: TabDef[] = [
         loading={sessions.loading}
         error={sessions.error}
         onRetry={sessions.reload}
-        sessionQuery={sessionQuery}
-        updateSessionQuery={updateSessionQuery}
+        query={sessionQuery}
+        onQueryChange={updateSessionQuery}
         timeMode={timeMode}
       />
     ),
@@ -380,7 +215,7 @@ const TABS: TabDef[] = [
         blockersError={blockers.error}
         blockersOnRetry={blockers.reload}
         blockerQuery={blockerQuery}
-        updateBlockerQuery={updateBlockerQuery}
+        onBlockerQueryChange={updateBlockerQuery}
         issues={issues.issues}
         issuesTotal={issues.total}
         issuesPage={issues.page}
@@ -391,7 +226,7 @@ const TABS: TabDef[] = [
         issuesError={issues.error}
         issuesOnRetry={issues.reload}
         issueQuery={issueQuery}
-        updateIssueQuery={updateIssueQuery}
+        onIssueQueryChange={updateIssueQuery}
         timeMode={timeMode}
       />
     ),
@@ -410,8 +245,8 @@ const TABS: TabDef[] = [
         loading={runs.loading}
         error={runs.error}
         onRetry={runs.reload}
-        runQuery={runQuery}
-        updateRunQuery={updateRunQuery}
+        query={runQuery}
+        onQueryChange={updateRunQuery}
         timeMode={timeMode}
       />
     ),
