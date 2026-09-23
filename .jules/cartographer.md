@@ -36,3 +36,6 @@
 ## 2024-08-25 - Property Masking in Sequence Evaluation
 **Learning:** The CLI runner for the planner (`migration/guildctl/commands/plan.ts`) uses property masking on the `PlanningReadiness` struct (by passing artificially empty arrays via the spread operator) to evaluate gating checks sequentially across its lifecycle, rather than evaluating all checks simultaneously at the start.
 **Action:** When evaluating sequential gates or constraints across multiple domains, consider property masking to bypass specific checks while reusing the same underlying formatter logic.
+## 2024-03-24 - Tarjan SCC and Parallel Pools
+**Learning:** The pipeline uses Tarjan's SCC to condense cyclical legacy dependencies, and then applies longest-path topological sorting over the condensed DAG to generate valid parallel execution pools.
+**Action:** When working on dependency graph or execution wave logic, understand that mutually dependent modules are intentionally serialized into single pools rather than breaking cycles heuristically.
