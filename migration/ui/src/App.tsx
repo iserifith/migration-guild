@@ -114,6 +114,26 @@ function ApprovalsBadge({ approvals }: { approvals: UseApprovalsResult }) {
 const MissionControlTab = React.memo(() => <MissionControl />);
 const SocietyTab = React.memo(() => <SocietyView />);
 
+const ArtifactsTab = React.memo(
+  (props: React.ComponentProps<typeof ArtifactList>) => <ArtifactList {...props} />,
+);
+
+const WavePlanTab = React.memo(
+  (props: React.ComponentProps<typeof WavePlan>) => <WavePlan {...props} />,
+);
+
+const SessionsTab = React.memo(
+  (props: React.ComponentProps<typeof SessionsView>) => <SessionsView {...props} />,
+);
+
+const BlockersTab = React.memo(
+  (props: React.ComponentProps<typeof BlockersView>) => <BlockersView {...props} />,
+);
+
+const RunsTab = React.memo(
+  (props: React.ComponentProps<typeof RunsView>) => <RunsView {...props} />,
+);
+
 const TABS: TabDef[] = [
   {
     id: "Mission Control",
@@ -135,7 +155,7 @@ const TABS: TabDef[] = [
     id: "Artifacts",
     label: "Artifacts",
     render: ({ artifacts, runStatus, timeMode }) => (
-      <ArtifactList
+      <ArtifactsTab
         artifacts={artifacts.artifacts}
         loading={artifacts.loading}
         error={artifacts.error}
@@ -149,7 +169,7 @@ const TABS: TabDef[] = [
     id: "Wave Plan",
     label: "Wave Plan",
     render: ({ wavePlan }) => (
-      <WavePlan
+      <WavePlanTab
         entries={wavePlan.wavePlan}
         loading={wavePlan.loading}
         error={wavePlan.error}
@@ -161,7 +181,7 @@ const TABS: TabDef[] = [
     id: "Sessions",
     label: "Sessions",
     render: ({ sessions, sessionQuery, updateSessionQuery, timeMode }) => (
-      <SessionsView
+      <SessionsTab
         sessions={sessions.sessions}
         total={sessions.total}
         page={sessions.page}
@@ -189,7 +209,7 @@ const TABS: TabDef[] = [
       updateIssueQuery,
       timeMode,
     }) => (
-      <BlockersView
+      <BlockersTab
         blockers={blockers.blockers}
         blockersTotal={blockers.total}
         blockersPage={blockers.page}
@@ -219,7 +239,7 @@ const TABS: TabDef[] = [
     id: "Runs",
     label: "Runs",
     render: ({ runs, runQuery, updateRunQuery, timeMode }) => (
-      <RunsView
+      <RunsTab
         runs={runs.runs}
         total={runs.total}
         page={runs.page}
