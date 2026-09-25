@@ -389,6 +389,23 @@ program
     runStatus(db());
   });
 
+// ─── ccmap ─────────────────────────────────────────────────────────────────────
+
+program
+  .command("ccmap")
+  .description("Export the registry as a CodeCharta 2.0 map (guild/wave/kind city; color = status_code)")
+  .option("-o, --output <file>", "Output file path (default ./codecharta-map.cc.json)")
+  .option("-n, --name <name>", "Project name embedded in the map (default: workspace dir name)")
+  .option("--stdout", "Write JSON to stdout instead of a file")
+  .action(async (opts) => {
+    assertDbExists(dbPath());
+    const { runCcMap } = await import("./commands/ccmap");
+    runCcMap(db(), opts.name || path.basename(process.cwd()), {
+      output: opts.output,
+      stdout: opts.stdout === true,
+    });
+  });
+
 // ─── watch ────────────────────────────────────────────────────────────────────
 
 program

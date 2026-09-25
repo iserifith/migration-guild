@@ -154,6 +154,14 @@ function ensureRemediationNoDefectEventType(db: Database.Database): void {
     .get() as { sql: string } | undefined;
   if (!row || row.sql.includes("remediation-confirmed-no-defect")) return;
 
+  // Same guards as ensureAdversaryEnvelopeEventTypes below: a stale
+  // events_new from an interrupted prior rebuild must not block this one, and
+  // trg_artifact_status_change references `events`, so ALTER TABLE ... RENAME
+  // fails while it recompiles the trigger with `events` briefly absent. Drop
+  // the trigger first, recreate it identically after the rename.
+  db.exec(`DROP TABLE IF EXISTS events_new`);
+  db.exec(`DROP TRIGGER IF EXISTS trg_artifact_status_change`);
+
   db.exec(`
     CREATE TABLE events_new (
         event_id     TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
@@ -209,6 +217,23 @@ function ensureRemediationNoDefectEventType(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_events_artifact ON events(artifact_id);
     CREATE INDEX IF NOT EXISTS idx_events_type     ON events(type);
     CREATE INDEX IF NOT EXISTS idx_events_ts       ON events(ts);
+  `);
+
+  // Recreate the trigger dropped above, identical to registry_schema.sql's
+  // definition (same pattern as ensureAdversaryEnvelopeEventTypes).
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS trg_artifact_status_change
+    AFTER UPDATE OF status ON artifacts
+    WHEN OLD.status != NEW.status
+    BEGIN
+      INSERT INTO events (artifact_id, type, agent, summary)
+      VALUES (
+        NEW.id,
+        'status-changed',
+        COALESCE(NEW.claimed_by, 'system'),
+        OLD.status || ' → ' || NEW.status
+      );
+    END;
   `);
 }
 
