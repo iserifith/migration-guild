@@ -95,6 +95,14 @@ function isEqual(a: unknown, b: unknown): boolean {
   return false;
 }
 
+function useStableValue<T>(value: T): T {
+  const ref = useRef<T>(value);
+  if (!isEqual(ref.current, value)) {
+    ref.current = value;
+  }
+  return ref.current;
+}
+
 function useLoadableData<T>(
   loader: () => Promise<T>,
   initialData: T,
@@ -170,11 +178,11 @@ export interface UseArtifactsResult {
  * re-renders when a parent passes a new object literal on every render.
  */
 export function useArtifacts(query: ArtifactQuery = {}): UseArtifactsResult {
-  const queryKey = JSON.stringify(query);
+  const stableQuery = useStableValue(query);
   const state = useLoadableData(
-    () => fetchArtifacts(JSON.parse(queryKey) as ArtifactQuery),
+    () => fetchArtifacts(stableQuery),
     [] as Artifact[],
-    [queryKey],
+    [stableQuery],
   );
 
   // ⚡ Bolt: Memoize the hook return object to prevent referential instability and cascading re-renders in child components
@@ -311,17 +319,17 @@ export interface UseSessionsResult {
 }
 
 export function useSessions(query: SessionQuery = {}): UseSessionsResult {
-  const queryKey = JSON.stringify(query);
+  const stableQuery = useStableValue(query);
   const state = useLoadableData(
-    () => fetchSessions(JSON.parse(queryKey) as SessionQuery),
+    () => fetchSessions(stableQuery),
     {
       items: [] as SessionEntry[],
       total: null,
       page: 1,
-      page_size: query.page_size ?? 25,
+      page_size: stableQuery.page_size ?? 25,
       total_pages: null,
     } satisfies SessionListResult,
-    [queryKey],
+    [stableQuery],
   );
 
   // ⚡ Bolt: Memoize the hook return object to prevent referential instability and cascading re-renders in child components
@@ -353,17 +361,17 @@ export interface UseBlockersResult {
 }
 
 export function useBlockers(query: BlockerQuery = {}): UseBlockersResult {
-  const queryKey = JSON.stringify(query);
+  const stableQuery = useStableValue(query);
   const state = useLoadableData(
-    () => fetchBlockers(JSON.parse(queryKey) as BlockerQuery),
+    () => fetchBlockers(stableQuery),
     {
       items: [] as BlockerEntry[],
       total: null,
       page: 1,
-      page_size: query.page_size ?? 25,
+      page_size: stableQuery.page_size ?? 25,
       total_pages: null,
     } satisfies BlockerListResult,
-    [queryKey],
+    [stableQuery],
   );
 
   // ⚡ Bolt: Memoize the hook return object to prevent referential instability and cascading re-renders in child components
@@ -395,17 +403,17 @@ export interface UseIssuesResult {
 }
 
 export function useIssues(query: IssueQuery = {}): UseIssuesResult {
-  const queryKey = JSON.stringify(query);
+  const stableQuery = useStableValue(query);
   const state = useLoadableData(
-    () => fetchIssues(JSON.parse(queryKey) as IssueQuery),
+    () => fetchIssues(stableQuery),
     {
       items: [] as IssueEntry[],
       total: null,
       page: 1,
-      page_size: query.page_size ?? 25,
+      page_size: stableQuery.page_size ?? 25,
       total_pages: null,
     } satisfies IssueListResult,
-    [queryKey],
+    [stableQuery],
   );
 
   // ⚡ Bolt: Memoize the hook return object to prevent referential instability and cascading re-renders in child components
@@ -438,17 +446,17 @@ export interface UseRunsResult {
 }
 
 export function useRuns(query: RunQuery = {}): UseRunsResult {
-  const queryKey = JSON.stringify(query);
+  const stableQuery = useStableValue(query);
   const state = useLoadableData(
-    () => fetchRuns(JSON.parse(queryKey) as RunQuery),
+    () => fetchRuns(stableQuery),
     {
       items: [] as RunEntry[],
       total: null,
       page: 1,
-      page_size: query.page_size ?? 25,
+      page_size: stableQuery.page_size ?? 25,
       total_pages: null,
     } satisfies RunListResult,
-    [queryKey],
+    [stableQuery],
   );
 
   // ⚡ Bolt: Memoize the hook return object to prevent referential instability and cascading re-renders in child components
