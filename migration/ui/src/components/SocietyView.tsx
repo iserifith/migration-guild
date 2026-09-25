@@ -29,9 +29,23 @@ const LiveSocietyView = React.memo(function LiveSocietyView() {
   const [selectedArtifactId, setSelectedArtifactId] = React.useState("");
   const { society } = useSociety(selectedArtifactId || undefined);
   const { events } = useEvents(selectedArtifactId);
+
+  const [hasUserDeselected, setHasUserDeselected] = React.useState(false);
+
   React.useEffect(() => {
-    if (!selectedArtifactId) setSelectedArtifactId(sessions[0]?.id ?? artifacts[0]?.id ?? "");
-  }, [artifacts, selectedArtifactId, sessions]);
+    if (!selectedArtifactId && !hasUserDeselected) {
+      setSelectedArtifactId(sessions[0]?.id ?? artifacts[0]?.id ?? "");
+    }
+  }, [artifacts, selectedArtifactId, sessions, hasUserDeselected]);
+
+  const handleSelect = React.useCallback((id: string) => {
+    setSelectedArtifactId(id);
+    if (id === "") {
+      setHasUserDeselected(true);
+    } else {
+      setHasUserDeselected(false);
+    }
+  }, []);
 
   // ⚡ Bolt: memoize expensive derived view data to prevent recalculating
   // sorting and filtering arrays on every polling cycle.
@@ -71,13 +85,27 @@ const LiveSocietyView = React.memo(function LiveSocietyView() {
       lifecycles: selectedArtifactId ? [{ artifactId: selectedArtifactId, artifactName: artifact?.path.split("/").pop() ?? selectedArtifactId, status: artifact?.acceptance_state?.toLowerCase() ?? artifact?.status ?? "recorded", steps }] : [],
     };
   }, [artifacts, sessions, selectedArtifactId, society, events]);
-  return <SocietyViewContent data={data} selectedId={selectedArtifactId} onSelect={setSelectedArtifactId} />;
+  return <SocietyViewContent data={data} selectedId={selectedArtifactId} onSelect={handleSelect} />;
 });
 
 const SocietyViewContent = React.memo(function SocietyViewContent({ data, selectedId, onSelect }: { data: SocietyViewData; selectedId?: string; onSelect?: (id: string) => void }) {
   const [selectedArtifactId, setSelectedArtifactId] = React.useState(data.initialArtifactId);
   const effectiveId = selectedId ?? selectedArtifactId;
   const lifecycle = data.lifecycles.find((item) => item.artifactId === effectiveId);
+
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && effectiveId) {
+        if (onSelect) {
+          onSelect("");
+        } else {
+          setSelectedArtifactId("");
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [effectiveId, onSelect]);
 
   return (
     <section className="society-view" aria-labelledby="society-title">

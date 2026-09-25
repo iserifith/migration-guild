@@ -35,3 +35,6 @@
 ## 2024-05-15 - Used EmptyState Component
 **Learning:** Found an inline "No artifacts match filters." string without styling, lacking a way to clear the filters quickly. Replacing it with the shared `EmptyState` component not only fixes the visual inconsistency but also lets us attach an `onAction` callback to reset `filterStatus`, `filterModule`, and `filterKind` all at once, which provides a much better UX than manual un-selection.
 **Action:** Always check inline "no results" messages in tables and lists to ensure they are using the centralized `EmptyState` component with a helpful call-to-action like "Clear filters".
+## 2024-09-07 - Escape listener in SocietyView
+**Learning:** Found that the modal-like detail view in the `SocietyView` didn't have an `Escape` key listener, although the application rules require one for accessibility. The missing detail view `onSelect` callback could easily handle an `undefined` or empty state fallback.
+**Action:** Always verify if newly created or selected components have standard accessibility event listeners.
