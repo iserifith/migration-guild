@@ -40,3 +40,6 @@
 ## 2024-09-24 - Source-Level Dependency Graph and Cycle Collapse
 **Learning:** The inventory phase extracts source-level dependencies deterministically via regex (rather than AST parsers) to tolerate uncompilable legacy code. Because mutual imports (cycles) are common in legacy code, Tarjan's Strongly Connected Components (SCC) algorithm is used to collapse these cycles into single execution units before computing topological levels for wave/pool generation. This prevents infinite loops and ensures safe parallel execution.
 **Action:** When describing pipeline graph logic, explain not just the "what" (edges) but the "how" (regex fallback and cycle handling via SCC), as these structural constraints dictate how the planner and execution engine behave downstream.
+## 2026-09-18 - Failure Budget Seeding
+**Learning:** FailureBudget reconstructs state via FailureBudgetSeed from getPersistedBudgetState so that restarted supervisors resume attempts properly without resetting.
+**Action:** When working with autonomous loop memory, rely on registry state (attempt_records) to seed memory structs rather than trusting purely in-memory maps.
