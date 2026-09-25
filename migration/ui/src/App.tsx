@@ -114,6 +114,161 @@ function ApprovalsBadge({ approvals }: { approvals: UseApprovalsResult }) {
 const MissionControlTab = React.memo(() => <MissionControl />);
 const SocietyTab = React.memo(() => <SocietyView />);
 
+// ⚡ Bolt: Extract dynamic tab views into explicitly named memoized components
+// that receive granular destructured props (avoiding global spread or state wrappers)
+// to prevent cascading re-renders when App.tsx polls global state via useRegistryData.
+const ArtifactsTab = React.memo(function ArtifactsTab({
+  artifacts,
+  loading,
+  error,
+  onRetry,
+  timeMode,
+  runStatus,
+}: React.ComponentProps<typeof ArtifactList>) {
+  return (
+    <ArtifactList
+      artifacts={artifacts}
+      loading={loading}
+      error={error}
+      onRetry={onRetry}
+      timeMode={timeMode}
+      runStatus={runStatus}
+    />
+  );
+});
+
+const WavePlanTab = React.memo(function WavePlanTab({
+  entries,
+  loading,
+  error,
+  onRetry,
+}: React.ComponentProps<typeof WavePlan>) {
+  return (
+    <WavePlan
+      entries={entries}
+      loading={loading}
+      error={error}
+      onRetry={onRetry}
+    />
+  );
+});
+
+const SessionsTab = React.memo(function SessionsTab({
+  sessions,
+  total,
+  page,
+  pageSize,
+  totalPages,
+  availableFilters,
+  loading,
+  error,
+  onRetry,
+  query,
+  onQueryChange,
+  timeMode,
+}: React.ComponentProps<typeof SessionsView>) {
+  return (
+    <SessionsView
+      sessions={sessions}
+      total={total}
+      page={page}
+      pageSize={pageSize}
+      totalPages={totalPages}
+      availableFilters={availableFilters}
+      loading={loading}
+      error={error}
+      onRetry={onRetry}
+      query={query}
+      onQueryChange={onQueryChange}
+      timeMode={timeMode}
+    />
+  );
+});
+
+const BlockersTab = React.memo(function BlockersTab({
+  blockers,
+  blockersTotal,
+  blockersPage,
+  blockersPageSize,
+  blockersTotalPages,
+  blockersLoading,
+  blockersError,
+  blockersOnRetry,
+  blockerQuery,
+  onBlockerQueryChange,
+  issues,
+  issuesTotal,
+  issuesPage,
+  issuesPageSize,
+  issuesTotalPages,
+  issueFilters,
+  issuesLoading,
+  issuesError,
+  issuesOnRetry,
+  issueQuery,
+  onIssueQueryChange,
+  timeMode,
+}: React.ComponentProps<typeof BlockersView>) {
+  return (
+    <BlockersView
+      blockers={blockers}
+      blockersTotal={blockersTotal}
+      blockersPage={blockersPage}
+      blockersPageSize={blockersPageSize}
+      blockersTotalPages={blockersTotalPages}
+      blockersLoading={blockersLoading}
+      blockersError={blockersError}
+      blockersOnRetry={blockersOnRetry}
+      blockerQuery={blockerQuery}
+      onBlockerQueryChange={onBlockerQueryChange}
+      issues={issues}
+      issuesTotal={issuesTotal}
+      issuesPage={issuesPage}
+      issuesPageSize={issuesPageSize}
+      issuesTotalPages={issuesTotalPages}
+      issueFilters={issueFilters}
+      issuesLoading={issuesLoading}
+      issuesError={issuesError}
+      issuesOnRetry={issuesOnRetry}
+      issueQuery={issueQuery}
+      onIssueQueryChange={onIssueQueryChange}
+      timeMode={timeMode}
+    />
+  );
+});
+
+const RunsTab = React.memo(function RunsTab({
+  runs,
+  total,
+  page,
+  pageSize,
+  totalPages,
+  availableFilters,
+  loading,
+  error,
+  onRetry,
+  query,
+  onQueryChange,
+  timeMode,
+}: React.ComponentProps<typeof RunsView>) {
+  return (
+    <RunsView
+      runs={runs}
+      total={total}
+      page={page}
+      pageSize={pageSize}
+      totalPages={totalPages}
+      availableFilters={availableFilters}
+      loading={loading}
+      error={error}
+      onRetry={onRetry}
+      query={query}
+      onQueryChange={onQueryChange}
+      timeMode={timeMode}
+    />
+  );
+});
+
 const TABS: TabDef[] = [
   {
     id: "Mission Control",
@@ -135,7 +290,7 @@ const TABS: TabDef[] = [
     id: "Artifacts",
     label: "Artifacts",
     render: ({ artifacts, runStatus, timeMode }) => (
-      <ArtifactList
+      <ArtifactsTab
         artifacts={artifacts.artifacts}
         loading={artifacts.loading}
         error={artifacts.error}
@@ -149,7 +304,7 @@ const TABS: TabDef[] = [
     id: "Wave Plan",
     label: "Wave Plan",
     render: ({ wavePlan }) => (
-      <WavePlan
+      <WavePlanTab
         entries={wavePlan.wavePlan}
         loading={wavePlan.loading}
         error={wavePlan.error}
@@ -161,7 +316,7 @@ const TABS: TabDef[] = [
     id: "Sessions",
     label: "Sessions",
     render: ({ sessions, sessionQuery, updateSessionQuery, timeMode }) => (
-      <SessionsView
+      <SessionsTab
         sessions={sessions.sessions}
         total={sessions.total}
         page={sessions.page}
@@ -189,7 +344,7 @@ const TABS: TabDef[] = [
       updateIssueQuery,
       timeMode,
     }) => (
-      <BlockersView
+      <BlockersTab
         blockers={blockers.blockers}
         blockersTotal={blockers.total}
         blockersPage={blockers.page}
@@ -219,7 +374,7 @@ const TABS: TabDef[] = [
     id: "Runs",
     label: "Runs",
     render: ({ runs, runQuery, updateRunQuery, timeMode }) => (
-      <RunsView
+      <RunsTab
         runs={runs.runs}
         total={runs.total}
         page={runs.page}
