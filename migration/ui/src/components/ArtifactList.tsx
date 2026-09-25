@@ -129,7 +129,16 @@ export default memo(function ArtifactList({
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={7} className="empty">
-                  No artifacts match filters.
+                  <EmptyState
+                    compact
+                    title="No artifacts match filters."
+                    actionLabel="Clear filters"
+                    onAction={() => {
+                      setFilterStatus("");
+                      setFilterModule("");
+                      setFilterKind("");
+                    }}
+                  />
                 </td>
               </tr>
             )}

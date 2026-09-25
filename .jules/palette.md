@@ -31,3 +31,7 @@
 ## 2024-09-25 - Progress bar accessibility
 **Learning:** Custom visual progress bars (built with `div` elements) must include semantic ARIA attributes so screen readers can announce them correctly. Without these, progress bars appear as generic empty elements to assistive technologies.
 **Action:** Always add `role="progressbar"`, `aria-label`, `aria-valuenow`, `aria-valuemin`, and `aria-valuemax` to custom visual progress indicators.
+
+## 2024-05-15 - Used EmptyState Component
+**Learning:** Found an inline "No artifacts match filters." string without styling, lacking a way to clear the filters quickly. Replacing it with the shared `EmptyState` component not only fixes the visual inconsistency but also lets us attach an `onAction` callback to reset `filterStatus`, `filterModule`, and `filterKind` all at once, which provides a much better UX than manual un-selection.
+**Action:** Always check inline "no results" messages in tables and lists to ensure they are using the centralized `EmptyState` component with a helpful call-to-action like "Clear filters".
