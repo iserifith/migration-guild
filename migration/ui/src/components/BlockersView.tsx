@@ -218,6 +218,7 @@ export default memo(function BlockersView({
                   onClick={() => onBlockerQueryChange({ page: blockersPage - 1 })}
                   type="button"
                   title={blockersPage <= 1 ? "First page reached" : "Previous page"}
+                  aria-label="Previous page"
                 >
                   Previous
                 </button>
@@ -227,6 +228,7 @@ export default memo(function BlockersView({
                   onClick={() => onBlockerQueryChange({ page: blockersPage + 1 })}
                   type="button"
                   title={(blockersTotalPages != null ? blockersPage >= blockersTotalPages : blockers.length < blockersPageSize) ? "Last page reached" : "Next page"}
+                  aria-label="Next page"
                 >
                   Next
                 </button>
@@ -385,6 +387,7 @@ export default memo(function BlockersView({
                   onClick={() => onIssueQueryChange({ page: issuesPage - 1 })}
                   type="button"
                   title={issuesPage <= 1 ? "First page reached" : "Previous page"}
+                  aria-label="Previous page"
                 >
                   Previous
                 </button>
@@ -394,6 +397,7 @@ export default memo(function BlockersView({
                   onClick={() => onIssueQueryChange({ page: issuesPage + 1 })}
                   type="button"
                   title={(issuesTotalPages != null ? issuesPage >= issuesTotalPages : issues.length < issuesPageSize) ? "Last page reached" : "Next page"}
+                  aria-label="Next page"
                 >
                   Next
                 </button>
