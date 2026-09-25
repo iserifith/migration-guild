@@ -28,3 +28,6 @@
 ## 2026-08-30 - Add loading spinners to async buttons
 **Learning:** Loading states for async operations in React can benefit from explicit visual spinners rather than just changing text, to clearly indicate that a process is running without feeling stuck, and should use standard ARIA `aria-busy` along with matching visual context.
 **Action:** When creating or updating components with async state, include inline loading spinners using common `.spinner` and `.button-content` CSS utilities instead of just swapping label text.
+## 2024-09-25 - Progress bar accessibility
+**Learning:** Custom visual progress bars (built with `div` elements) must include semantic ARIA attributes so screen readers can announce them correctly. Without these, progress bars appear as generic empty elements to assistive technologies.
+**Action:** Always add `role="progressbar"`, `aria-label`, `aria-valuenow`, `aria-valuemin`, and `aria-valuemax` to custom visual progress indicators.
