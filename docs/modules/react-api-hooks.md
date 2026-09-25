@@ -80,31 +80,31 @@ return useMemo(
 
 Specific data slices are exposed via dedicated feature hooks (e.g., `useArtifacts`, `useEvents`, `useSessions`) that wrap `useLoadableData`.
 
-### Query Parameter Dependency Tracking (`JSON.stringify`)
+### Query Parameter Dependency Tracking (`useStableValue`)
 
 Some feature hooks accept dynamic query parameters (like `useSessions(query: SessionQuery)`). Because these query objects are often passed inline by parent components (e.g., `<Component query={{ page: 1 }} />`), their object references change on every render.
 
-To track these queries safely without triggering infinite fetch loops, the feature hooks use `JSON.stringify` specifically for generating primitive string dependency arrays:
+To track these queries safely without triggering infinite fetch loops, the feature hooks stabilize the query object by reference via the `useStableValue` helper (see `useArtifacts` for the canonical example). It keeps the *previous* object reference whenever the new value is deep-equal (`isEqual`) to the stored one, so the dependency array only changes when the query actually changes:
 
 ```typescript
-export function useSessions(query: SessionQuery = {}): UseSessionsResult {
-  const queryKey = JSON.stringify(query); // Primitive string for stable dependency tracking
+export function useArtifacts(query: ArtifactQuery = {}): UseArtifactsResult {
+  const stableQuery = useStableValue(query); // Deep-equal stabilized reference
   const state = useLoadableData(
-    () => fetchSessions(JSON.parse(queryKey) as SessionQuery),
+    () => fetchArtifacts(stableQuery),
     // ...
-    [queryKey],
+    [stableQuery],
   );
   // ...
 }
 ```
 
-This ensures the hook only refetches when the *values* within the query object change, independent of object reference churn.
+This ensures the hook only refetches when the *values* within the query object change, independent of object reference churn — without the serialize/parse round-trip.
 
-*(Distinction: `JSON.stringify` is acceptable for small, shallow query parameter objects sent to the server, but is strictly avoided in favor of `isEqual` when comparing the large, deeply nested JSON responses coming back from the server.)*
+*(Previously this used a `JSON.stringify`-based query key; it was replaced by the deep-equality `useStableValue` ref pattern, which avoids key-order sensitivity and the `JSON.parse` round-trip overhead.)*
 
 ### Feature Hook Stability
 
-Just as `useLoadableData` memoizes its return value, the higher-level feature hooks must also return stable object references. If a feature hook returns an object literal without wrapping it in `useMemo`, it breaks the chain of referential stability established lower down, causing cascading re-renders in dependent components.
+Just as `useLoadableData` memoizes its return value, the higher-level feature hooks must also return stable object references. If a feature hook returns an object literal without wrapping it in `useMemo`, it breaks the chain of referential stability established lower down, causing cascading re-renders in dependent components. Every feature hook that derives its return object from `useLoadableData` state (e.g., `useArtifacts`, `useSessions`, `useBlockers`, `useIssues`, `useRuns`) wraps its return value in `useMemo` with granular dependencies on the returned slices.
 
 For example, `useRegistryData` aggregates multiple individual feature hooks. It must wrap its massive return object in a `useMemo` block to preserve referential equality unless the underlying hooks actually change:
 
