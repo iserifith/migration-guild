@@ -177,12 +177,16 @@ export function useArtifacts(query: ArtifactQuery = {}): UseArtifactsResult {
     [queryKey],
   );
 
-  return {
-    artifacts: state.data,
-    loading: state.loading,
-    error: state.error,
-    reload: state.reload,
-  };
+  // ⚡ Bolt: Memoize the hook return object to prevent referential instability and cascading re-renders in child components
+  return useMemo(
+    () => ({
+      artifacts: state.data,
+      loading: state.loading,
+      error: state.error,
+      reload: state.reload,
+    }),
+    [state.data, state.loading, state.error, state.reload]
+  );
 }
 
 // ── useStatus ─────────────────────────────────────────────────────────────────
@@ -202,12 +206,16 @@ export function useStatus(): UseStatusResult {
     [],
   );
 
-  return {
-    status: state.data,
-    loading: state.loading,
-    error: state.error,
-    reload: state.reload,
-  };
+  // ⚡ Bolt: Memoize the hook return object to prevent referential instability and cascading re-renders in child components
+  return useMemo(
+    () => ({
+      status: state.data,
+      loading: state.loading,
+      error: state.error,
+      reload: state.reload,
+    }),
+    [state.data, state.loading, state.error, state.reload]
+  );
 }
 
 // ── useEvents ─────────────────────────────────────────────────────────────────
@@ -228,12 +236,16 @@ export function useEvents(artifactId: string): UseEventsResult {
     5_000,
   );
 
-  return {
-    events: state.data,
-    loading: state.loading,
-    error: state.error,
-    reload: state.reload,
-  };
+  // ⚡ Bolt: Memoize the hook return object to prevent referential instability and cascading re-renders in child components
+  return useMemo(
+    () => ({
+      events: state.data,
+      loading: state.loading,
+      error: state.error,
+      reload: state.reload,
+    }),
+    [state.data, state.loading, state.error, state.reload]
+  );
 }
 
 export interface UseSocietyResult {
@@ -251,7 +263,11 @@ export function useSociety(artifactId?: string): UseSocietyResult {
     [artifactId],
     5_000,
   );
-  return { society: state.data, loading: state.loading, error: state.error, reload: state.reload };
+  // ⚡ Bolt: Memoize the hook return object to prevent referential instability and cascading re-renders in child components
+  return useMemo(
+    () => ({ society: state.data, loading: state.loading, error: state.error, reload: state.reload }),
+    [state.data, state.loading, state.error, state.reload]
+  );
 }
 
 // ── Feature hooks ─────────────────────────────────────────────────────────────
@@ -270,12 +286,16 @@ export function useWavePlan(): UseWavePlanResult {
     [],
   );
 
-  return {
-    wavePlan: state.data,
-    loading: state.loading,
-    error: state.error,
-    reload: state.reload,
-  };
+  // ⚡ Bolt: Memoize the hook return object to prevent referential instability and cascading re-renders in child components
+  return useMemo(
+    () => ({
+      wavePlan: state.data,
+      loading: state.loading,
+      error: state.error,
+      reload: state.reload,
+    }),
+    [state.data, state.loading, state.error, state.reload]
+  );
 }
 
 export interface UseSessionsResult {
@@ -304,17 +324,21 @@ export function useSessions(query: SessionQuery = {}): UseSessionsResult {
     [queryKey],
   );
 
-  return {
-    sessions: state.data.items,
-    total: state.data.total,
-    page: state.data.page,
-    pageSize: state.data.page_size,
-    totalPages: state.data.total_pages,
-    availableFilters: state.data.available_filters,
-    loading: state.loading,
-    error: state.error,
-    reload: state.reload,
-  };
+  // ⚡ Bolt: Memoize the hook return object to prevent referential instability and cascading re-renders in child components
+  return useMemo(
+    () => ({
+      sessions: state.data.items,
+      total: state.data.total,
+      page: state.data.page,
+      pageSize: state.data.page_size,
+      totalPages: state.data.total_pages,
+      availableFilters: state.data.available_filters,
+      loading: state.loading,
+      error: state.error,
+      reload: state.reload,
+    }),
+    [state.data.items, state.data.total, state.data.page, state.data.page_size, state.data.total_pages, state.data.available_filters, state.loading, state.error, state.reload]
+  );
 }
 
 export interface UseBlockersResult {
@@ -342,16 +366,20 @@ export function useBlockers(query: BlockerQuery = {}): UseBlockersResult {
     [queryKey],
   );
 
-  return {
-    blockers: state.data.items,
-    total: state.data.total,
-    page: state.data.page,
-    pageSize: state.data.page_size,
-    totalPages: state.data.total_pages,
-    loading: state.loading,
-    error: state.error,
-    reload: state.reload,
-  };
+  // ⚡ Bolt: Memoize the hook return object to prevent referential instability and cascading re-renders in child components
+  return useMemo(
+    () => ({
+      blockers: state.data.items,
+      total: state.data.total,
+      page: state.data.page,
+      pageSize: state.data.page_size,
+      totalPages: state.data.total_pages,
+      loading: state.loading,
+      error: state.error,
+      reload: state.reload,
+    }),
+    [state.data.items, state.data.total, state.data.page, state.data.page_size, state.data.total_pages, state.loading, state.error, state.reload]
+  );
 }
 
 export interface UseIssuesResult {
@@ -380,17 +408,21 @@ export function useIssues(query: IssueQuery = {}): UseIssuesResult {
     [queryKey],
   );
 
-  return {
-    issues: state.data.items,
-    total: state.data.total,
-    page: state.data.page,
-    pageSize: state.data.page_size,
-    totalPages: state.data.total_pages,
-    availableFilters: state.data.available_filters,
-    loading: state.loading,
-    error: state.error,
-    reload: state.reload,
-  };
+  // ⚡ Bolt: Memoize the hook return object to prevent referential instability and cascading re-renders in child components
+  return useMemo(
+    () => ({
+      issues: state.data.items,
+      total: state.data.total,
+      page: state.data.page,
+      pageSize: state.data.page_size,
+      totalPages: state.data.total_pages,
+      availableFilters: state.data.available_filters,
+      loading: state.loading,
+      error: state.error,
+      reload: state.reload,
+    }),
+    [state.data.items, state.data.total, state.data.page, state.data.page_size, state.data.total_pages, state.data.available_filters, state.loading, state.error, state.reload]
+  );
 }
 
 export interface UseRunsResult {
@@ -419,17 +451,21 @@ export function useRuns(query: RunQuery = {}): UseRunsResult {
     [queryKey],
   );
 
-  return {
-    runs: state.data.items,
-    total: state.data.total,
-    page: state.data.page,
-    pageSize: state.data.page_size,
-    totalPages: state.data.total_pages,
-    availableFilters: state.data.available_filters,
-    loading: state.loading,
-    error: state.error,
-    reload: state.reload,
-  };
+  // ⚡ Bolt: Memoize the hook return object to prevent referential instability and cascading re-renders in child components
+  return useMemo(
+    () => ({
+      runs: state.data.items,
+      total: state.data.total,
+      page: state.data.page,
+      pageSize: state.data.page_size,
+      totalPages: state.data.total_pages,
+      availableFilters: state.data.available_filters,
+      loading: state.loading,
+      error: state.error,
+      reload: state.reload,
+    }),
+    [state.data.items, state.data.total, state.data.page, state.data.page_size, state.data.total_pages, state.data.available_filters, state.loading, state.error, state.reload]
+  );
 }
 
 export interface UseRunLogResult {
@@ -478,7 +514,11 @@ export function useRunLog(runId: string | null): UseRunLogResult {
     load();
   }, [load]);
 
-  return { log, loading, error, reload: load };
+  // ⚡ Bolt: Memoize the hook return object to prevent referential instability and cascading re-renders in child components
+  return useMemo(
+    () => ({ log, loading, error, reload: load }),
+    [log, loading, error, load]
+  );
 }
 
 // ── useApprovals (US4, spec 013) ─────────────────────────────────────────────
@@ -514,13 +554,17 @@ export function useApprovals(): UseApprovalsResult {
     historyState.reload();
   }, [pendingState.reload, historyState.reload]);
 
-  return {
-    pending: pendingState.data,
-    history: historyState.data,
-    loading: pendingState.loading || historyState.loading,
-    error: pendingState.error ?? historyState.error,
-    reload,
-  };
+  // ⚡ Bolt: Memoize the hook return object to prevent referential instability and cascading re-renders in child components
+  return useMemo(
+    () => ({
+      pending: pendingState.data,
+      history: historyState.data,
+      loading: pendingState.loading || historyState.loading,
+      error: pendingState.error ?? historyState.error,
+      reload,
+    }),
+    [pendingState.data, historyState.data, pendingState.loading, historyState.loading, pendingState.error, historyState.error, reload]
+  );
 }
 
 // ── useRunStatus (spec 016, #220) ────────────────────────────────────────────
@@ -546,12 +590,16 @@ export function useRunStatus(): UseRunStatusResult {
     5_000,
   );
 
-  return {
-    runStatus: state.data,
-    loading: state.loading,
-    error: state.error,
-    reload: state.reload,
-  };
+  // ⚡ Bolt: Memoize the hook return object to prevent referential instability and cascading re-renders in child components
+  return useMemo(
+    () => ({
+      runStatus: state.data,
+      loading: state.loading,
+      error: state.error,
+      reload: state.reload,
+    }),
+    [state.data, state.loading, state.error, state.reload]
+  );
 }
 
 // ── useRegistryData ───────────────────────────────────────────────────────────
