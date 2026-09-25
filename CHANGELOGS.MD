@@ -6,6 +6,29 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### September 25, 2026
+
+- `guildctl ccmap` — export the migration registry as a CodeCharta 2.0 map
+  (issue-level: visualization support). Emits the `{meta, files, lenses}`
+  apiVersion 2.0 format directly (the CodeCharta Web Studio loads it with no
+  ccsh conversion step): folder tree `guild/wave-XX/<kind>/<artifact-slug>`,
+  leaf link points back to the artifact source path, per-artifact metrics
+  `status_code`, `wave`, `event_count`, `evidence_count`,
+  `verify_slot_count`, `claim_age_days` with human-readable
+  attributeDescriptors for studio tooltips. `-n/--name` sets the embedded
+  project name (default: workspace dir basename); `--stdout` for piping.
+- Fixed a destructive pre-existing bug in
+  `ensureRemediationNoDefectEventType` (`migration/registry/db/schema.ts`):
+  the events-table CHECK-widening rebuild dropped `events` while
+  `trg_artifact_status_change` still referenced it, so the
+  `ALTER TABLE … RENAME` failed mid-sequence and stranded the copied rows in
+  a leftover `events_new` — databases predating #217's widened CHECK lost
+  their events on first open with a current kit. The rebuild now drops the
+  stale `events_new` and the trigger first, then recreates the trigger
+  identically after the rename, the same pattern
+  `ensureAdversaryEnvelopeEventTypes` already used. Verified by transplanting
+  the stranded 155 events out of `events_new` on a real workspace DB.
+
 ### September 1, 2026
 
 - Shipped Spec 015 — always-on supervisor staleness sweep (issue #218).
