@@ -188,23 +188,18 @@ Two consequences:
 
 ### Version-change lifecycle: supersede, don't accumulate
 
-When you write a new version of a symbol, stale-version documentation must not
-remain queryable (the data-model's version-change lifecycle). This is handled
-inside the same transaction that does the insert (entries.ts:97):
+When you write a new version of a symbol, stale-version documentation for that
+same symbol must not remain queryable. Inside the existing write transaction
+(`entries.ts`), one set-based `DELETE` removes rows matching the same library,
+kind, symbol, and normalized signature whose library version differs from the
+incoming version. Other symbols, overloads, and rows at the incoming version
+are untouched.
 
-1. **Auto-detect prior versions** — a `SELECT DISTINCT library_version` finds
-   any other version of the same (library, kind, symbol, signature) and deletes
-   all its rows. This is why callers don't have to thread the old version
-   through: the DB finds it.
-2. **Explicit `supersedesVersion`** — if provided (tests pass it), rows at that
-   specific version are also deleted, but *scoped to the same
-   symbol/signature* so sibling symbols documented at the superseded version are
-   untouched.
-
-Then the `INSERT ... ON CONFLICT (...) DO UPDATE` upsert either inserts a new
-row or patches an existing one's content. The whole thing is wrapped in
-`db.transaction`, so a partial supersede-then-insert can't be observed
-half-applied.
+The `INSERT ... ON CONFLICT (...) DO UPDATE` upsert then inserts the new row or
+updates an existing row's content. Cleanup and upsert are atomic in the same
+`db.transaction`. The legacy `supersedesVersion` API/CLI option remains accepted
+for compatibility but is deprecated and has no effect; supersession is
+determined by the incoming version and symbol/signature scope.
 
 ### The `signature`/`COALESCE` dance (FR-011)
 
@@ -213,7 +208,7 @@ Because `signature` is `NULL` for class rows, every query that filters on it
 uses `COALESCE(signature, '') = COALESCE(?, '')` so that a missing signature
 matches class rows *and* signature-less method lookups, while a supplied
 signature only matches rows with that exact signature. You'll see this exact
-`COALESCE` pattern repeated in the write path (entries.ts:104,115,123), the
+`COALESCE` pattern in the write path (entries.ts), the
 lookup query (queries.ts:85), and the verify query (entries.ts:322). It is the
 linchpin of overload disambiguation, and every variant must use the identical
 `COALESCE` shape or overloads/classes start matching each other.

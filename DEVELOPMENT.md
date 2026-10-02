@@ -217,6 +217,20 @@ Environment knobs introduced for migration pool reliability:
 
 If any of the above semantics change, update both maintainer docs (`DEVELOPMENT.md`, `CHANGELOGS.MD`) and any external maintainer-only runtime architecture notes.
 
+## Registry schema upgrades
+
+`migration/registry_schema.sql` is the fresh-schema definition. Existing registries are upgraded
+through the guarded, transactional path in `migration/registry/db/schema.ts`; do not add a second
+executable migration-text mechanism to the SQL file. The upgrade is applied on database open, so
+each guard must be repeatable and unexpected failures must propagate rather than be hidden by
+error-message matching.
+
+When a supported historical `CHECK` constraint needs widening, rebuild the table in the same
+transaction as the upgrade, preserve its rows and schema objects, and test old and repeated
+application paths. The events rebuild must restore `trg_artifact_status_change` and its indexes.
+Extend `migration/test/registry-schema-delta.test.ts` with explicit historical schema fixtures;
+do not make SQL comments or formatting determine which upgrades execute.
+
 ## Always-on supervisor staleness sweep (015-supervisor-staleness-sweep, issue #218)
 
 `runAutoQueue` (`migration/guildctl/supervisor/queue.ts`) re-invokes the same

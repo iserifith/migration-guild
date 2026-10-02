@@ -29,11 +29,14 @@ One row per (library, version, symbol, full signature) — FR-001, FR-011.
 - `UNIQUE (library_name, library_version, symbol_kind, symbol_name, signature)` — the exact-match lookup key (FR-002); `signature` participates in the uniqueness so two overloads of the same method are distinct rows (FR-011). SQLite treats NULL as distinct-per-row in a UNIQUE index, which is correct here: multiple `class`-kind rows for the same symbol should never exist, so `symbol_kind`+`symbol_name` alone already prevents duplicate class rows regardless of the NULL `signature`.
 - `idx_documentation_entries_library_version` on `(library_name, library_version)` — FR-005/FR-006 scoping and superseded-version cleanup.
 
-**Lifecycle**: When a library's locked version changes (FR-006), the write
-path deletes all rows for `(library_name, old_version)` before inserting rows
-for the new version, inside the same transaction — old-version rows are never
-left queryable once a new ingestion run for that library completes. This
-mirrors the "never silently served as current" edge case in `spec.md`.
+**Lifecycle**: When a symbol is ingested at a new library version (FR-006), the
+write transaction deletes prior-version rows only for the same
+`(library_name, symbol_kind, symbol_name, normalized signature)` before
+inserting/updating the incoming row. Other symbols and overloads at that older
+library version remain untouched; this is not a library-wide version purge.
+The legacy `supersedesVersion` option is accepted for compatibility but is
+deprecated and has no effect. This scoped cleanup mirrors the "never silently
+served as current" edge case in `spec.md`.
 
 ## Virtual table: `documentation_entries_fts`
 

@@ -148,6 +148,268 @@ test("version change only supersedes the changed symbol, not every sibling entry
   assert.equal(remainingSibling, 1, "sibling symbol still documented at the old version must survive an unrelated version-supersede write");
 });
 
+test("version change supersedes multiple older versions in one cleanup (issue #299)", async () => {
+  const { upsertDocumentationEntry } = await import("../index-db/commands/entries");
+  const db = freshDb();
+  seedRun(db, "run-a");
+  upsertDocumentationEntry(db, { ...BASE, libraryVersion: "33.0.0-jre", ingestionRunId: "run-a" });
+  // The write path itself never lets two versions of one symbol/signature
+  // coexist (each new version supersedes the previous one), so a second
+  // older-version row is seeded directly to simulate pre-existing rows the
+  // superseding write must still collect.
+  db.prepare(
+    `INSERT INTO documentation_entries
+       (entry_id, library_name, library_version, symbol_kind, symbol_name, signature, description, return_type, source_url, source_excerpt, ingestion_run_id, indexed_at)
+     VALUES ('doc-legacy-33-2', ?, '33.2.1-jre', 'method', ?, ?, 'legacy row', NULL, 'https://example.test/legacy', 'verbatim legacy excerpt', 'run-b', datetime('now'))`,
+  ).run(BASE.libraryName, BASE.symbolName, BASE.signature);
+  assert.equal(
+    db
+      .prepare("SELECT COUNT(*) AS n FROM documentation_entries WHERE library_name = ? AND symbol_name = ?")
+      .pluck()
+      .get(BASE.libraryName, BASE.symbolName),
+    2,
+    "two prior versions of the symbol are indexed before the superseding write",
+  );
+
+  seedRun(db, "run-c");
+  upsertDocumentationEntry(db, { ...BASE, libraryVersion: "33.3.0-jre", ingestionRunId: "run-c" });
+
+  const remaining = (
+    db
+      .prepare(
+        "SELECT DISTINCT library_version FROM documentation_entries WHERE library_name = ? AND symbol_name = ? ORDER BY library_version",
+      )
+      .all(BASE.libraryName, BASE.symbolName) as { library_version: string }[]
+  ).map((r) => r.library_version);
+  assert.deepEqual(
+    remaining,
+    ["33.3.0-jre"],
+    "every prior version of the symbol must be superseded by the incoming write",
+  );
+  assert.equal(
+    db
+      .prepare("SELECT COUNT(*) AS n FROM documentation_entries WHERE library_name = ? AND library_version = ?")
+      .pluck()
+      .get(BASE.libraryName, "33.3.0-jre"),
+    1,
+  );
+});
+
+test("version change leaves a same-symbol overload (sibling signature) at the old version untouched (issue #299)", async () => {
+  const { upsertDocumentationEntry } = await import("../index-db/commands/entries");
+  const db = freshDb();
+  seedRun(db, "run-old");
+  upsertDocumentationEntry(db, { ...BASE, ingestionRunId: "run-old" });
+  // Sibling SIGNATURE: same symbol, different overload, documented at the old
+  // version. Supersession is scoped to the incoming normalized signature, so
+  // the overload must survive the new version's write.
+  const overload = {
+    ...BASE,
+    signature: "(java.lang.Object,int)",
+    sourceExcerpt: "public static <T> T checkNotNull(T reference, Object errorMessage) — variant.",
+    ingestionRunId: "run-old",
+  };
+  upsertDocumentationEntry(db, overload);
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM documentation_entries WHERE library_version = '33.2.1-jre'").pluck().get(),
+    2,
+  );
+
+  seedRun(db, "run-new");
+  upsertDocumentationEntry(db, { ...BASE, libraryVersion: "33.3.0-jre", ingestionRunId: "run-new" });
+
+  const remainingOverload = db
+    .prepare(
+      "SELECT COUNT(*) AS n FROM documentation_entries WHERE library_name = ? AND library_version = ? AND symbol_name = ? AND signature = ?",
+    )
+    .pluck()
+    .get(BASE.libraryName, "33.2.1-jre", BASE.symbolName, "(java.lang.Object,int)") as number;
+  assert.equal(
+    remainingOverload,
+    1,
+    "a sibling signature at the old version is outside this symbol/signature supersession",
+  );
+});
+
+test("class-kind supersession runs on the normalized (NULL) signature (issue #299)", async () => {
+  const { upsertDocumentationEntry } = await import("../index-db/commands/entries");
+  const db = freshDb();
+  seedRun(db, "run-old");
+  // A stray signature on a class entry normalizes to NULL for both the id and
+  // the stored column — the superseding write must still match the old row.
+  upsertDocumentationEntry(db, {
+    ...BASE,
+    symbolKind: "class",
+    symbolName: "com.google.common.base.Preconditions",
+    ingestionRunId: "run-old",
+  });
+
+  seedRun(db, "run-new");
+  upsertDocumentationEntry(db, {
+    ...BASE,
+    symbolKind: "class",
+    symbolName: "com.google.common.base.Preconditions",
+    libraryVersion: "33.3.0-jre",
+    ingestionRunId: "run-new",
+  });
+
+  assert.equal(
+    db
+      .prepare("SELECT COUNT(*) AS n FROM documentation_entries WHERE library_version = '33.2.1-jre' AND symbol_kind = 'class'")
+      .pluck()
+      .get(),
+    0,
+    "old-version class row (signature normalized to NULL) must be superseded",
+  );
+  assert.equal(
+    db
+      .prepare("SELECT COUNT(*) AS n FROM documentation_entries WHERE library_version = '33.3.0-jre' AND symbol_kind = 'class'")
+      .pluck()
+      .get(),
+    1,
+  );
+});
+
+test("supersession matches a legacy empty-string signature row like NULL (COALESCE semantics, issue #299)", async () => {
+  const { upsertDocumentationEntry } = await import("../index-db/commands/entries");
+  const db = freshDb();
+  seedRun(db, "run-old");
+  upsertDocumentationEntry(db, { ...BASE, signature: null, ingestionRunId: "run-old" });
+  // A pre-existing legacy row at the old version carrying an EMPTY-STRING
+  // signature is equivalent under the COALESCE predicate and must be
+  // superseded together with the NULL-signature row.
+  db.prepare(
+    `INSERT INTO documentation_entries
+       (entry_id, library_name, library_version, symbol_kind, symbol_name, signature, description, return_type, source_url, source_excerpt, ingestion_run_id, indexed_at)
+     VALUES ('doc-legacy-empty-sig', ?, ?, 'method', ?, '', 'legacy row', NULL, 'https://example.test/legacy', 'verbatim legacy excerpt', 'run-old', datetime('now'))`,
+  ).run(BASE.libraryName, BASE.libraryVersion, BASE.symbolName);
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM documentation_entries WHERE library_version = ?").pluck().get(BASE.libraryVersion),
+    2,
+  );
+
+  seedRun(db, "run-new");
+  upsertDocumentationEntry(db, { ...BASE, signature: null, libraryVersion: "33.3.0-jre", ingestionRunId: "run-new" });
+
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM documentation_entries WHERE library_version = ?").pluck().get(BASE.libraryVersion),
+    0,
+    "both the NULL-signature and the empty-string-signature rows at the old version must be superseded",
+  );
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM documentation_entries WHERE library_version = '33.3.0-jre'").pluck().get(),
+    1,
+  );
+});
+
+test("supersession never deletes rows at the incoming version (incoming preservation, issue #299)", async () => {
+  const { upsertDocumentationEntry } = await import("../index-db/commands/entries");
+  const db = freshDb();
+  seedRun(db, "run-old");
+  upsertDocumentationEntry(db, { ...BASE, ingestionRunId: "run-old" });
+
+  seedRun(db, "run-new");
+  // A sibling overload of the SAME symbol already documented AT the incoming
+  // version must survive the primary signature's superseding write.
+  upsertDocumentationEntry(db, {
+    ...BASE,
+    libraryVersion: "33.3.0-jre",
+    signature: "(java.lang.Object,int)",
+    sourceExcerpt: "public static <T> T checkNotNull(T reference, Object errorMessage) — variant.",
+    ingestionRunId: "run-new",
+  });
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM documentation_entries WHERE library_version = '33.3.0-jre'").pluck().get(),
+    1,
+  );
+
+  upsertDocumentationEntry(db, { ...BASE, libraryVersion: "33.3.0-jre", ingestionRunId: "run-new" });
+
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM documentation_entries WHERE library_version = '33.3.0-jre'").pluck().get(),
+    2,
+    "the incoming version keeps both the new row and the pre-existing sibling overload",
+  );
+  assert.equal(
+    db
+      .prepare("SELECT COUNT(*) AS n FROM documentation_entries WHERE library_version = '33.2.1-jre' AND symbol_name = ?")
+      .pluck()
+      .get(BASE.symbolName),
+    0,
+    "the old-version row is still superseded",
+  );
+});
+
+test("explicit supersedesVersion stays accepted and compatible: naming the prior version still ends with its rows gone, siblings untouched (issue #299)", async () => {
+  const { upsertDocumentationEntry } = await import("../index-db/commands/entries");
+  const db = freshDb();
+  seedRun(db, "run-old");
+  upsertDocumentationEntry(db, { ...BASE, ingestionRunId: "run-old" });
+  seedRun(db, "run-sibling");
+  upsertDocumentationEntry(db, {
+    ...BASE,
+    symbolName: "Preconditions#checkState",
+    signature: "(boolean)",
+    sourceExcerpt: "public static void checkState(boolean expression) — Ensures the truth of an expression.",
+    ingestionRunId: "run-sibling",
+  });
+
+  seedRun(db, "run-new");
+  const written = upsertDocumentationEntry(db, {
+    ...BASE,
+    libraryVersion: "33.3.0-jre",
+    ingestionRunId: "run-new",
+    supersedesVersion: "33.2.1-jre",
+  });
+  assert.match(written.entry_id, /^doc-[0-9a-f]{12}$/);
+
+  assert.equal(
+    db
+      .prepare("SELECT COUNT(*) AS n FROM documentation_entries WHERE library_version = '33.2.1-jre' AND symbol_name = ?")
+      .pluck()
+      .get(BASE.symbolName),
+    0,
+    "the explicitly named prior version's rows are deleted",
+  );
+  assert.equal(
+    db
+      .prepare("SELECT COUNT(*) AS n FROM documentation_entries WHERE library_version = '33.2.1-jre' AND symbol_name = 'Preconditions#checkState'")
+      .pluck()
+      .get(),
+    1,
+    "sibling symbols at the superseded version remain untouched",
+  );
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM documentation_entries WHERE library_version = '33.3.0-jre'").pluck().get(),
+    1,
+  );
+});
+
+test("explicit supersedesVersion equal to the incoming version remains a no-op on incoming rows (issue #299)", async () => {
+  const { upsertDocumentationEntry } = await import("../index-db/commands/entries");
+  const db = freshDb();
+  seedRun(db, "run-v");
+  upsertDocumentationEntry(db, BASE);
+  const written = upsertDocumentationEntry(db, {
+    ...BASE,
+    description: "Updated description.",
+    supersedesVersion: BASE.libraryVersion,
+  });
+
+  assert.equal(
+    db
+      .prepare("SELECT COUNT(*) AS n FROM documentation_entries WHERE library_version = ?")
+      .pluck()
+      .get(BASE.libraryVersion),
+    1,
+    "self-referential supersedesVersion must not delete the incoming version's row",
+  );
+  const row = db.prepare("SELECT description FROM documentation_entries WHERE entry_id = ?").get(written.entry_id) as {
+    description: string;
+  };
+  assert.equal(row.description, "Updated description.", "the upsert still applies the content update");
+});
+
 test("index-doc-entry CLI command enforces the same write-path invariant (quickstart Scenario 2)", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "guild-indexdb-cli-"));
   const indexDbPath = path.join(dir, ".guild", "index.db");

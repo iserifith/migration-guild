@@ -44,7 +44,13 @@ export interface UpsertDocumentationEntryOptions {
   sourceUrl: string;
   sourceExcerpt: string;
   ingestionRunId?: string;
-  /** Prior version being superseded; its rows are deleted in this transaction. */
+  /**
+   * Deprecated: accepted for backward compatibility, but it no longer has any
+   * effect. Prior-version cleanup is automatic — the write transaction
+   * supersedes every other version of the same (library, kind, symbol,
+   * normalized signature) in one set-based DELETE, which already covers any
+   * version named here. Kept so existing external callers keep working.
+   */
   supersedesVersion?: string | null;
 }
 
@@ -80,10 +86,14 @@ function validateEntry(opts: UpsertDocumentationEntryOptions): void {
 }
 
 /**
- * Insert (idempotently) one documentation entry. When `supersedesVersion` is
- * given, all rows for (library, supersedesVersion) are deleted in the SAME
- * transaction that writes the new row — data-model.md's version-change
- * lifecycle: stale-version documentation must never remain queryable.
+ * Insert (idempotently) one documentation entry. The write transaction first
+ * deletes — in ONE set-based statement — every row for the same (library,
+ * symbol kind, symbol, normalized signature) at any version other than the
+ * incoming one (data-model.md's version-change lifecycle: stale-version
+ * documentation must never remain queryable). Rows at the incoming version and
+ * sibling symbols/signatures are untouched. The public `supersedesVersion`
+ * option is still accepted but is now a no-op (deprecated): the automatic
+ * cleanup already supersedes every prior version, including any named there.
  */
 export function upsertDocumentationEntry(db: Database.Database, opts: UpsertDocumentationEntryOptions): DocumentationEntry {
   validateEntry(opts);
@@ -98,31 +108,24 @@ export function upsertDocumentationEntry(db: Database.Database, opts: UpsertDocu
     // Version-change lifecycle (data-model.md): writing a new version of the
     // same symbol/signature must supersede every prior version of that symbol.
     // Detect it directly so callers (ingest-docs re-run, index-doc-entry CLI)
-    // don't have to thread the old version through.
-    const priorVersions = db
-      .prepare(
-        "SELECT DISTINCT library_version FROM documentation_entries WHERE library_name = ? AND symbol_kind = ? AND symbol_name = ? AND COALESCE(signature, '') = COALESCE(?, '') AND library_version <> ?",
-      )
-      .all(
-        opts.libraryName.trim(),
-        opts.symbolKind,
-        opts.symbolName.trim(),
-        normalizedSignature,
-        opts.libraryVersion.trim(),
-      ) as { library_version: string }[];
-    for (const { library_version } of priorVersions) {
-      db.prepare(
-        "DELETE FROM documentation_entries WHERE library_name = ? AND library_version = ? AND symbol_kind = ? AND symbol_name = ? AND COALESCE(signature, '') = COALESCE(?, '')",
-      ).run(opts.libraryName.trim(), library_version, opts.symbolKind, opts.symbolName.trim(), normalizedSignature);
-    }
-    // Explicit supersedesVersion (for tests that pass it) is still honored, scoped
-    // to this same symbol/signature — it must not touch sibling symbols still
-    // documented at the superseded version.
-    if (opts.supersedesVersion?.trim() && opts.supersedesVersion.trim() !== opts.libraryVersion.trim()) {
-      db.prepare(
-        "DELETE FROM documentation_entries WHERE library_name = ? AND library_version = ? AND symbol_kind = ? AND symbol_name = ? AND COALESCE(signature, '') = COALESCE(?, '')",
-      ).run(opts.libraryName.trim(), opts.supersedesVersion.trim(), opts.symbolKind, opts.symbolName.trim(), normalizedSignature);
-    }
+    // don't have to thread the old version through. One set-based DELETE covers
+    // all prior versions at once (issue #299: the former SELECT-distinct-versions
+    // plus per-version DELETE loop collapsed into a single statement): everything
+    // sharing this (library, kind, symbol, normalized signature) at any version
+    // other than the incoming one is removed inside the same transaction that
+    // writes the new row. The library/kind/symbol/signature predicates keep
+    // sibling symbols and sibling signatures untouched, `library_version <>`
+    // keeps incoming-version rows, and COALESCE preserves the null/empty
+    // signature matching semantics (class rows and signature-less lookups).
+    db.prepare(
+      "DELETE FROM documentation_entries WHERE library_name = ? AND symbol_kind = ? AND symbol_name = ? AND COALESCE(signature, '') = COALESCE(?, '') AND library_version <> ?",
+    ).run(
+      opts.libraryName.trim(),
+      opts.symbolKind,
+      opts.symbolName.trim(),
+      normalizedSignature,
+      opts.libraryVersion.trim(),
+    );
     db.prepare(
       `INSERT INTO documentation_entries
          (entry_id, library_name, library_version, symbol_kind, symbol_name, signature, description, return_type, source_url, source_excerpt, ingestion_run_id, indexed_at)

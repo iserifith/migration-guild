@@ -359,6 +359,18 @@ export interface ArtifactVerificationOptions {
   recordEvidence?: boolean;
   /** Directory the evidence log is written to. Defaults to `<workspaceRoot>/.guild/evidence/runtime`. */
   evidenceOutputDir?: string;
+  /**
+   * Issue #293 (single default verification execution): when true, consume the
+   * structured check outcome the claim-close verification just computed for
+   * this same artifact and run instead of executing the same check a second
+   * time. The consumed outcome supplies the verification state, the close-out
+   * detail, and — when `recordEvidence` is set — the signed acceptance
+   * evidence, all from the one execution. The outcome is only reusable when it
+   * was produced for the same run and the same resolved check, or when it
+   * short-circuits any check (an agent's own unverifiable self-report);
+   * otherwise this call executes fresh. Only persisted outcomes are reusable.
+   */
+  reuseClaimCloseOutcome?: boolean;
 }
 
 export interface ArtifactVerificationOutcome {
@@ -376,6 +388,82 @@ export interface ArtifactVerificationOutcome {
 }
 
 const DEFAULT_VERIFICATION_BUDGET_MS = 120_000;
+
+// ─── Single-execution reuse (issue #293) ─────────────────────────────────────
+//
+// The autonomous claim close executes the stack check once; the injected
+// default verifier then reuses that structured outcome for its signed evidence
+// instead of executing the same check a second time (with a second budget and
+// potentially a conflicting result for flaky or stateful checks). One entry
+// per artifact is retained only until the matching consumer takes it; nothing
+// here changes what is persisted or what any outcome gates on.
+
+/** The concrete execution behind an outcome, when the check actually ran. */
+interface ExecutedCheckOutcome {
+  check: PerArtifactVerify;
+  argv: string[];
+  workingDir: string;
+  execution: CheckExecution;
+  pass: 0 | 1;
+}
+
+interface ClaimCloseCheckOutcome {
+  /** The run that produced the outcome; reuse is bound to the same run. */
+  runId: string | null;
+  /** The resolved check id, or null when no check was resolved. */
+  checkId: string | null;
+  outcome: ArtifactVerificationOutcome;
+  /** Present only when the outcome came from actually executing the check. */
+  execution?: ExecutedCheckOutcome;
+  /** True when the outcome short-circuits any check (the agent's self-report). */
+  overridesAnyCheck: boolean;
+  savedAt: number;
+}
+
+const claimCloseOutcomes = new Map<string, ClaimCloseCheckOutcome>();
+const CLAIM_CLOSE_OUTCOME_CAPACITY = 16;
+
+function stashClaimCloseOutcome(artifactId: string, entry: ClaimCloseCheckOutcome): void {
+  claimCloseOutcomes.delete(artifactId);
+  claimCloseOutcomes.set(artifactId, entry);
+  while (claimCloseOutcomes.size > CLAIM_CLOSE_OUTCOME_CAPACITY) {
+    const oldest = claimCloseOutcomes.keys().next();
+    if (oldest.done) break;
+    claimCloseOutcomes.delete(oldest.value);
+  }
+}
+
+function takeReusableClaimCloseOutcome(
+  db: Database.Database,
+  opts: ArtifactVerificationOptions,
+): ArtifactVerificationOutcome | null {
+  const entry = claimCloseOutcomes.get(opts.artifactId);
+  if (!entry) return null;
+  // Single use: whoever consumes the outcome, the copy is spent.
+  claimCloseOutcomes.delete(opts.artifactId);
+  // A different run (e.g. a later attempt re-verified after repair) must
+  // execute fresh; the check's own outcome belongs to its producing run.
+  if (entry.runId !== (opts.runId ?? null)) return null;
+  // An agent-reported-unverifiable self-report wins over any check by
+  // definition; everything else must be the same check the producing call
+  // resolved, so an explicitly different check can never be silently mapped
+  // onto a stale execution.
+  if (!entry.overridesAnyCheck && entry.checkId !== (opts.check?.id ?? null)) return null;
+
+  let evidence: AcceptanceEvidence[] = [];
+  if (opts.recordEvidence && entry.execution) {
+    const recorded = recordStackCheckEvidence(
+      db,
+      opts,
+      entry.execution.check,
+      entry.execution.argv,
+      entry.execution.execution,
+      entry.execution.pass,
+    );
+    if (recorded) evidence = [recorded];
+  }
+  return { ...entry.outcome, evidence };
+}
 
 function probeAvailability(check: PerArtifactVerify, cwd: string): boolean {
   if (!check.availability_args || check.availability_args.length === 0) return true;
@@ -524,9 +612,20 @@ export async function runArtifactVerification(
   db: Database.Database,
   opts: ArtifactVerificationOptions,
 ): Promise<ArtifactVerificationOutcome> {
+  // Issue #293: a consumer that asked for it takes the claim-close outcome
+  // instead of re-executing the same check. Nothing is stashed/consumed unless
+  // the run and check identities match (see takeReusableClaimCloseOutcome).
+  if (opts.reuseClaimCloseOutcome) {
+    const reused = takeReusableClaimCloseOutcome(db, opts);
+    if (reused) return reused;
+  }
   const budgetMs = opts.budgetMs
     ?? (opts.check?.budget_seconds != null ? opts.check.budget_seconds * 1000 : DEFAULT_VERIFICATION_BUDGET_MS);
   const method = opts.check?.id ?? "none";
+  // The concrete execution behind the outcome about to be finished, when the
+  // check actually ran; retained so a reuse consumer can record the signed
+  // evidence from this one execution instead of running the check again.
+  let executed: ExecutedCheckOutcome | undefined;
 
   const finish = (
     state: VerificationState,
@@ -564,6 +663,14 @@ export async function runArtifactVerification(
         operatorToken: opts.operatorToken,
         claimId: opts.claimId,
         claimToken: opts.claimToken,
+      });
+      stashClaimCloseOutcome(opts.artifactId, {
+        runId: opts.runId ?? null,
+        checkId: opts.check?.id ?? null,
+        outcome,
+        execution: executed,
+        overridesAnyCheck: Boolean(opts.agentReportedUnverifiable),
+        savedAt: Date.now(),
       });
     }
     return outcome;
@@ -642,6 +749,16 @@ export async function runArtifactVerification(
     () => executeCheck(opts.check!, argv, workingDir, budgetMs),
   );
   const coveredScope = [...scope.ownOutputPaths, ...scope.dependencyPaths];
+  // The check concretely executed: retain it so the outcome this call finishes
+  // with is reusable (issue #293) — evidence recording can cite this execution
+  // without running the check a second time.
+  executed = {
+    check: opts.check,
+    argv,
+    workingDir,
+    execution,
+    pass: execution.exitCode != null && (opts.check.pass_exit_codes ?? [0]).includes(execution.exitCode) ? 1 : 0,
+  };
 
   if (execution.timedOut) {
     return finish("unverified", "budget-exhausted", {
@@ -724,6 +841,26 @@ export async function verifyAtClaimClose(
     const existing = getVerification(db, opts.artifactId);
     if (existing.reason === "agent-reported-unverifiable") {
       // FR-007: preserve the agent's own statement that it could not verify.
+      // Issue #293: make that self-report the outcome a single-execution reuse
+      // consumer sees, so the default verifier cannot re-execute the check and
+      // overwrite the record with a later `verified`.
+      stashClaimCloseOutcome(opts.artifactId, {
+        runId: opts.runId ?? null,
+        checkId: null,
+        overridesAnyCheck: true,
+        savedAt: Date.now(),
+        outcome: {
+          state: "unverified",
+          reason: "agent-reported-unverifiable",
+          method: existing.method,
+          detail: existing.detail,
+          scope: [],
+          budgetMs: resolveVerificationBudgetMs(opts.config, process.env),
+          durationMs: existing.duration_ms ?? null,
+          ranCheck: false,
+          evidence: [],
+        },
+      });
       return existing;
     }
 

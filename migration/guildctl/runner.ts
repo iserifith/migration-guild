@@ -1,4 +1,4 @@
-import { spawn, execFileSync, spawnSync } from "child_process";
+import { execFileSync } from "child_process";
 import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as os from "os";
@@ -11,11 +11,12 @@ import { resolveAgentLaunch, type ResolvedRuntimeConfig } from "./harness";
 import { formatLimitTerminationNote, resolveEffectiveLimit, LIMIT_PRECEDENCE_ORDER, type EffectiveLimit } from "./limits";
 import { activeSqliteWardenExclusions, enforceWardenSnapshot, snapshotWorkspaceForWardenWithExclusions, transientWardenExclusions, wardenSnapshotDiff, type WardenSnapshot } from "./warden";
 import { formatVerificationCloseOut, verifyAtClaimClose } from "./verify";
-import { signalProcessGroup, terminateProcessGroup, gitEnv, type ProcessGroupTerminationResult } from "./util";
+import { gitEnv, type ProcessGroupTerminationResult } from "./util";
+import { resolveAgentSpawn, runManagedProcess } from "./process-exec";
 import { releaseClaimedArtifactsForOwner } from "../registry/commands/artifacts";
-import { createRunOperatorCredential, releaseClaimsForRun } from "../registry/commands/claim";
+import { claimNextTask, createRunOperatorCredential, releaseClaimsForRun } from "../registry/commands/claim";
 import { startRun, finishRun, setRunPid, type RunTokenUsage } from "../registry/commands/runs";
-import type { FilesWrittenSource, OutcomeLabel, VerificationRecord } from "../registry/types";
+import { RegistryError, type FilesWrittenSource, type OutcomeLabel, type Status, type VerificationRecord } from "../registry/types";
 
 export interface SpawnAgentOpts {
   agent: string;
@@ -96,41 +97,6 @@ export interface AgentRunResult {
 
 /** Max characters of harness output surfaced in a failure message (US5 #121). */
 export const HARNESS_OUTPUT_CAP = 512;
-
-/**
- * Decide how to spawn the agent CLI cross-platform.
- * - A `.mjs`/`.cjs`/`.js` AGENT_CMD (a Node shim) is run via the current Node
- *   binary with no shell — this avoids Windows' inability to spawn .cmd shims
- *   and, crucially, avoids passing the (large, untrusted) prompt arg through
- *   cmd.exe where shell metacharacters would break or inject.
- * - Anything else (a bare command or a .cmd/.bat) needs a shell on Windows.
- */
-function resolveWindowsBash(): string {
-  const configured = process.env["GUILD_BASH"]?.trim();
-  if (configured) return configured;
-
-  const candidates = [
-    path.join(process.env["ProgramFiles"] ?? "C:\\Program Files", "Git", "bin", "bash.exe"),
-    path.join(process.env["LocalAppData"] ?? "", "Programs", "Git", "bin", "bash.exe"),
-  ];
-  const installed = candidates.find((candidate) => fs.existsSync(candidate));
-  if (installed) return installed;
-
-  // Keep this as a command lookup fallback for non-standard Git/MSYS installs.
-  return "bash";
-}
-
-function resolveAgentSpawn(agentCmd: string, agentArgs: string[]): { command: string; args: string[]; shell: boolean } {
-  if (/\.(mjs|cjs|js)$/i.test(agentCmd)) {
-    return { command: process.execPath, args: [agentCmd, ...agentArgs], shell: false };
-  }
-  if (process.platform === "win32" && /\.sh$/i.test(agentCmd)) {
-    // cmd.exe launches .sh files through their Windows file association, which
-    // may open an editor instead of executing the script. Invoke Bash directly.
-    return { command: resolveWindowsBash(), args: [agentCmd, ...agentArgs], shell: false };
-  }
-  return { command: agentCmd, args: agentArgs, shell: process.platform === "win32" };
-}
 
 const LOG_SEP = "=".repeat(72);
 
@@ -479,39 +445,22 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   let wardenAllowedPaths: string[] = [];
 
   if (opts.preClaim) {
-    const claimArgs = [
-      "migration/registry/dist/cli.js",
-      "claim",
-      "--agent", agent,
-      "--owner", claimOwner,
-      "--run-id", run.run_id,
-      "--model", model,
-      "--from-status", opts.preClaim.fromStatus,
-      "--tier", opts.preClaim.tier ?? "first-class",
-    ];
-    if (opts.preClaim.wave != null) {
-      claimArgs.push("--wave", String(opts.preClaim.wave));
-    }
-    const claimResult = spawnSync("node", claimArgs, {
-      cwd: projectRoot,
-      encoding: "utf8",
-    });
-    if (claimResult.status === 2) {
-      // Nothing left to claim — finish run cleanly and return no-op.
-      finishRun(db, { runId: run.run_id, exitCode: 0 });
-      logStream?.end();
-      return Promise.resolve({ runId: run.run_id, agent, model, prompt, logFile, exitCode: 0 });
-    }
-    if (claimResult.status !== 0) {
-      const errMsg = (claimResult.stderr ?? "").trim() || (claimResult.stdout ?? "").trim();
-      process.stderr.write(`[guildctl] pre-claim failed (exit ${claimResult.status}): ${errMsg}\n`);
-      writeLogLine(logStream, `[guildctl] pre-claim failed (exit ${claimResult.status}): ${errMsg}`);
-      finishRun(db, { runId: run.run_id, exitCode: 1, reason: `pre-claim failed: ${errMsg}` });
-      logStream?.end();
-      return Promise.resolve({ runId: run.run_id, agent, model, prompt, logFile, exitCode: 1 });
-    }
+    // Issue #295: claim directly through the exported registry command on the
+    // runner's own supplied connection. The CLI subprocess trampoline is gone —
+    // no built dist path, no Node-on-PATH requirement, no second DB resolution:
+    // the same connection the run records use performs the atomic claim, and
+    // the typed result carries the claim token handoff without JSON parsing.
     try {
-      const claimed = JSON.parse(claimResult.stdout) as { id: string; claim_id: string; claim_token: string; expected_output_paths?: string | null };
+      const claimed = claimNextTask(
+        db,
+        agent,
+        opts.preClaim.wave ?? undefined,
+        opts.preClaim.fromStatus as Status,
+        model,
+        opts.preClaim.tier ?? "first-class",
+        run.run_id,
+        claimOwner,
+      );
       preClaimedArtifactId = claimed.id;
       preClaimId = claimed.claim_id;
       preClaimToken = claimed.claim_token;
@@ -526,9 +475,19 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
         const promptArgIndex = args.indexOf("-p");
         if (promptArgIndex !== -1) args[promptArgIndex + 1] = artifactPrompt;
       }
-    } catch {
-      process.stderr.write(`[guildctl] pre-claim: failed to parse claim JSON\n`);
-      finishRun(db, { runId: run.run_id, exitCode: 1, reason: "pre-claim: failed to parse claim JSON" });
+    } catch (error) {
+      if (error instanceof RegistryError && error.code === 2) {
+        // Nothing left to claim — finish run cleanly and return no-op.
+        finishRun(db, { runId: run.run_id, exitCode: 0 });
+        logStream?.end();
+        return Promise.resolve({ runId: run.run_id, agent, model, prompt, logFile, exitCode: 0 });
+      }
+      // Every other refusal (registry error or unexpected failure) fails the
+      // run exactly as the CLI's non-zero exits used to.
+      const errMsg = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`[guildctl] pre-claim failed: ${errMsg}\n`);
+      writeLogLine(logStream, `[guildctl] pre-claim failed: ${errMsg}`);
+      finishRun(db, { runId: run.run_id, exitCode: 1, reason: `pre-claim failed: ${errMsg}` });
       logStream?.end();
       return Promise.resolve({ runId: run.run_id, agent, model, prompt, logFile, exitCode: 1 });
     }
@@ -551,74 +510,97 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
   const agentEnv = opts.resolution
     ? { ...opts.resolution.agentEnv, ...runScopedEnv }
     : resolveAgentLaunch({ config, root: projectRoot, model, extraEnv: runScopedEnv }).agentEnv;
-  // R8/FR-035: spawn as a process-group leader so terminating this attempt can
-  // reach the whole tree it started, not only this direct child (which for
-  // every bundled harness is itself a shim that spawns the real binary).
-  const proc = spawn(agentSpawn.command, agentSpawn.args, {
+  // TASK-07/T045-T047: liveliness limits, resolved through the single
+  // EffectiveLimit descriptor. An explicit per-call opts.timeoutMs/
+  // inactivityTimeoutMs (used by callers such as tests and benchmarks that
+  // pass a raw ms value) is honoured as a synthetic "per-phase-setting"
+  // descriptor, so the termination message is always sourced from a real
+  // descriptor even on that legacy path — never a knob that does not govern.
+  const limitPhaseName = String(opts.limitPhase ?? opts.phase ?? "unknown");
+  const ceilingLimit: EffectiveLimit = opts.timeoutMs != null
+    ? { phase: limitPhaseName, kind: "ceiling", knob: "timeoutMs (explicit)", effectiveValueMs: opts.timeoutMs, requestedValueMs: opts.timeoutMs, source: "per-phase-setting", floorApplied: false, precedenceOrder: LIMIT_PRECEDENCE_ORDER }
+    : resolveEffectiveLimit(limitPhaseName, "ceiling", config, process.env);
+  const inactivityLimit: EffectiveLimit = opts.inactivityTimeoutMs != null
+    ? { phase: limitPhaseName, kind: "inactivity", knob: "inactivityTimeoutMs (explicit)", effectiveValueMs: opts.inactivityTimeoutMs, requestedValueMs: opts.inactivityTimeoutMs, source: "per-phase-setting", floorApplied: false, precedenceOrder: LIMIT_PRECEDENCE_ORDER }
+    : resolveEffectiveLimit(limitPhaseName, "inactivity", config, process.env);
+  const inactivityMs = inactivityLimit.effectiveValueMs;
+  const terminationGraceMs = resolveTerminationGraceMs(config, process.env);
+  const heartbeatMs = process.env.GUILDCTL_HEARTBEAT_SECONDS
+    ? Number(process.env.GUILDCTL_HEARTBEAT_SECONDS) * 1000
+    : 30000;
+
+  // Limit-fire bookkeeping: the shared lifecycle owns the timers and the
+  // whole-tree termination; the runner owns only the operator-facing message
+  // and the close-out flags derived from the same firing descriptor.
+  let lastActivityMs = Date.now();
+  let activityTicks = 0;
+  let inactivityKilled = false;
+  let ceilingKilled = false;
+  let firingLimit: EffectiveLimit | undefined;
+  let capturedOutput = "";
+
+  // Issue #296: spawn and run the attempt through the shared lifecycle —
+  // process-group leader (R8/FR-035), activity tracking, inactivity/ceiling
+  // limits, operator SIGINT/SIGTERM forwarding, and confirmed whole-tree
+  // termination. Prompts, logs, warden, and registry updates stay here.
+  const managed = runManagedProcess({
+    command: agentSpawn.command,
+    args: agentSpawn.args,
+    shell: agentSpawn.shell,
     cwd: projectRoot,
     env: agentEnv,
     stdio: logStream ? ["ignore", "pipe", "pipe"] : "inherit",
-    shell: agentSpawn.shell,
-    detached: true,
+    ceiling: ceilingLimit,
+    inactivity: inactivityLimit,
+    terminationGraceMs,
+    forwardOperatorSignals: true,
+    onLimitFire: ({ kind, limit }) => {
+      if (kind === "inactivity") inactivityKilled = true;
+      else ceilingKilled = true;
+      firingLimit = limit;
+      const label = kind === "inactivity" ? "INACTIVITY" : "CEILING";
+      const secs = Math.round(limit.effectiveValueMs / 1000);
+      const detail = kind === "inactivity"
+        ? " (no observed output; last activity " + Math.round((Date.now() - lastActivityMs) / 1000) + "s ago)"
+        : " (still active)";
+      const msg = `[guildctl] ${agent} killed: ${label} after ${secs}s${detail}; ${formatLimitTerminationNote(limit)}`;
+      process.stderr.write(msg + "\n");
+      writeLogLine(logStream, msg);
+    },
+    // US5 (#121): capture the harness CLI's raw stdout+stderr so a failure can
+    // surface its words verbatim (constitution VII — neither stderr nor stdout
+    // is sanitised or branched on by provider/harness). Kept uncapped here; the
+    // message path caps it at HARNESS_OUTPUT_CAP.
+    onOutput: (chunk) => {
+      capturedOutput += chunk.toString();
+    },
   });
+  const proc = managed.child;
   setRunPid(db, run.run_id, proc.pid ?? null);
-
-  // A detached child no longer receives the terminal's SIGINT, so operator
-  // Ctrl-C must be forwarded into the group or the tree would keep running.
-  const onOperatorSigint = () => signalProcessGroup(proc.pid, "graceful");
-  const onOperatorSigterm = () => signalProcessGroup(proc.pid, "graceful");
-  process.on("SIGINT", onOperatorSigint);
-  process.on("SIGTERM", onOperatorSigterm);
-  const stopForwardingOperatorSignals = (): void => {
-    process.off("SIGINT", onOperatorSigint);
-    process.off("SIGTERM", onOperatorSigterm);
-  };
 
   if (logStream && proc.stdout && proc.stderr) {
     proc.stdout.pipe(createTimestampTransform()).pipe(logStream, { end: false });
     proc.stderr.pipe(createTimestampTransform()).pipe(logStream, { end: false });
   }
 
-  // TASK-07: liveliness tracking. lastActivityMs is bumped on every observed
-  // byte from the agent; if no bytes arrive for inactivityTimeoutMs we consider
-  // the agent hung and kill it. activityTicks counts observed output chunks for
-  // the heartbeat line. Only meaningful when stdout/stderr are piped.
-  let lastActivityMs = Date.now();
-  let activityTicks = 0;
-  const observable = Boolean(proc.stdout) && Boolean(proc.stderr);
+  // TASK-07: liveliness reporting. lastActivityMs/activityTicks feed the
+  // heartbeat line; the lifecycle keeps its own copy of lastActivityMs for the
+  // inactivity limit. Both count the same thing — every observed byte.
   const bumpActivity = (): void => {
     lastActivityMs = Date.now();
     activityTicks += 1;
   };
   proc.stdout?.on("data", bumpActivity);
   proc.stderr?.on("data", bumpActivity);
-
-  // US5 (#121): capture the harness CLI's raw stdout+stderr so a failure can
-  // surface its words verbatim (constitution VII — neither stderr nor stdout
-  // is sanitised or branched on by provider/harness). Kept uncapped here; the
-  // message path caps it at HARNESS_OUTPUT_CAP.
-  let capturedOutput = "";
-  const capture = (chunk: Buffer | string): void => {
-    capturedOutput += chunk.toString();
-  };
-  proc.stdout?.on("data", capture);
-  proc.stderr?.on("data", capture);
   const harnessName = launch.harness.name;
 
-  return new Promise((resolve) => {
-    let settled = false;
-    let timedOut = false;
-    let inactivityKilled = false;
-    let ceilingKilled = false;
-    let timeoutHandle: NodeJS.Timeout | undefined;
+  return (async (): Promise<AgentRunResult> => {
     let claimWatchHandle: NodeJS.Timeout | undefined;
     let claimIntroWritten = false;
-    let firingLimit: EffectiveLimit | undefined;
-    let terminationPromise: Promise<ProcessGroupTerminationResult> | undefined;
 
     if (logStream) {
       claimWatchHandle = setInterval(() => {
-        if (settled || claimIntroWritten) {
+        if (claimIntroWritten) {
           if (claimWatchHandle) clearInterval(claimWatchHandle);
           return;
         }
@@ -633,16 +615,7 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
       claimWatchHandle.unref?.();
     }
 
-    // Verification at claim close is async, so settling is split: `finalize`
-    // keeps the synchronous single-shot guard its callers rely on, and
-    // `completeRun` does the awaiting work.
-    const finalize = (exitCode: number): void => {
-      if (settled) return;
-      settled = true;
-      void completeRun(exitCode);
-    };
-
-    const completeRun = async (exitCode: number): Promise<void> => {
+    const completeRun = async (exitCode: number, cleanupResult: ProcessGroupTerminationResult): Promise<AgentRunResult> => {
       clearLivelinessTimers();
       let finalExitCode = exitCode;
       let wardenClean = true;
@@ -721,15 +694,13 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
         writeLogLine(logStream, msg);
       }
       const limitKilled = inactivityKilled || ceilingKilled;
-      const terminationReason = timedOut
-        ? `${agent} timed out`
-        : inactivityKilled && firingLimit
-          ? `${agent} killed: no activity for ${Math.round(firingLimit.effectiveValueMs / 1000)}s (last activity after ${Math.round((Date.now() - lastActivityMs) / 1000)}s of silence); ${formatLimitTerminationNote(firingLimit)}`
-          : ceilingKilled && firingLimit
-            ? `${agent} killed: exceeded wall-clock ceiling ${Math.round(firingLimit.effectiveValueMs / 1000)}s (still active); ${formatLimitTerminationNote(firingLimit)}`
-            : finalExitCode === 0
-              ? undefined
-              : `${agent} exited with code ${finalExitCode}`;
+      const terminationReason = inactivityKilled && firingLimit
+        ? `${agent} killed: no activity for ${Math.round(firingLimit.effectiveValueMs / 1000)}s (last activity after ${Math.round((Date.now() - lastActivityMs) / 1000)}s of silence); ${formatLimitTerminationNote(firingLimit)}`
+        : ceilingKilled && firingLimit
+          ? `${agent} killed: exceeded wall-clock ceiling ${Math.round(firingLimit.effectiveValueMs / 1000)}s (still active); ${formatLimitTerminationNote(firingLimit)}`
+          : finalExitCode === 0
+            ? undefined
+            : `${agent} exited with code ${finalExitCode}`;
       const tokenUsage = readTokenUsageFile(usageFile);
       try { fs.rmSync(usageFile, { force: true }); } catch {}
 
@@ -753,13 +724,10 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
       }
 
       // Process-tree cleanup (FR-035–FR-039): a released claim is never
-      // reported alone — the cleanup outcome always accompanies it. Claim
-      // recoverability outranks cleanup completeness, so cleanup failure never
-      // blocks the claim release above.
-      const cleanupResult: ProcessGroupTerminationResult = terminationPromise
-        ? await terminationPromise
-        : { cleanupOutcome: "not-applicable", survivorPids: [], escalated: false };
-      stopForwardingOperatorSignals();
+      // reported alone — the cleanup outcome always accompanies it, confirmed
+      // by the shared lifecycle before settlement. Claim recoverability
+      // outranks cleanup completeness, so cleanup failure never blocks the
+      // claim release above.
 
       // Files-written count (FR-030, research R10): prefer the warden snapshot
       // diff, already paid for by every pre-claimed run; fall back to git diff
@@ -810,7 +778,7 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
         outcomeLabel,
       });
 
-      const result = {
+      const result: AgentRunResult = {
         runId: run.run_id,
         agent,
         model,
@@ -823,15 +791,13 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
 
       if (logStream) {
         const elapsedS = ((Date.now() - startMs) / 1000).toFixed(1);
-        const status = timedOut
-          ? "TIMEOUT"
-          : inactivityKilled
-            ? "INACTIVITY-KILL"
-            : ceilingKilled
-              ? "CEILING-KILL"
-              : finalExitCode === 0
-                ? "SUCCESS"
-                : "FAILED";
+        const status = inactivityKilled
+          ? "INACTIVITY-KILL"
+          : ceilingKilled
+            ? "CEILING-KILL"
+            : finalExitCode === 0
+              ? "SUCCESS"
+              : "FAILED";
         const filesBlock = filesWrittenSource === "unavailable"
           ? ["Files written: unavailable (no warden snapshot or git worktree)"]
           : writtenFileNames.length > 0
@@ -855,87 +821,29 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
             `Provider budget: ${budgetConsumed ? "consumed — this spend is not recovered" : "not consumed"}`,
           ]
           : [cleanupLine];
-        logStream.end(
-          [
-            "",
-            LOG_SEP,
-            `Status:   ${status}`,
-            `Exit:     ${finalExitCode}`,
-            `Elapsed:  ${elapsedS}s`,
-            `Finished: ${new Date().toISOString()}`,
-            ...formatTokenUsageLines(tokenUsage),
-            ...claimBlock,
-            ...verificationBlock,
-            ...outcomeBlock,
-            ...filesBlock,
-            LOG_SEP,
-            "",
-          ].join("\n"),
-          () => resolve(result),
-        );
-      } else {
-        resolve(result);
+        await new Promise<void>((resolveEnd) => {
+          logStream.end(
+            [
+              "",
+              LOG_SEP,
+              `Status:   ${status}`,
+              `Exit:     ${finalExitCode}`,
+              `Elapsed:  ${elapsedS}s`,
+              `Finished: ${new Date().toISOString()}`,
+              ...formatTokenUsageLines(tokenUsage),
+              ...claimBlock,
+              ...verificationBlock,
+              ...outcomeBlock,
+              ...filesBlock,
+              LOG_SEP,
+              "",
+            ].join("\n"),
+            () => resolveEnd(),
+          );
+        });
       }
+      return result;
     };
-
-    // TASK-07/T045-T047: liveliness limits, resolved through the single
-    // EffectiveLimit descriptor. An explicit per-call opts.timeoutMs/
-    // inactivityTimeoutMs (used by callers such as tests and benchmarks that
-    // pass a raw ms value) is honoured as a synthetic "per-phase-setting"
-    // descriptor, so the termination message is always sourced from a real
-    // descriptor even on that legacy path — never a knob that does not govern.
-    const limitPhaseName = String(opts.limitPhase ?? opts.phase ?? "unknown");
-    const ceilingLimit: EffectiveLimit = opts.timeoutMs != null
-      ? { phase: limitPhaseName, kind: "ceiling", knob: "timeoutMs (explicit)", effectiveValueMs: opts.timeoutMs, requestedValueMs: opts.timeoutMs, source: "per-phase-setting", floorApplied: false, precedenceOrder: LIMIT_PRECEDENCE_ORDER }
-      : resolveEffectiveLimit(limitPhaseName, "ceiling", config, process.env);
-    const inactivityLimit: EffectiveLimit = opts.inactivityTimeoutMs != null
-      ? { phase: limitPhaseName, kind: "inactivity", knob: "inactivityTimeoutMs (explicit)", effectiveValueMs: opts.inactivityTimeoutMs, requestedValueMs: opts.inactivityTimeoutMs, source: "per-phase-setting", floorApplied: false, precedenceOrder: LIMIT_PRECEDENCE_ORDER }
-      : resolveEffectiveLimit(limitPhaseName, "inactivity", config, process.env);
-    const inactivityMs = inactivityLimit.effectiveValueMs;
-    const ceilingMs = ceilingLimit.effectiveValueMs;
-    const terminationGraceMs = resolveTerminationGraceMs(config, process.env);
-    const heartbeatMs = process.env.GUILDCTL_HEARTBEAT_SECONDS
-      ? Number(process.env.GUILDCTL_HEARTBEAT_SECONDS) * 1000
-      : 30000;
-
-    const killAgent = (flag: "inactivity" | "ceiling"): void => {
-      if (settled) return;
-      const limit = flag === "inactivity" ? inactivityLimit : ceilingLimit;
-      if (flag === "inactivity") inactivityKilled = true;
-      else ceilingKilled = true;
-      firingLimit = limit;
-      const label = flag === "inactivity" ? "INACTIVITY" : "CEILING";
-      const secs = Math.round(limit.effectiveValueMs / 1000);
-      const detail = flag === "inactivity"
-        ? " (no observed output; last activity " + Math.round((Date.now() - lastActivityMs) / 1000) + "s ago)"
-        : " (still active)";
-      const msg = `[guildctl] ${agent} killed: ${label} after ${secs}s${detail}; ${formatLimitTerminationNote(limit)}`;
-      process.stderr.write(msg + "\n");
-      writeLogLine(logStream, msg);
-      // R8/FR-035–FR-038: terminate the whole process group this attempt
-      // started (graceful → forced → confirm), not only the direct child.
-      terminationPromise = terminateProcessGroup(proc.pid, { graceMs: terminationGraceMs });
-    };
-
-    // Inactivity watcher: only when output is observable (piped). A silent agent
-    // is killed well before the wall-clock ceiling.
-    let inactivityHandle: NodeJS.Timeout | undefined;
-    if (observable && inactivityMs > 0) {
-      inactivityHandle = setInterval(() => {
-        if (settled || inactivityKilled || ceilingKilled) return;
-        if (Date.now() - lastActivityMs > inactivityMs) killAgent("inactivity");
-      }, Math.max(200, Math.min(1000, Math.round(inactivityMs / 10))));
-      inactivityHandle.unref?.();
-    }
-
-    // Wall-clock ceiling backstop: a chatty-but-stuck agent is still bounded.
-    if (ceilingMs > 0) {
-      timeoutHandle = setTimeout(() => {
-        if (settled || inactivityKilled) return;
-        killAgent("ceiling");
-      }, ceilingMs);
-      timeoutHandle.unref?.();
-    }
 
     // Heartbeat: periodic liveness line so operators can tell a working agent
     // from a hung one. Goes quiet once the run settles.
@@ -943,7 +851,6 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
     let lastHeartbeatEmitMs = 0;
     if (heartbeatMs > 0) {
       heartbeatHandle = setInterval(() => {
-        if (settled) return;
         const now = Date.now();
         const sinceActivityMs = now - lastActivityMs;
         const stallMs = inactivityMs > 0 ? inactivityMs / 2 : 60000;
@@ -965,20 +872,25 @@ export function spawnAgent(opts: SpawnAgentOpts): Promise<AgentRunResult> {
     }
 
     const clearLivelinessTimers = (): void => {
-      if (timeoutHandle) clearTimeout(timeoutHandle);
-      if (inactivityHandle) clearInterval(inactivityHandle);
       if (heartbeatHandle) clearInterval(heartbeatHandle);
       if (claimWatchHandle) clearInterval(claimWatchHandle);
     };
 
-    proc.on("exit", (code) => {
-      finalize(inactivityKilled || ceilingKilled || timedOut ? 124 : (code ?? 1));
-    });
-    proc.on("error", (err) => {
-      const msg = `[guildctl] Failed to start agent: ${err.message}`;
+    // Single settlement (issue #296): the shared lifecycle resolves exactly
+    // once — on normal exit, on spawn failure, or after a fired limit's
+    // whole-tree termination is confirmed (graceful → forced → confirm).
+    const outcome = await managed.settled;
+    clearLivelinessTimers();
+    if (outcome.spawnError) {
+      const msg = `[guildctl] Failed to start agent: ${outcome.spawnError}`;
       process.stderr.write(msg + "\n");
       writeLogLine(logStream, msg);
-      finalize(1);
-    });
-  });
+    }
+    const exitCode = outcome.firingLimit
+      ? 124
+      : outcome.spawnError != null
+        ? 1
+        : (outcome.exitCode ?? 1);
+    return completeRun(exitCode, outcome.cleanupResult);
+  })();
 }

@@ -50,7 +50,8 @@ export interface TabProps {
   blockers: UseRegistryDataResult["blockers"];
   issues: UseRegistryDataResult["issues"];
   runs: UseRegistryDataResult["runs"];
-  /** Live approvals state, used only for the Approvals tab's nav badge. */
+  /** Live approvals state (single shared instance): feeds the Approvals tab's
+   *  nav badge and its panel, so both stay in sync (issue #297). */
   approvals: UseApprovalsResult;
   /** Live four-state run-status labels, keyed by artifact_id (spec 016, #220). */
   runStatus: UseRunStatusResult;
@@ -76,26 +77,32 @@ interface TabDef {
 }
 
 /**
- * Approvals tab content (US4, spec 013). Owns its own data hook (kept out of
- * the shared useRegistryData shell) and posts decisions through the typed API
- * client, refetching pending + history after each submitted decision.
+ * Approvals tab content (US4, spec 013). Renders from the shell-owned shared
+ * useApprovals() instance (issue #297) so this panel and the nav badge always
+ * show the same state, and posts decisions through the typed API client,
+ * reloading that shared instance after each submitted decision.
  */
-const ApprovalsTab = React.memo(function ApprovalsTab({ timeMode }: { timeMode: TimeDisplayMode }) {
-  const { pending, history, loading, error, reload } = useApprovals();
+const ApprovalsTab = React.memo(function ApprovalsTab({
+  approvals,
+  timeMode,
+}: {
+  approvals: UseApprovalsResult;
+  timeMode: TimeDisplayMode;
+}) {
   const decide = React.useCallback(
     async (artifactId: string, body: ApprovalDecisionRequest) => {
       await postApprovalDecision(artifactId, body);
-      reload();
+      approvals.reload();
     },
-    [reload],
+    [approvals.reload],
   );
   return (
     <ApprovalsPanel
-      pending={pending}
-      history={history}
-      loading={loading}
-      error={error}
-      onRetry={reload}
+      pending={approvals.pending}
+      history={approvals.history}
+      loading={approvals.loading}
+      error={approvals.error}
+      onRetry={approvals.reload}
       onDecide={decide}
       timeMode={timeMode}
     />
@@ -111,175 +118,26 @@ function ApprovalsBadge({ approvals }: { approvals: UseApprovalsResult }) {
 
 // ⚡ Bolt: wrap parameterless top-level tab components in React.memo to prevent
 // cascading re-renders when App.tsx polls global state via useRegistryData.
-const MissionControlTab = React.memo(() => <MissionControl />);
 const SocietyTab = React.memo(() => <SocietyView />);
-
-// ⚡ Bolt: Extract dynamic tab views into explicitly named memoized components
-// that receive granular destructured props (avoiding global spread or state wrappers)
-// to prevent cascading re-renders when App.tsx polls global state via useRegistryData.
-const ArtifactsTab = React.memo(function ArtifactsTab({
-  artifacts,
-  loading,
-  error,
-  onRetry,
-  timeMode,
-  runStatus,
-}: React.ComponentProps<typeof ArtifactList>) {
-  return (
-    <ArtifactList
-      artifacts={artifacts}
-      loading={loading}
-      error={error}
-      onRetry={onRetry}
-      timeMode={timeMode}
-      runStatus={runStatus}
-    />
-  );
-});
-
-const WavePlanTab = React.memo(function WavePlanTab({
-  entries,
-  loading,
-  error,
-  onRetry,
-}: React.ComponentProps<typeof WavePlan>) {
-  return (
-    <WavePlan
-      entries={entries}
-      loading={loading}
-      error={error}
-      onRetry={onRetry}
-    />
-  );
-});
-
-const SessionsTab = React.memo(function SessionsTab({
-  sessions,
-  total,
-  page,
-  pageSize,
-  totalPages,
-  availableFilters,
-  loading,
-  error,
-  onRetry,
-  query,
-  onQueryChange,
-  timeMode,
-}: React.ComponentProps<typeof SessionsView>) {
-  return (
-    <SessionsView
-      sessions={sessions}
-      total={total}
-      page={page}
-      pageSize={pageSize}
-      totalPages={totalPages}
-      availableFilters={availableFilters}
-      loading={loading}
-      error={error}
-      onRetry={onRetry}
-      query={query}
-      onQueryChange={onQueryChange}
-      timeMode={timeMode}
-    />
-  );
-});
-
-const BlockersTab = React.memo(function BlockersTab({
-  blockers,
-  blockersTotal,
-  blockersPage,
-  blockersPageSize,
-  blockersTotalPages,
-  blockersLoading,
-  blockersError,
-  blockersOnRetry,
-  blockerQuery,
-  onBlockerQueryChange,
-  issues,
-  issuesTotal,
-  issuesPage,
-  issuesPageSize,
-  issuesTotalPages,
-  issueFilters,
-  issuesLoading,
-  issuesError,
-  issuesOnRetry,
-  issueQuery,
-  onIssueQueryChange,
-  timeMode,
-}: React.ComponentProps<typeof BlockersView>) {
-  return (
-    <BlockersView
-      blockers={blockers}
-      blockersTotal={blockersTotal}
-      blockersPage={blockersPage}
-      blockersPageSize={blockersPageSize}
-      blockersTotalPages={blockersTotalPages}
-      blockersLoading={blockersLoading}
-      blockersError={blockersError}
-      blockersOnRetry={blockersOnRetry}
-      blockerQuery={blockerQuery}
-      onBlockerQueryChange={onBlockerQueryChange}
-      issues={issues}
-      issuesTotal={issuesTotal}
-      issuesPage={issuesPage}
-      issuesPageSize={issuesPageSize}
-      issuesTotalPages={issuesTotalPages}
-      issueFilters={issueFilters}
-      issuesLoading={issuesLoading}
-      issuesError={issuesError}
-      issuesOnRetry={issuesOnRetry}
-      issueQuery={issueQuery}
-      onIssueQueryChange={onIssueQueryChange}
-      timeMode={timeMode}
-    />
-  );
-});
-
-const RunsTab = React.memo(function RunsTab({
-  runs,
-  total,
-  page,
-  pageSize,
-  totalPages,
-  availableFilters,
-  loading,
-  error,
-  onRetry,
-  query,
-  onQueryChange,
-  timeMode,
-}: React.ComponentProps<typeof RunsView>) {
-  return (
-    <RunsView
-      runs={runs}
-      total={total}
-      page={page}
-      pageSize={pageSize}
-      totalPages={totalPages}
-      availableFilters={availableFilters}
-      loading={loading}
-      error={error}
-      onRetry={onRetry}
-      query={query}
-      onQueryChange={onQueryChange}
-      timeMode={timeMode}
-    />
-  );
-});
 
 const TABS: TabDef[] = [
   {
     id: "Mission Control",
     label: "Mission Control",
-    render: () => <MissionControlTab />,
+    // Issue #297: render from the shell-owned artifacts/status/wave-plan state
+    // so a shell refresh updates the visible dashboard.
+    render: ({ artifacts, status, wavePlan }) => (
+      <MissionControl artifacts={artifacts} status={status} wavePlan={wavePlan} />
+    ),
   },
   {
     id: "Approvals",
     label: "Approvals",
     badge: ({ approvals }) => <ApprovalsBadge approvals={approvals} />,
-    render: ({ timeMode }) => <ApprovalsTab timeMode={timeMode} />,
+    // Issue #297: same shared approvals instance as the nav badge.
+    render: ({ approvals, timeMode }) => (
+      <ApprovalsTab approvals={approvals} timeMode={timeMode} />
+    ),
   },
   {
     id: "Society",
@@ -290,7 +148,7 @@ const TABS: TabDef[] = [
     id: "Artifacts",
     label: "Artifacts",
     render: ({ artifacts, runStatus, timeMode }) => (
-      <ArtifactsTab
+      <ArtifactList
         artifacts={artifacts.artifacts}
         loading={artifacts.loading}
         error={artifacts.error}
@@ -304,7 +162,7 @@ const TABS: TabDef[] = [
     id: "Wave Plan",
     label: "Wave Plan",
     render: ({ wavePlan }) => (
-      <WavePlanTab
+      <WavePlan
         entries={wavePlan.wavePlan}
         loading={wavePlan.loading}
         error={wavePlan.error}
@@ -316,7 +174,7 @@ const TABS: TabDef[] = [
     id: "Sessions",
     label: "Sessions",
     render: ({ sessions, sessionQuery, updateSessionQuery, timeMode }) => (
-      <SessionsTab
+      <SessionsView
         sessions={sessions.sessions}
         total={sessions.total}
         page={sessions.page}
@@ -344,7 +202,7 @@ const TABS: TabDef[] = [
       updateIssueQuery,
       timeMode,
     }) => (
-      <BlockersTab
+      <BlockersView
         blockers={blockers.blockers}
         blockersTotal={blockers.total}
         blockersPage={blockers.page}
@@ -374,7 +232,7 @@ const TABS: TabDef[] = [
     id: "Runs",
     label: "Runs",
     render: ({ runs, runQuery, updateRunQuery, timeMode }) => (
-      <RunsTab
+      <RunsView
         runs={runs.runs}
         total={runs.total}
         page={runs.page}
@@ -440,8 +298,8 @@ export default function App() {
     issues: issueQuery,
     runs: runQuery,
   });
-  // Live approvals state for the Approvals tab's nav badge; the tab's own
-  // content fetches independently inside ApprovalsTab.
+  // Live approvals state (single shared owner, issue #297): the Approvals tab
+  // renders from this same instance so badge and panel stay synchronized.
   const approvals = useApprovals();
   // Live four-state run-status labels (spec 016, #220), polled on the same
   // cadence as approvals/events/society — recomputed on every poll (FR-011).
