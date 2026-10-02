@@ -1,95 +1,30 @@
-import type { ChildProcess } from "node:child_process";
-import { spawn } from "node:child_process";
+import type Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
-import type Database from "better-sqlite3";
 import { resolveGuildConfig, resolveProviderRoute, resolveTerminationGraceMs, resolveVerificationBudgetMs, resolveWorkspaceRoot } from "../config";
 import { resolveAgentLaunch, type HarnessResolution } from "../harness";
 import { AutonomousLimitError, formatLimitTerminationNote, limitPhaseForAutoWorker, resolveEffectiveLimit, type EffectiveLimit } from "../limits";
-import { terminateProcessGroup, type ProcessGroupTerminationResult } from "../util";
+import { resolveAgentSpawn, runManagedProcess } from "../process-exec";
 import { runAuto, type AutoResult, type AutoReviewDecision, type AutoReviewInput, type AutoWorkerInput } from "../supervisor/loop";
 import { loadActiveStack, resolvePerArtifactVerify } from "../stack";
 import { runArtifactVerification, type ArtifactVerificationOutcome } from "../verify";
 
 /**
- * T047: ceiling/inactivity enforcement around an autonomous spawn, resolved
- * through the same `resolveEffectiveLimit()` the manual runner uses so the
- * knob a rejection names is always the one that actually governed. Detached
- * process-group spawning (US5) means termination reaches the whole tree the
- * spawn started, not only its direct child.
+ * T047: the autonomous worker/reviewer limits, resolved through the same
+ * `resolveEffectiveLimit()` the manual runner uses so the knob a rejection
+ * names is always the one that actually governed. Enforcement itself (detached
+ * process-group spawning, activity tracking, timers, whole-tree termination,
+ * single settlement) lives in the shared lifecycle (`process-exec.ts`).
  */
-interface LimitEnforcedOutcome {
-  exitCode: number | null;
-  spawnError?: string;
-  firingLimit: EffectiveLimit | null;
-  cleanupResult: ProcessGroupTerminationResult;
-}
-
-export function enforceSpawnLimits(
-  child: ChildProcess,
+function resolveSpawnLimits(
   limitPhase: string,
   cfg: ReturnType<typeof resolveGuildConfig>,
-): Promise<LimitEnforcedOutcome> {
-  const ceilingLimit = resolveEffectiveLimit(limitPhase, "ceiling", cfg, process.env);
-  const inactivityLimit = resolveEffectiveLimit(limitPhase, "inactivity", cfg, process.env);
-  const graceMs = resolveTerminationGraceMs(cfg, process.env);
-
-  return new Promise((resolve) => {
-    let settled = false;
-    let lastActivityMs = Date.now();
-    let firingLimit: EffectiveLimit | null = null;
-    let cleanupResult: ProcessGroupTerminationResult = { cleanupOutcome: "not-applicable", survivorPids: [], escalated: false };
-
-    const bump = (): void => { lastActivityMs = Date.now(); };
-    child.stdout?.on("data", bump);
-    child.stderr?.on("data", bump);
-
-    const finish = (exitCode: number | null, spawnError?: string): void => {
-      if (settled) return;
-      settled = true;
-      if (inactivityHandle) clearInterval(inactivityHandle);
-      if (ceilingHandle) clearTimeout(ceilingHandle);
-      resolve({ exitCode, spawnError, firingLimit, cleanupResult });
-    };
-
-    const kill = (limit: EffectiveLimit): void => {
-      if (settled || firingLimit) return;
-      firingLimit = limit;
-      // Once a kill is initiated, the process's own "exit" event races the
-      // termination promise's confirm-wait poll — a graceful/forced signal
-      // sent by `terminateProcessGroup` itself can make the direct child exit
-      // before that promise resolves. `finish` must not settle on that raw
-      // "exit" event once `firingLimit` is set: only the termination result
-      // (below) may report the cleanup outcome, or a real "clean" escalation
-      // could read back as the default "not-applicable".
-      void terminateProcessGroup(child.pid, { graceMs }).then((result) => {
-        cleanupResult = result;
-        finish(null);
-      });
-    };
-
-    const inactivityHandle = inactivityLimit.effectiveValueMs > 0
-      ? setInterval(() => {
-        if (settled) return;
-        if (Date.now() - lastActivityMs > inactivityLimit.effectiveValueMs) kill(inactivityLimit);
-      }, Math.max(200, Math.min(1000, Math.round(inactivityLimit.effectiveValueMs / 10))))
-      : undefined;
-    inactivityHandle?.unref?.();
-
-    const ceilingHandle = ceilingLimit.effectiveValueMs > 0
-      ? setTimeout(() => kill(ceilingLimit), ceilingLimit.effectiveValueMs)
-      : undefined;
-    ceilingHandle?.unref?.();
-
-    child.on("error", (err) => {
-      if (firingLimit) return;
-      finish(null, err.message);
-    });
-    child.on("exit", (code) => {
-      if (firingLimit) return;
-      finish(code);
-    });
-  });
+): { ceiling: EffectiveLimit; inactivity: EffectiveLimit; graceMs: number } {
+  return {
+    ceiling: resolveEffectiveLimit(limitPhase, "ceiling", cfg, process.env),
+    inactivity: resolveEffectiveLimit(limitPhase, "inactivity", cfg, process.env),
+    graceMs: resolveTerminationGraceMs(cfg, process.env),
+  };
 }
 
 function limitTerminationMessage(label: string, limit: EffectiveLimit): string {
@@ -222,32 +157,38 @@ async function spawnHarnessInvocation(
   cfg: ReturnType<typeof resolveGuildConfig>,
 ): Promise<ReviewInvocationResult> {
   const args = ["--agent", agent, "--model", model, "--read-only", "-p", prompt];
-  const isNodeScript = /\.(mjs|cjs|js)$/i.test(harness.command);
-  const command = isNodeScript ? process.execPath : harness.command;
-  const commandArgs = isNodeScript ? [harness.command, ...args] : args;
-  // R8/FR-035: process-group leader, same as the producing worker, so a
-  // limit termination reaches the whole reviewer tree.
-  const child = spawn(command, commandArgs, {
-    cwd: workspaceRoot,
-    env,
-    stdio: ["ignore", "pipe", "pipe"],
-    shell: !isNodeScript && process.platform === "win32",
-    detached: true,
-  });
+  // Issue #296: the reviewer launches through the same platform command
+  // selection and the same managed lifecycle as the producing worker and the
+  // manual runner — process-group leader, limits, operator-signal forwarding,
+  // and confirmed whole-tree termination (the autonomous spawn used to lack
+  // Windows .sh handling and signal forwarding).
+  const spawnPlan = resolveAgentSpawn(harness.command, args);
+  const limits = resolveSpawnLimits("review", cfg);
   let output = "";
   let stderr = "";
-  child.stdout.on("data", (chunk) => {
-    const text = chunk.toString();
-    output += text;
-    process.stdout.write(text);
-  });
-  child.stderr.on("data", (chunk) => {
-    const text = chunk.toString();
-    stderr += text;
-    process.stderr.write(text);
+  const managed = runManagedProcess({
+    command: spawnPlan.command,
+    args: spawnPlan.args,
+    shell: spawnPlan.shell,
+    cwd: workspaceRoot,
+    env,
+    ceiling: limits.ceiling,
+    inactivity: limits.inactivity,
+    terminationGraceMs: limits.graceMs,
+    forwardOperatorSignals: true,
+    onOutput: (chunk, stream) => {
+      const text = chunk.toString();
+      if (stream === "stdout") {
+        output += text;
+        process.stdout.write(text);
+      } else {
+        stderr += text;
+        process.stderr.write(text);
+      }
+    },
   });
 
-  const outcome = await enforceSpawnLimits(child, "review", cfg);
+  const outcome = await managed.settled;
   if (outcome.firingLimit) {
     return {
       ok: false,
@@ -375,7 +316,6 @@ function scriptedWorker(
     const model = launch.model;
     setProducerModel(model);
     invocation += 1;
-    const isNodeScript = /\.(mjs|cjs|js)$/i.test(harness.command);
     const args = harness.source === "environment"
       ? []
       : [
@@ -394,7 +334,16 @@ function scriptedWorker(
           reviewReason,
         }, registryCli),
       ];
-    const child = spawn(isNodeScript ? process.execPath : harness.command, isNodeScript ? [harness.command, ...args] : args, {
+    // Issue #296: the producing worker launches through the same platform
+    // command selection and managed lifecycle as the reviewer and the manual
+    // runner (Windows .sh via Bash included).
+    const spawnPlan = resolveAgentSpawn(harness.command, args);
+    const limits = resolveSpawnLimits(limitPhaseForAutoWorker(phase), cfg);
+    let harnessOutput = "";
+    const managed = runManagedProcess({
+      command: spawnPlan.command,
+      args: spawnPlan.args,
+      shell: spawnPlan.shell,
       cwd: workspaceRoot,
       env: {
         ...launch.agentEnv,
@@ -419,25 +368,20 @@ function scriptedWorker(
       // whole tree this worker started. Piped (not "inherit") so ceiling/
       // inactivity enforcement can observe activity; both streams are still
       // forwarded live to the operator's terminal.
-      stdio: ["ignore", "pipe", "pipe"],
-      shell: !isNodeScript && process.platform === "win32",
-      detached: true,
+      forwardOperatorSignals: true,
+      onOutput: (chunk, stream) => {
+        const text = chunk.toString();
+        harnessOutput += text;
+        // US5 (#121): also buffer the harness CLI's raw stdout+stderr so a
+        // non-zero exit can surface its words verbatim — no provider/harness
+        // branching (constitution VII: the stderr passes through untouched).
+        // Capped at 512.
+        (stream === "stdout" ? process.stdout : process.stderr).write(text);
+      },
     });
-    child.stdout?.pipe(process.stdout);
-    child.stderr?.pipe(process.stderr);
-
-    // US5 (#121): also buffer the harness CLI's raw stdout+stderr so a non-zero
-    // exit can surface its words verbatim — no provider/harness branching
-    // (constitution VII: the stderr passes through untouched). Capped at 512.
-    let harnessOutput = "";
-    const captureHarnessOut = (chunk: Buffer | string): void => {
-      harnessOutput += chunk.toString();
-    };
-    child.stdout?.on("data", captureHarnessOut);
-    child.stderr?.on("data", captureHarnessOut);
 
     const producerAgent = phase === "repair" ? "remediation-agent" : "code-writer-agent";
-    const outcome = await enforceSpawnLimits(child, limitPhaseForAutoWorker(phase), cfg);
+    const outcome = await managed.settled;
     if (outcome.firingLimit) {
       throw new AutonomousLimitError(
         limitTerminationMessage(`${producerAgent} (${phase})`, outcome.firingLimit),
@@ -500,6 +444,13 @@ export async function runAutoCommand(db: Database.Database, opts: AutoCliOptions
         operatorToken: ctx.operatorToken,
         config: cfg,
         recordEvidence: true,
+        // Issue #293: the supervisor's claim-close verification already
+        // executed the default stack check once for this run — reuse that
+        // structured outcome here (for verification state, close-out
+        // reporting, and this signed evidence) instead of executing the same
+        // check a second time with a separate budget. An explicit --command is
+        // a genuinely different check and keeps its own execution.
+        reuseClaimCloseOutcome: true,
       });
       return { pass: outcome.state === "verified", evidence: outcome.evidence };
     };

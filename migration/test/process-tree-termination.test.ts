@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
-import { enforceSpawnLimits } from "../guildctl/commands/auto";
-import { DEFAULT_GUILD_CONFIG } from "../guildctl/config";
+import { runManagedProcess } from "../guildctl/process-exec";
+import { LIMIT_PRECEDENCE_ORDER, type EffectiveLimit } from "../guildctl/limits";
 import { spawnAgent } from "../guildctl/runner";
 import { applySchema } from "../registry/db/schema";
 import { makeTempDir, waitFor, writeGrandchildSpawner } from "./truthful-run-state-fixtures";
@@ -25,6 +24,20 @@ import { makeTempDir, waitFor, writeGrandchildSpawner } from "./truthful-run-sta
  */
 
 const isWindows = process.platform === "win32";
+
+/** An unfloored synthetic descriptor, the way tests pass raw ms values. */
+function syntheticLimit(kind: "ceiling" | "inactivity", effectiveValueMs: number): EffectiveLimit {
+  return {
+    phase: "test-only-unfloored-phase",
+    kind,
+    knob: kind === "ceiling" ? "GUILDCTL_AGENT_CEILING_SECONDS" : "GUILDCTL_INACTIVITY_TIMEOUT_SECONDS",
+    effectiveValueMs,
+    requestedValueMs: effectiveValueMs,
+    source: "env-override",
+    floorApplied: false,
+    precedenceOrder: LIMIT_PRECEDENCE_ORDER,
+  };
+}
 
 function writeAgentShim(dir: string, grandchildSpawnerPath: string, pidFile: string): string {
   const file = path.join(dir, "agent-shim.mjs");
@@ -97,25 +110,27 @@ test("runner: a ceiling termination reaches the whole process tree, not only the
   }
 });
 
-test("autonomous path: enforceSpawnLimits forcibly terminates a SIGTERM-ignoring process group", async (t) => {
+test("autonomous path: the shared lifecycle forcibly terminates a SIGTERM-ignoring process group", async (t) => {
   if (isWindows) { t.skip("taskkill tree-kill path is exercised on Windows CI only"); return; }
   const dir = makeTempDir("guild-auto-pgroup-");
   const pidFile = path.join(dir, "pids");
   const script = writeGrandchildSpawner(dir, { ignoreSigterm: true, pidFile, lifetimeMs: 30_000 });
-  const child = spawn(process.execPath, [script, "parent"], { stdio: "ignore", detached: true });
-  await waitFor(() => existsSync(pidFile), 5000);
 
-  const cfg = {
-    ...DEFAULT_GUILD_CONFIG,
-    agent_limits: { ...DEFAULT_GUILD_CONFIG.agent_limits, termination_grace_seconds: 1, ceiling_seconds: 100000, inactivity_timeout_seconds: 100000 },
-  };
-  const previousCeilingEnv = process.env.GUILDCTL_AGENT_CEILING_SECONDS;
-  // A near-zero ceiling so enforceSpawnLimits fires almost immediately. An
-  // unrecognized phase name has no per-phase floor, so the requested value is
-  // not silently raised to the 5-minute code-writing floor.
-  process.env.GUILDCTL_AGENT_CEILING_SECONDS = "1";
+  // A near-zero ceiling so the lifecycle fires almost immediately. The same
+  // unfloored synthetic descriptor the runner honours for raw ms values.
   try {
-    const outcome = await enforceSpawnLimits(child, "test-only-unfloored-phase", cfg as never);
+    const managed = runManagedProcess({
+      command: process.execPath,
+      args: [script, "parent"],
+      cwd: dir,
+      ceiling: syntheticLimit("ceiling", 1_000),
+      terminationGraceMs: 1_000,
+    });
+    // The fixture records its pid only after registering its SIGTERM-ignoring
+    // handlers, so reaching past this wait guarantees the graceful signal will
+    // be ignored and forced escalation is genuinely exercised.
+    assert.ok(await waitFor(() => existsSync(pidFile), 5_000), "fixture never became ready");
+    const outcome = await managed.settled;
     // Ceiling fired (the tree ignores graceful SIGTERM), forced escalation
     // followed, and SIGKILL cannot be ignored: the group is confirmed gone —
     // this is the autonomous-path equivalent of the runner-level test above.
@@ -123,8 +138,7 @@ test("autonomous path: enforceSpawnLimits forcibly terminates a SIGTERM-ignoring
     assert.equal(outcome.cleanupResult.cleanupOutcome, "clean");
     assert.equal(outcome.cleanupResult.survivorPids.length, 0);
   } finally {
-    if (previousCeilingEnv == null) delete process.env.GUILDCTL_AGENT_CEILING_SECONDS;
-    else process.env.GUILDCTL_AGENT_CEILING_SECONDS = previousCeilingEnv;
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

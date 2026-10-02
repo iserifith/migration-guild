@@ -6,6 +6,20 @@ It is intended for maintainers, not migration-workspace users. User-facing setup
 
 ## Unreleased
 
+### October 1, 2026
+
+- Registry schema upgrades (#294) — make `registry_schema.sql` the fresh-schema
+  source and consolidate existing-database changes into one guarded,
+  transactional upgrade path. Widen older event CHECK constraints in one
+  rebuild while preserving historical rows, indexes, and triggers; surface
+  unexpected upgrade failures.
+- `index-db` documentation supersession (#299) — replace the prior-version
+  lookup/delete loop and redundant explicit supersession delete with one
+  transactional, symbol/signature-scoped `DELETE`. Preserve sibling symbols
+  and overloads, incoming-version rows, signature normalization, and
+  `supersedesVersion` API compatibility (deprecated/no-op). Correct the
+  doc-RAG lifecycle documentation to describe the scoped behavior.
+
 ### September 25, 2026
 
 - `guildctl ccmap` — export the migration registry as a CodeCharta 2.0 map

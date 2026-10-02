@@ -1,12 +1,27 @@
 import React from "react";
-import { useArtifacts, useEvents, useSessions, useSociety, useStatus, useWavePlan } from "../hooks";
+import { useEvents, useSessions, useSociety } from "../hooks";
+import type {
+  UseArtifactsResult,
+  UseStatusResult,
+  UseWavePlanResult,
+} from "../hooks";
 import type { ActivityTone, MissionControlData, SocietyRole } from "../types";
 import { classifyRole } from "../utils/roles";
 import { relativeTime } from "../utils/time";
 
-export interface MissionControlProps {
-  data?: MissionControlData;
+/**
+ * Shell-owned shared query state (issue #297): the app shell owns one
+ * artifacts/status/wave-plan instance each and passes the results down so
+ * Mission Control renders the same data the rest of the dashboard sees —
+ * including shell refreshes — instead of polling duplicates.
+ */
+export interface SharedMissionControlState {
+  status: UseStatusResult;
+  wavePlan: UseWavePlanResult;
+  artifacts: UseArtifactsResult;
 }
+
+export type MissionControlProps = SharedMissionControlState | { data: MissionControlData };
 
 const toneToken = {
   neutral: "var(--text-primary)",
@@ -25,21 +40,26 @@ const roleTokens: Record<SocietyRole, { foreground: string; background: string }
   arbiter: { foreground: "var(--text-pro)", background: "var(--bg-pro)" },
 };
 
-// ⚡ Bolt: Memoize component to prevent unnecessary re-renders when App polls global state
-const LiveMissionControl = React.memo(function LiveMissionControl() {
-  const statusHook = useStatus();
+// ⚡ Bolt: Memoize component to prevent unnecessary re-renders when App polls global state.
+// Consumes the shell-owned shared state (issue #297) and keeps only the
+// component-specific queries local: society aggregate, the unfiltered sessions
+// view (distinct from the shell's filtered/paginated sessions), and the events
+// tail for the most recent activity.
+const LiveMissionControl = React.memo(function LiveMissionControl({
+  status: statusHook,
+  wavePlan: wavePlanHook,
+  artifacts: artifactsHook,
+}: SharedMissionControlState) {
   const societyHook = useSociety();
-  const wavePlanHook = useWavePlan();
   const sessionsHook = useSessions();
-  const artifactsHook = useArtifacts();
-  const { status } = statusHook;
-  const { society } = societyHook;
-  const { wavePlan } = wavePlanHook;
   const { sessions } = sessionsHook;
   const { artifacts } = artifactsHook;
   const activityArtifactId = sessions[0]?.id ?? artifacts[0]?.id ?? "";
   const eventsHook = useEvents(activityArtifactId);
   const { events } = eventsHook;
+  const { status } = statusHook;
+  const { society } = societyHook;
+  const { wavePlan } = wavePlanHook;
   // ⚡ Bolt: memoize error filtering to prevent array allocations and filtering on every polling render
   const errors = React.useMemo(() => [statusHook, societyHook, wavePlanHook, sessionsHook, artifactsHook, eventsHook]
     .map((hook) => hook.error)
@@ -213,6 +233,9 @@ const MissionControlView = React.memo(function MissionControlView({ data }: { da
   );
 });
 
-export default React.memo(function MissionControl({ data }: MissionControlProps) {
-  return data ? <MissionControlView data={data} /> : <LiveMissionControl />;
+export default React.memo(function MissionControl(props: MissionControlProps) {
+  if ("data" in props) {
+    return <MissionControlView data={props.data} />;
+  }
+  return <LiveMissionControl {...props} />;
 });

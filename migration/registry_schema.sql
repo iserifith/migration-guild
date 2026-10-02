@@ -236,12 +236,12 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE INDEX IF NOT EXISTS idx_runs_agent  ON runs(agent);
 CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
 CREATE INDEX IF NOT EXISTS idx_runs_owner  ON runs(owner_id);
--- idx_runs_outcome_label is created in the migrations section below, not here.
--- The base section is executed as one statement batch against existing
+-- idx_runs_outcome_label is created by the guarded upgrade path in
+-- registry/db/schema.ts, not here. This file is executed against existing
 -- databases too, where `CREATE TABLE IF NOT EXISTS runs` is a no-op and
--- outcome_label does not exist yet — indexing it here would abort the whole
--- batch and break in-place upgrade. The migrations section runs for fresh and
--- existing databases alike, after the ALTERs, so both end with the index.
+-- outcome_label may not exist yet — indexing it here would abort the whole
+-- batch and break in-place upgrade. schema.ts creates it after its column
+-- guards, so fresh and upgraded databases both end with the index.
 
 CREATE TABLE IF NOT EXISTS run_operator_credentials (
     run_id       TEXT PRIMARY KEY REFERENCES runs(run_id) ON DELETE CASCADE,
@@ -689,73 +689,12 @@ BEGIN
   );
 END;
 
--- ─── Migrations for existing databases ───────────────────────────────────────
-
-ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS claimed_by   TEXT;
-ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS claimed_at   TEXT;
-ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS claimed_from TEXT;
-ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS tier         TEXT NOT NULL DEFAULT 'second-class'
-  CHECK (tier IN ('first-class', 'second-class'));
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS pid INTEGER;
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS owner_id TEXT;
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS phase TEXT;
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS termination_reason TEXT;
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_input INTEGER NOT NULL DEFAULT 0 CHECK (token_input >= 0);
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_output INTEGER NOT NULL DEFAULT 0 CHECK (token_output >= 0);
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_reasoning INTEGER NOT NULL DEFAULT 0 CHECK (token_reasoning >= 0);
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_cache_read INTEGER NOT NULL DEFAULT 0 CHECK (token_cache_read >= 0);
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_cache_write INTEGER NOT NULL DEFAULT 0 CHECK (token_cache_write >= 0);
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_fresh INTEGER NOT NULL DEFAULT 0 CHECK (token_fresh >= 0);
-
--- TASK-05: expected output paths recorded on each claim so the runner-enforced
--- filesystem isolation (TASK-04) knows the allowed path union for a parallel pool.
--- Note: SQLite in this build rejects `ADD COLUMN IF NOT EXISTS`, so schema.ts
--- adds this column at runtime via a plain ALTER guarded by a column-existence check.
-ALTER TABLE artifact_claims ADD COLUMN expected_output_paths TEXT;
-
-ALTER TABLE runs ADD COLUMN IF NOT EXISTS token_total INTEGER NOT NULL DEFAULT 0 CHECK (token_total >= 0);
-ALTER TABLE acceptance_evidence ADD COLUMN IF NOT EXISTS log_sha256 TEXT;
-ALTER TABLE acceptance_evidence ADD COLUMN IF NOT EXISTS duration_ms INTEGER;
-ALTER TABLE acceptance_evidence ADD COLUMN IF NOT EXISTS authenticity TEXT;
-ALTER TABLE acceptance_evidence ADD COLUMN IF NOT EXISTS content_sha256 TEXT;
-ALTER TABLE acceptance_evidence ADD COLUMN IF NOT EXISTS signature_json TEXT;
-
--- Attempt-outcome columns on runs (FR-030–FR-034). Every one is nullable, so an
--- existing workspace registry upgrades in place with no backfill.
--- Note: SQLite in this build rejects `ADD COLUMN IF NOT EXISTS`, so schema.ts
--- also adds each of these at runtime via a plain ALTER guarded by a
--- column-existence check. Both halves are required; either alone leaves fresh
--- or existing databases wrong.
-ALTER TABLE runs ADD COLUMN files_written_count  INTEGER;
-ALTER TABLE runs ADD COLUMN files_written_source TEXT;
-ALTER TABLE runs ADD COLUMN status_from          TEXT;
-ALTER TABLE runs ADD COLUMN status_to            TEXT;
-ALTER TABLE runs ADD COLUMN budget_consumed      INTEGER;
-ALTER TABLE runs ADD COLUMN cleanup_outcome      TEXT;
-ALTER TABLE runs ADD COLUMN survivor_pids        TEXT;
-ALTER TABLE runs ADD COLUMN outcome_label        TEXT;
-
-CREATE INDEX IF NOT EXISTS idx_runs_outcome_label ON runs(outcome_label);
-
-CREATE TABLE IF NOT EXISTS run_operator_credentials (
-    run_id       TEXT PRIMARY KEY REFERENCES runs(run_id) ON DELETE CASCADE,
-    token_hash   TEXT NOT NULL,
-    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- US5 (#151): bounded verify-concurrency lease table for existing databases.
--- `CREATE TABLE IF NOT EXISTS` is idempotent, so this is a no-op on a fresh
--- database that already picked the table up from the base schema above.
-CREATE TABLE IF NOT EXISTS verify_slots (
-    slot_id           TEXT PRIMARY KEY,
-    run_id            TEXT REFERENCES runs(run_id) ON DELETE SET NULL,
-    artifact_id       TEXT NOT NULL,
-    acquired_at       TEXT NOT NULL DEFAULT (datetime('now')),
-    lease_expires_at  TEXT NOT NULL,
-    released_at       TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_verify_slots_run      ON verify_slots(run_id);
-CREATE INDEX IF NOT EXISTS idx_verify_slots_artifact ON verify_slots(artifact_id);
-CREATE INDEX IF NOT EXISTS idx_verify_slots_live
-  ON verify_slots(released_at, lease_expires_at);
+-- ─── Upgrades for existing databases ─────────────────────────────────────────────────────
+-- There is deliberately no SQL-text migration section in this file (issue
+-- #294). In-place upgrades run solely through the guarded, transactional,
+-- repeatable upgrade path in registry/db/schema.ts: the old comment-parsed
+-- statement list made upgrade execution depend on comments and formatting,
+-- duplicated the TypeScript guards, and tolerated unexpected failures by
+-- error-message matching. Every column this file's fresh schema declares that
+-- an older database may be missing is accounted for by those guards, so a
+-- registry from any supported older kit version reaches this shape on open.

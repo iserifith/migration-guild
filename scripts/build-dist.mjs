@@ -5,7 +5,7 @@ import { promises as fs } from "node:fs";
 import fsSync from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -82,7 +82,7 @@ async function maybeBumpVersion(version) {
   await fs.writeFile(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
 }
 
-function shouldCopyPackageEntry(relativePath, isDirectory) {
+export function shouldCopyPackageEntry(relativePath, isDirectory) {
   if (!relativePath) {
     return true;
   }
@@ -111,7 +111,54 @@ function shouldCopyPackageEntry(relativePath, isDirectory) {
   return true;
 }
 
-async function copyFilteredDirectory(sourceDir, destinationDir, rootDir = sourceDir) {
+// fs.cp filter factory rooted at the copy source root (#300). fs.cp hands the
+// filter absolute, platform-native paths (backslashes on Windows), so every
+// candidate is re-rooted relative to rootDir before the packaging policy sees
+// it. lstat (not stat) keeps the directory/file decision identical to the old
+// readdir Dirent walk this policy was written against: a directory named
+// `*.ts` still ships, a file or symlink named `*.ts` still does not.
+function makeSourceRootFilter(rootDir) {
+  return async (sourcePath) => {
+    const relativePath = path.relative(rootDir, sourcePath);
+
+    if (relativePath === "") {
+      // fs.cp consults the filter for the copy root itself; the policy
+      // unconditionally ships it (same as the old pre-walk check).
+      return true;
+    }
+
+    if (relativePath.startsWith("..")) {
+      // Only reachable when fs.cp expands a symlink-to-directory whose target
+      // lies OUTSIDE the copy root. The old fs.copyFile walk hard-failed on
+      // such links (EISDIR); fail closed the same way instead of shipping
+      // unfiltered content from outside the staged tree.
+      throw new Error(`Refusing to copy content outside the source root: ${sourcePath}`);
+    }
+
+    return shouldCopyPackageEntry(relativePath.split(path.sep).join("/"), (await fs.lstat(sourcePath)).isDirectory());
+  };
+}
+
+// Copies `sourceDir` into `destinationDir`, applying the packaging policy to
+// every entry relative to `rootDir`. The recursive traversal itself is
+// delegated to fs.cp (#300) instead of a hand-rolled readdir walk. Call sites,
+// exclusions, and failure semantics are unchanged:
+//   - an excluded directory is skipped whole (fs.cp never descends into it);
+//   - an included empty directory still appears in the destination;
+//   - a missing source fails the build (fs.cp throws ENOENT, like readdir did);
+//   - every other copy error propagates and fails the build.
+// Symlink behavior is an explicit choice of #300 (`dereference: true`):
+//   - file symlinks ship as regular files holding the target's content —
+//     exactly what the old fs.copyFile call produced;
+//   - broken symlinks still fail the build (ENOENT, fail-closed);
+//   - a symlink to a directory now expands to a filtered copy of its target
+//     where the old walk hard-failed — only possible for trees that could not
+//     build at all before, so no currently-succeeding build changes output.
+// `dereference: false` was rejected: it ships links instead of content and
+// needs symlink-creation privileges on Windows (EPERM on unprivileged hosts),
+// a new failure mode for builds that succeed today.
+// Exported for migration/test/build-dist-copy-filter.test.ts (#300).
+export async function copyFilteredDirectory(sourceDir, destinationDir, rootDir = sourceDir) {
   const relativePath = path.relative(rootDir, sourceDir);
   const normalizedRelativePath = relativePath === "" ? "" : relativePath.split(path.sep).join("/");
 
@@ -121,24 +168,11 @@ async function copyFilteredDirectory(sourceDir, destinationDir, rootDir = source
 
   await fs.mkdir(destinationDir, { recursive: true });
 
-  const entries = await fs.readdir(sourceDir, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const sourcePath = path.join(sourceDir, entry.name);
-    const destinationPath = path.join(destinationDir, entry.name);
-    const entryRelativePath = path.relative(rootDir, sourcePath);
-
-    if (!shouldCopyPackageEntry(entryRelativePath, entry.isDirectory())) {
-      continue;
-    }
-
-    if (entry.isDirectory()) {
-      await copyFilteredDirectory(sourcePath, destinationPath, rootDir);
-      continue;
-    }
-
-    await fs.copyFile(sourcePath, destinationPath);
-  }
+  await fs.cp(sourceDir, destinationDir, {
+    recursive: true,
+    dereference: true,
+    filter: makeSourceRootFilter(rootDir),
+  });
 }
 
 async function assembleTarball() {
@@ -254,8 +288,29 @@ async function main() {
   console.log("");
 }
 
-main().catch((error) => {
-  console.error("");
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+// Run the build pipeline only when executed directly (`node scripts/build-dist.mjs`,
+// `npm run build:dist`). Importing the module must stay side-effect free — the
+// packaging tests import shouldCopyPackageEntry/copyFilteredDirectory from here.
+function isDirectRun() {
+  if (!process.argv[1]) {
+    return false;
+  }
+
+  const entryHref = pathToFileURL(process.argv[1]).href;
+  // Windows paths are case-insensitive and shell-reported casing can differ
+  // from on-disk casing; compare case-insensitively there so a direct run can
+  // never silently no-op. POSIX keeps the exact comparison.
+  if (process.platform === "win32") {
+    return import.meta.url.toLowerCase() === entryHref.toLowerCase();
+  }
+
+  return import.meta.url === entryHref;
+}
+
+if (isDirectRun()) {
+  main().catch((error) => {
+    console.error("");
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });
+}

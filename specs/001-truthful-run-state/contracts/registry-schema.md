@@ -3,16 +3,19 @@
 **Interface**: the per-workspace SQLite registry (WAL). **File**: `migration/registry_schema.sql`,
 applied by `migration/registry/db/schema.ts`.
 
-**Application mechanism**: `applySchema()` splits `registry_schema.sql` at the
-`── Migrations for existing databases` marker, executes the base section, then runs each migration
-statement individually with duplicate-column errors ignored. Because this SQLite build rejects
-`ADD COLUMN IF NOT EXISTS`, every new column must be present in the fresh-database base schema and
-also be registered with the `ensureColumn()` guard at the end of `applySchema()` for in-place upgrades.
-For columns whose index depends on a guarded upgrade, the index is created only after the guard runs.
+**Application mechanism**: `registry_schema.sql` contains fresh-schema DDL only. `applySchema()`
+executes it, then runs one explicit, guarded upgrade path in `schema.ts` inside a transaction.
+Column additions use schema inspection before `ALTER TABLE`; indexes that depend on added columns
+are created only after those guards. Existing databases whose event or acceptance-evidence
+`CHECK` constraints need widening are rebuilt transactionally with explicit-column row copies;
+the events trigger and indexes are restored as part of the rebuild. Unexpected upgrade failures
+propagate and roll back rather than being suppressed by matching error text.
 
-**Compatibility commitment**: no existing table, column, `CHECK` constraint, trigger, or index is
-modified or dropped. Every addition is a new table or a nullable/defaulted column, so an existing
-workspace registry upgrades in place with no backfill and no downtime.
+**Compatibility commitment**: upgrades preserve historical rows and the current schema's
+constraints, indexes, and triggers. A constrained table may be rebuilt when its supported older
+`CHECK` vocabulary must be widened; such rebuilds are transactional and preserve the table's
+data and schema objects. Guarded column additions remain nullable/defaulted as appropriate for
+in-place upgrades.
 
 ---
 

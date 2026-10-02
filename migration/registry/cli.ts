@@ -1071,7 +1071,7 @@ program
   .requiredOption("--source-url <url>", "Authoritative source URL (FR-003a)")
   .requiredOption("--source-excerpt <text>", "Verbatim excerpt copied from the source (FR-003a)")
   .option("--ingestion-run-id <id>", "Ingestion run this entry belongs to")
-  .option("--supersedes-version <v>", "Prior indexed version whose rows are deleted in the same transaction")
+  .option("--supersedes-version <v>", "Deprecated compatibility option; prior symbol-version rows are superseded automatically")
   .option("--index-db <path>", "Path to index.db (overrides GUILD_INDEX_DB_PATH env)")
   .action((opts) => run(() => upsertDocumentationEntry(getIndexDb(opts.indexDb), {
     libraryName: opts.library,
